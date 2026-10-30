@@ -15,7 +15,8 @@ extends SceneTree
 ## - vida no cenário: ventilador girando, vento no varal e na cortina, chuvisco na TV, vapor na panela,
 ##   lâmpada piscando e balançando quando alguém passa perto;
 ## - detalhes da história: prints da ficha do fiscal, do jornal, do lixo de notas, das pegadas e da pizza;
-## - bonecos: cada vaga com o acessório dela, andando, no ar e segurando (print do elenco);
+## - bonecos: cada vaga com o acessório dela, andando (joelho dobrando), no ar e segurando (a mão chega
+##   na luva pelo IK do braço), com print do elenco;
 ## - com --solo, entra sozinho sem rede (o botão "Play solo") em vez de hospedar;
 ## - com --client, abre uma segunda janela que entra na sala e confere que ela aparece e se mexe.
 ## Prints de alguns pontos de vista na pasta --out (rode com janela, sem --headless).
@@ -220,7 +221,8 @@ func _test_characters(kitnet: Node3D, player: CharacterBody3D) -> void:
 	stage.name = "CharacterLineup"
 	kitnet.add_child(stage)
 	var sun := DirectionalLight3D.new()
-	sun.rotation = Vector3(-0.7, 0.5, 0.0)
+	# Vindo de trás da câmera, para pegar a frente dos bonecos (que olham para ela).
+	sun.rotation = Vector3(-0.6, PI + 0.4, 0.0)
 	sun.light_energy = 1.2
 	stage.add_child(sun)
 	var rigs: Array[Node3D] = []
@@ -238,6 +240,7 @@ func _test_characters(kitnet: Node3D, player: CharacterBody3D) -> void:
 	_check(ok_acc, "cada vaga mostra só o acessório dela (boné, óculos, topete, gorro)")
 	kitnet.model.visible = false
 	var max_leg := 0.0
+	var max_knee := 0.0
 	var walk_dir: Vector3 = -rigs[1].global_basis.z
 	for f in 50:
 		var dt := 1.0 / 60.0
@@ -247,12 +250,17 @@ func _test_characters(kitnet: Node3D, player: CharacterBody3D) -> void:
 		var hold: Vector3 = rigs[3].global_position + rigs[3].global_basis * Vector3(0, 1.35, -0.45)
 		rigs[3].animate(dt, Vector3.ZERO, false, 0.0, [hold + rigs[3].global_basis.x * 0.12, hold - rigs[3].global_basis.x * 0.12])
 		max_leg = maxf(max_leg, absf(rigs[1].legs[0].rotation.x))
+		max_knee = maxf(max_knee, rigs[1].shins[0].rotation.x)
 		await process_frame
 	_check(max_leg > 0.3, "andando, as pernas balançam (%.2f rad)" % max_leg)
-	_check(not rigs[3].gloves[0].visible and rigs[3].arms[0].basis.get_scale().y > 0.5,
-			"segurando, os braços apontam para as luvas (x%.2f)" % rigs[3].arms[0].basis.get_scale().y)
+	_check(max_knee > 0.4, "andando, o joelho dobra (%.2f rad)" % max_knee)
+	var hold_r: Vector3 = rigs[3].global_position + rigs[3].global_basis * Vector3(0, 1.35, -0.45) + rigs[3].global_basis.x * 0.12
+	var hand_r: Vector3 = rigs[3].forearms[0].global_transform * Vector3(0, -Rig.FOREARM, 0)
+	_check(not rigs[3].gloves[0].visible and hand_r.distance_to(hold_r) < 0.03,
+			"segurando, ombro e cotovelo levam a mão até a luva (%.3f m)" % hand_r.distance_to(hold_r))
 	await _look(player, Vector3(2.4, 0, -2.0), Vector3(2.4, 0.85, -4.2), "37_elenco")
 	await _look(player, Vector3(1.4, 0, -3.35), Vector3(1.4, 1.5, -4.2), "38_rosto")
+	await _look(player, Vector3(3.3, 0, -3.0), Vector3(3.6, 0.7, -4.2), "39_maos_e_tenis")
 	kitnet.model.visible = true
 	stage.queue_free()
 

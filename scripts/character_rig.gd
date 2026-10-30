@@ -1,23 +1,28 @@
 extends Node3D
 ## Boneco de desenho dos jogadores (assets/models/character.glb, montado por
 ## art_source/blender/character.py): um adulto desengonçado e cansado, de moletom. Todos usam o
-## mesmo boneco: a vaga escolhe a cor do moletom e o acessório. As peças são rígidas e animadas aqui, por código:
-## - andando: pernas e braços balançam, o corpo quica e rebola;
-## - parado: respira;
-## - no ar: pernas encolhidas e braços para cima;
-## - segurando um item: os braços esticam (como macarrão) até as luvas que seguram o item
-##   (hands.glb, do player.gd), e as luvas do boneco somem.
+## mesmo boneco: a vaga escolhe a cor do moletom e o acessório. As peças são rígidas, com
+## cotovelo e joelho, e são animadas aqui, por código:
+## - andando: pernas e braços balançam, o joelho dobra quando a perna vem para frente, o corpo
+##   quica e rebola;
+## - parado: respira, com os cotovelos meio dobrados;
+## - no ar: joelhos encolhidos e braços para cima;
+## - segurando um item: ombro e cotovelo se ajustam (IK de dois ossos) para a mão chegar nas
+##   luvas que seguram o item (hands.glb, do player.gd), e as luvas do boneco somem.
 
 const MODEL := preload("res://assets/models/character.glb")
 ## Acessório de cada vaga (0 a 3).
 const ACCESSORIES: Array[String] = ["Acc_Cap", "Acc_Glasses", "Acc_Quiff", "Acc_Beanie"]
-## Comprimento da manga (ombro ao pulso), igual ao ARM_LEN do character.py.
-const ARM_LEN := 0.6
-## Braços abertos para contornar a barriga (radianos).
+## Medidas das juntas, iguais às do character.py (UPPER_ARM, FOREARM).
+const UPPER_ARM := 0.3
+const FOREARM := 0.3
+## Braços abertos para contornar a barriga, e o cotovelo meio dobrado parado (radianos).
 const ARM_SPLAY := 0.22
-## Passos: ciclos por metro andado, e quanto as pernas e os braços balançam.
+const ELBOW_REST := 0.3
+## Passos: ciclos por metro andado, e quanto as pernas, os joelhos e os braços balançam.
 const STRIDE := 1.1
 const LEG_SWING := 0.45
+const KNEE_BEND := 0.75
 const ARM_SWING := 0.35
 const BOUNCE := 0.03
 const WADDLE := 0.05
@@ -32,8 +37,10 @@ var body: Node3D
 var head: Node3D
 ## Índice 0 = direita, 1 = esquerda (a mesma ordem das luvas do player.gd).
 var arms: Array[Node3D] = []
+var forearms: Array[Node3D] = []
 var gloves: Array[Node3D] = []
 var legs: Array[Node3D] = []
+var shins: Array[Node3D] = []
 var accessory: Node3D
 
 var _phase := 0.0
@@ -54,8 +61,10 @@ func setup(player_slot: int, color: Color) -> void:
 	head = model.find_child("Char_Head", true, false)
 	for side in ["R", "L"]:
 		arms.append(model.find_child("Char_Arm_" + side, true, false))
+		forearms.append(model.find_child("Char_Forearm_" + side, true, false))
 		gloves.append(model.find_child("Char_Glove_" + side, true, false))
 		legs.append(model.find_child("Char_Leg_" + side, true, false))
+		shins.append(model.find_child("Char_Shin_" + side, true, false))
 	_body_rest = body.position
 	for i in ACCESSORIES.size():
 		var acc: Node3D = model.find_child(ACCESSORIES[i], true, false)
@@ -67,7 +76,7 @@ func setup(player_slot: int, color: Color) -> void:
 	_pose_arms(0.0, 0.0)
 
 
-## Moletom na cor da vaga (a barra, o bolso e os punhos um tom mais escuro).
+## Moletom na cor da vaga (a barra, o bolso, a gola e os punhos um tom mais escuro).
 func _paint(color: Color) -> void:
 	var hoodie := StandardMaterial3D.new()
 	hoodie.albedo_color = color
@@ -101,9 +110,13 @@ func animate(delta: float, velocity: Vector3, airborne: bool, pitch: float, hold
 	_air = lerpf(_air, 1.0 if airborne else 0.0, clampf(12.0 * delta, 0.0, 1.0))
 
 	var s := sin(_phase)
-	# Pernas: balançam no passo e encolhem no ar (uma para frente, outra para trás).
-	legs[0].rotation = Vector3(s * LEG_SWING * _swing + _air * 0.55, 0.0, 0.0)
-	legs[1].rotation = Vector3(-s * LEG_SWING * _swing - _air * 0.35, 0.0, 0.0)
+	var c := cos(_phase)
+	# Pernas (girar + leva o pé para trás). O joelho dobra quando a perna vem para frente e
+	# encolhe no ar.
+	legs[0].rotation = Vector3(s * LEG_SWING * _swing - _air * 0.35, 0.0, 0.0)
+	legs[1].rotation = Vector3(-s * LEG_SWING * _swing - _air * 0.75, 0.0, 0.0)
+	shins[0].rotation = Vector3(KNEE_BEND * _swing * (0.15 + maxf(0.0, -c)) + _air * 0.9, 0.0, 0.0)
+	shins[1].rotation = Vector3(KNEE_BEND * _swing * (0.15 + maxf(0.0, c)) + _air * 1.2, 0.0, 0.0)
 	# Corpo: quica a cada passo, rebola e respira parado.
 	var breathe := sin(_time * 2.2) * 0.018 * (1.0 - _swing)
 	body.position = _body_rest + Vector3(0.0, absf(s) * BOUNCE * _swing + _air * 0.04, 0.0)
@@ -119,21 +132,38 @@ func animate(delta: float, velocity: Vector3, airborne: bool, pitch: float, hold
 		_pose_arms(s * ARM_SWING * _swing, _air)
 
 
-## Braços soltos: balançam ao contrário das pernas e sobem no ar.
+## Braços soltos: balançam ao contrário das pernas (o cotovelo dobra mais quando o braço vai para
+## frente) e sobem no ar.
 func _pose_arms(swing: float, air: float) -> void:
 	for i in 2:
 		var side := -1.0 if i == 0 else 1.0
 		var splay := (ARM_SPLAY + air * 1.4) * side
 		var fwd := -swing if i == 0 else swing
 		arms[i].basis = Basis.from_euler(Vector3(fwd, 0.0, splay))
+		var elbow := ELBOW_REST + maxf(0.0, -fwd) * 0.8 + air * 0.3
+		forearms[i].basis = Basis.from_euler(Vector3(-elbow, 0.0, 0.0))
 		gloves[i].visible = true
 
 
-## Estica o braço `i` do ombro até `target` (no mundo) e esconde a luva do boneco.
+## IK de dois ossos: a mão do braço `i` vai até `target` (no mundo), com o cotovelo apontando
+## para baixo, para fora e um pouco para trás. Se não alcança, o braço estica reto na direção.
 func _reach(i: int, target: Vector3) -> void:
 	var arm := arms[i]
-	var local: Vector3 = (arm.get_parent() as Node3D).to_local(target) - arm.position
-	var length := maxf(local.length(), 0.05)
-	var aim := Basis(Quaternion(Vector3.DOWN, local / length))
-	arm.basis = aim * Basis.from_scale(Vector3(1.0, length / ARM_LEN, 1.0))
+	var parent := arm.get_parent() as Node3D
+	var shoulder := arm.position
+	var to_target := parent.to_local(target) - shoulder
+	var a := UPPER_ARM
+	var b := FOREARM
+	var dist := clampf(to_target.length(), 0.05, a + b - 0.001)
+	var aim := to_target.normalized() if to_target.length() > 0.001 else Vector3.DOWN
+	var side := -1.0 if i == 0 else 1.0
+	var pole := Vector3(side * 0.6, -1.0, -0.4)
+	var axis := aim.cross(pole)
+	axis = axis.normalized() if axis.length() > 0.001 else Vector3.RIGHT
+	var at_shoulder := acos(clampf((a * a + dist * dist - b * b) / (2.0 * a * dist), -1.0, 1.0))
+	var upper_dir := aim.rotated(axis, at_shoulder)
+	arm.basis = Basis(Quaternion(Vector3.DOWN, upper_dir))
+	var hand := shoulder + aim * dist
+	var fore_dir := (hand - (shoulder + upper_dir * a)).normalized()
+	forearms[i].basis = Basis(Quaternion(Vector3.DOWN, arm.basis.inverse() * fore_dir))
 	gloves[i].visible = false
