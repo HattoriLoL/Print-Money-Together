@@ -51,11 +51,14 @@ def _framed_door(p, x0, x1, z0, z1, y_face, mat, frame=0.055, depth=0.02, s=-1):
     para o lado `s`: chapa e quatro réguas por cima. Devolve a face da frente (para o puxador)."""
     yf = y_face + s * depth
     _ybox(p, x0, y_face, z0, x1, yf, z1, mat, 0.004)
-    yr = yf + s * 0.008
-    _ybox(p, x0, yf, z0, x0 + frame, yr, z1, mat, 0.003)
-    _ybox(p, x1 - frame, yf, z0, x1, yr, z1, mat, 0.003)
-    _ybox(p, x0 + frame, yf, z0, x1 - frame, yr, z0 + frame, mat, 0.003)
-    _ybox(p, x0 + frame, yf, z1 - frame, x1 - frame, yr, z1, mat, 0.003)
+    # Réguas chanfradas a 45° (de quina viva, de frente, o contorno delas saía pontilhado).
+    yr = yf + s * 0.01
+    face = "+y" if s > 0 else "-y"
+    ya, yb = min(yf, yr), max(yf, yr)
+    p.trim(x0, ya, z0, x0 + frame, yb, z1, mat, face, 0.009)
+    p.trim(x1 - frame, ya, z0, x1, yb, z1, mat, face, 0.009)
+    p.trim(x0 + frame, ya, z0, x1 - frame, yb, z0 + frame, mat, face, 0.009)
+    p.trim(x0 + frame, ya, z1 - frame, x1 - frame, yb, z1, mat, face, 0.009)
     return yr
 
 
@@ -177,31 +180,34 @@ def kitchen(coll):
 
 
 def fridge(coll):
-    """Geladeira duplex gorducha (exagero de desenho): larga, funda e com quinas bem redondas, com
-    o micro-ondas em cima. Cabe entre a parede e a bancada (x 0,04 a 0,76)."""
+    """Geladeira duplex gorducha (exagero de desenho): baixinha, larga e funda, de quinas bem
+    redondas, em quatro pezinhos, com puxadores cromados grandões e o micro-ondas em cima. Cabe
+    entre a parede e a bancada (x 0,04 a 0,76)."""
     p = Part(bevel=0.004)
-    w, d = 0.36, 0.42
-    p.box(-w, -d + 0.04, 0.05, w, d, 1.75, "M_PlasticWhite", bevel=0.12)
+    w, d, z0, top = 0.36, 0.39, 0.08, 1.38
+    p.box(-w, -d + 0.04, z0, w, d, top, "M_PlasticWhite", bevel=0.15)
+    for fx in (-w + 0.1, w - 0.1):
+        for fy in (-d + 0.12, d - 0.1):
+            p.cyl((fx, fy, z0 / 2 + 0.005), z0 + 0.01, 0.035, "M_PlasticBlack", seg=14, radius2=0.025)
     # Portas um pouco para dentro, para o miolo reto não furar a quina redonda.
-    p.box(-w + 0.1, -d, 1.29, w - 0.1, -d + 0.045, 1.68, "M_PlasticWhite", bevel=0.022)
-    p.box(-w + 0.1, -d, 0.12, w - 0.1, -d + 0.045, 1.268, "M_PlasticWhite", bevel=0.022)
-    p.box(-w + 0.06, -d + 0.02, 0.0, w - 0.06, d - 0.08, 0.06, "M_PlasticBlack", bevel=0.005)
-    for i in range(6):
-        x = -0.2 + i * 0.08
-        p.box(x - 0.025, -d + 0.018, 0.015, x + 0.025, -d + 0.022, 0.045, "M_Rubber", bevel=0)
-    # Puxadores verticais embutidos e o logotipo.
-    for z0, z1 in ((1.34, 1.56), (0.75, 1.15)):
-        p.box(0.2, -d - 0.025, z0, 0.23, -d + 0.01, z1, "M_PlasticWhite", bevel=0.012)
-        p.box(0.205, -d - 0.026, z0 + 0.02, 0.225, -d - 0.02, z1 - 0.02, "M_Metal", bevel=0.003)
-    p.box(-0.08, -d - 0.002, 1.62, 0.08, -d, 1.64, "M_Metal", bevel=0)
+    dx0, dx1 = -w + 0.12, w - 0.12
+    split = 0.98
+    p.box(dx0, -d, split + 0.02, dx1, -d + 0.045, top - 0.1, "M_PlasticWhite", bevel=0.022)
+    p.box(dx0, -d, z0 + 0.1, dx1, -d + 0.045, split, "M_PlasticWhite", bevel=0.022)
+    # Puxadores de barra cromados, grossos e compridos.
+    for zz0, zz1 in ((split + 0.06, top - 0.16), (z0 + 0.4, split - 0.05)):
+        for zz in (zz0, zz1):
+            p.box(0.16, -d - 0.04, zz - 0.012, 0.19, -d + 0.01, zz + 0.012, "M_Metal", bevel=0.006)
+        p.box(0.155, -d - 0.06, zz0 - 0.02, 0.195, -d - 0.035, zz1 + 0.02, "M_Metal", bevel=0.015)
+    p.box(-0.1, -d - 0.002, top - 0.15, 0.1, -d, top - 0.125, "M_Metal", bevel=0)
     # Ímãs, o cardápio da pizzaria e uma conta presa.
-    for mx, mz, mat in ((-0.15, 1.4, "M_Red"), (-0.05, 1.47, "M_Yellow"), (-0.2, 0.95, "M_PlasticBlue")):
-        p.cyl((mx, -d - 0.006, mz), 0.012, 0.022, mat, axis="Y", seg=12)
-    p.box(-0.12, -d - 0.002, 1.0, 0.08, -d, 1.25, "M_Paper", bevel=0)
-    p.box(-0.26, -d - 0.002, 0.82, -0.08, -d, 0.98, "M_Paper", bevel=0)
-    p.box(-0.26, -d - 0.003, 0.95, -0.08, -d - 0.002, 0.98, "M_Red", bevel=0)
+    for mx, mz, mat in ((-0.15, 1.1, "M_Red"), (-0.05, 1.17, "M_Yellow"), (-0.18, 0.72, "M_PlasticBlue")):
+        p.cyl((mx, -d - 0.006, mz), 0.012, 0.026, mat, axis="Y", seg=12)
+    p.box(-0.14, -d - 0.002, 0.7, 0.06, -d, 0.93, "M_Paper", bevel=0)
+    p.box(-0.22, -d - 0.002, 0.42, -0.04, -d, 0.58, "M_Paper", bevel=0)
+    p.box(-0.22, -d - 0.003, 0.55, -0.04, -d - 0.002, 0.58, "M_Red", bevel=0)
     # Micro-ondas: porta com visor escuro, painel de botões e puxador.
-    my0, my1, mz0, mz1 = -0.2, 0.17, 1.755, 2.03
+    my0, my1, mz0, mz1 = -0.2, 0.17, top + 0.005, top + 0.28
     p.box(-0.25, my0, mz0, 0.22, my1, mz1, "M_PlasticWhite", bevel=0.012)
     p.box(-0.24, my0 - 0.01, mz0 + 0.02, 0.08, my0 + 0.005, mz1 - 0.02, "M_PlasticBlack", bevel=0.008)
     p.box(-0.21, my0 - 0.012, mz0 + 0.05, 0.03, my0 - 0.01, mz1 - 0.05, "M_Glass", bevel=0)

@@ -85,6 +85,10 @@ func _run() -> void:
 	var wall: MeshInstance3D = kitnet.model.find_child("Walls_Kitnet", true, false)
 	_check(wall != null and wall.get_surface_override_material(0) is ShaderMaterial, "o mapa ganhou o visual de desenho (toon)")
 	_check(player.camera.get_node_or_null("Outline") != null, "a câmera tem o contorno preto")
+	var ceiling: MeshInstance3D = kitnet.model.find_child("Ceiling", true, false)
+	var ceiling_mat: Material = ceiling.get_surface_override_material(0) if ceiling != null else null
+	_check(ceiling_mat is ShaderMaterial and is_equal_approx(ceiling_mat.get_shader_parameter("toon_full_light"), 0.25),
+			"o teto aceita só parte da luz cheia (sem mancha clara em volta da lâmpada)")
 	await _shot("01_spawn")
 
 	# Olhar com o mouse de verdade (o evento passa pela interface antes de chegar ao jogador).

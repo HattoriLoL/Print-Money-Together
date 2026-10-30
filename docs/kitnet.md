@@ -57,6 +57,7 @@ A cortina da janela (`Curtain_Main`) fica meio aberta: dá para ver a impressora
 | `KEEP_Door_<n>` | Porta com a origem na dobradiça, folha para +X local, face de fora para -Y local: `301` (entrada, com olho mágico), `302`, `303`, `Stairs`, `Bath`. |
 | `KEEP_Breaker` | Quadro de luz ao lado da entrada. |
 | `LAMP_<zona>_<n>` e `M_Lamp_<zona>` | Luminária e o material que brilha com a zona ligada. Zonas: `main`, `kitchen`, `bath`, `service`, `hall`. |
+| `Cord_Lamp_<zona>_<n>` | Canopla, fio e bocal da lâmpada pelada: sem colisão, mas fazem sombra (a rodela escura no teto). |
 | `LIGHT_<zona>_<n>` | Luz pontual de prévia (vai no .glb e pode servir de base). |
 | `SPAWN_1` a `SPAWN_4` | Onde os jogadores nascem. |
 | `POINT_Knock` | Onde o fiscal para para bater na porta. |

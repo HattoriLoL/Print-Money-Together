@@ -9,6 +9,9 @@ extends RefCounted
 
 ## Quanto as texturas vão para a cor média (0 = como foram pintadas, 1 = cor lisa).
 const FLATTEN := 0.15
+## Materiais que aceitam só parte da luz cheia (o resto, 1). O teto fica pertinho da lâmpada
+## pelada e virava uma mancha clara enorme; num desenho ele é quase chapado.
+const FULL_LIGHT := {"M_Ceiling": 0.25}
 
 const CODE := """shader_type spatial;
 render_mode %s;
@@ -92,6 +95,7 @@ static func sync(mat: BaseMaterial3D) -> void:
 	toon.set_shader_parameter("emission_energy", mat.emission_energy_multiplier)
 	toon.set_shader_parameter("emission_tex", mat.emission_texture if lit else null)
 	toon.set_shader_parameter("alpha_scissor", mat.alpha_scissor_threshold)
+	toon.set_shader_parameter("toon_full_light", FULL_LIGHT.get(mat.resource_name, 1.0))
 
 
 static func apply_one(node: GeometryInstance3D) -> void:

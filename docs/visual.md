@@ -23,6 +23,18 @@ primeira pessoa.
    - geladeira gorducha (0,72 x 0,84 m, quinas de 12 cm) e TV de tubo enorme (1,1 m de largura,
      mais larga que o rack).
 
+4. **Feito:** acabamento do que já aparecia:
+   - contorno sem listras: a quina é procurada pixel a pixel no raio da linha (antes, pulando de
+     2 em 2, um sulco fino virava várias listras paralelas);
+   - frisos chanfrados a 45° (`Part.trim`) nas molduras das portas, almofadas dos armários e
+     guarnições: de quina viva, vistos de frente, sumiam entre os pixels e o contorno saía
+     pontilhado. Ainda sobra um pontilhado leve na régua que fica de costas para a câmera;
+   - teto com só 25% da luz cheia (`Toon.FULL_LIGHT`): a lâmpada pelada, pertinho dele, fazia uma
+     mancha clara enorme. O bocal e o fio (`Cord_Lamp_*`) fazem sombra: rodela escura no teto;
+   - caixas de pizza lisas de quina redonda (com aba e frisos o contorno deixava a pilha preta);
+   - geladeira mais baixa e gorda, em pezinhos, com puxadores cromados grandes e a fruteira em
+     cima do micro-ondas.
+
 ## Como funciona
 
 - **Paleta:** as cores ficam em `lib.MATERIALS` (`art_source/blender/lib.py`).
@@ -66,4 +78,5 @@ primeira pessoa.
 | Quanto as texturas perdem de detalhe no Godot | `Toon.FLATTEN` (0,15: elas já vêm pintadas) |
 | Quanto e como tudo entorta | `LAYERS` e `GRID` em `wonky.py` |
 | Grossura, cor e sensibilidade do contorno | uniforms do `outline.gdshader` |
+| Quanto da luz cheia cada material aceita (o teto) | `Toon.FULL_LIGHT` |
 | Cor e força do tom de sombra | `ambient_light_*` em `kitnet._build_environment` |

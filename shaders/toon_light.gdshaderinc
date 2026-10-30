@@ -8,11 +8,14 @@ const float TOON_MID = 0.025;   // a partir daqui, meia-luz
 const float TOON_FULL = 0.28;   // a partir daqui, luz cheia
 const float TOON_EDGE = 0.04;   // largura da borda entre os tons (menos que isso, a sombra chia)
 const float TOON_MID_LEVEL = 0.45;
+// Quanto da luz cheia o material aceita (Toon.FULL_LIGHT). O teto fica a meio palmo da lâmpada
+// pelada e, com tudo, virava uma mancha clara enorme.
+uniform float toon_full_light = 1.0;
 
 void light() {
 	float lit = clamp(dot(NORMAL, LIGHT), 0.0, 1.0) * ATTENUATION;
 	float band = TOON_MID_LEVEL * smoothstep(TOON_MID, TOON_MID + TOON_EDGE, lit)
-			+ (1.0 - TOON_MID_LEVEL) * smoothstep(TOON_FULL, TOON_FULL + TOON_EDGE, lit);
+			+ (1.0 - TOON_MID_LEVEL) * toon_full_light * smoothstep(TOON_FULL, TOON_FULL + TOON_EDGE, lit);
 	DIFFUSE_LIGHT += LIGHT_COLOR * band / PI;
 	if (ROUGHNESS < 0.5) {
 		vec3 half_dir = normalize(VIEW + LIGHT);

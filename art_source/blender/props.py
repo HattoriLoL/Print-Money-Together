@@ -73,10 +73,11 @@ def kitchen(coll):
             x = 3.3 + j * 0.058
             z = 1.34 + i * 0.065
             p.box(x, 0.004, z, x + 0.045, 0.0055, z + 0.045, "M_ClothGray" if (i + j) % 7 else "M_Red")
-    # Fruteira em cima da geladeira, ao lado do micro-ondas.
-    p.cyl((0.6, 0.22, 1.79), 0.06, 0.1, "M_PlasticWhite", seg=14, radius2=0.08)
+    # Fruteira equilibrada em cima do micro-ondas, que fica em cima da geladeira.
+    fx, fy, fz = 0.42, 0.42, 1.665
+    p.cyl((fx, fy, fz + 0.03), 0.06, 0.1, "M_PlasticWhite", seg=14, radius2=0.08)
     for dx, dy, mat in ((-0.03, 0.0, "M_Red"), (0.03, 0.02, "M_Yellow"), (0.0, -0.04, "M_Green")):
-        p.cyl((0.6 + dx, 0.22 + dy, 1.84), 0.06, 0.035, mat, seg=10)
+        p.cyl((fx + dx, fy + dy, fz + 0.08), 0.06, 0.035, mat, seg=10)
     p.finish("Props_Kitchen", coll)
 
 
@@ -140,8 +141,9 @@ def _pizza_stack(p, x, y, z, n, rot):
     h = 0.06
     for i in range(n):
         m = Matrix.Translation((x, y, z + h * i + h / 2)) @ Matrix.Rotation(rot + (i % 2 - 0.5) * 0.12 * (i + 1), 4, "Z")
-        p.box_m((0.36, 0.36, h), m, "M_PizzaBox", bevel=0.004)
-        p.box_m((0.368, 0.368, 0.004), m @ Matrix.Translation((0, 0, 0.016)), "M_Cardboard", bevel=0.001)
+        # Caixa lisa, de quina bem redonda: com aba e frisos finos, o contorno enchia a lateral de
+        # linhas e a pilha ficava preta.
+        p.box_m((0.36, 0.36, h - 0.002), m, "M_PizzaBox", bevel=0.012)
     top = z + h * n
     m = Matrix.Translation((x, y, top)) @ Matrix.Rotation(rot + (((n - 1) % 2) - 0.5) * 0.12 * n, 4, "Z")
     c = [m @ Matrix.Translation((sx * 0.17, sy * 0.17, 0.0015)).translation for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]

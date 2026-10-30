@@ -51,14 +51,27 @@ void fragment() {
 	float around = inv_depth(p - dx, size, INV_PROJECTION_MATRIX) + inv_depth(p + dx, size, INV_PROJECTION_MATRIX)
 			+ inv_depth(p - dy, size, INV_PROJECTION_MATRIX) + inv_depth(p + dy, size, INV_PROJECTION_MATRIX);
 	float depth_edge = smoothstep(depth_threshold, depth_threshold * 1.5, abs(around - 4.0 * c) / c);
+	// Mesmo problema no degrau fino (corrente, ferrolho): olha também a meio caminho.
+	if (t > 1) {
+		ivec2 hx = dx / 2;
+		ivec2 hy = dy / 2;
+		float near_around = inv_depth(p - hx, size, INV_PROJECTION_MATRIX) + inv_depth(p + hx, size, INV_PROJECTION_MATRIX)
+				+ inv_depth(p - hy, size, INV_PROJECTION_MATRIX) + inv_depth(p + hy, size, INV_PROJECTION_MATRIX);
+		depth_edge = max(depth_edge, smoothstep(depth_threshold, depth_threshold * 1.5, abs(near_around - 4.0 * c) / c));
+	}
 
-	// A quina olha os 8 vizinhos: uma quina arredondada com 1 pixel de largura escapava ora de
-	// um, ora de outro, e a linha saía pontilhada.
+	// A quina olha todos os pixels num disco do raio da linha. Pulando de t em t, um sulco de 1
+	// pixel (moldura de porta, fresta de armário) era achado só a cada t pixels e virava várias
+	// listras finas paralelas. Em telas grandes o passo cresce para não pesar (no máximo ~30
+	// amostras).
 	vec3 n = normal_at(p, size);
 	float bend = 0.0;
-	for (int i = -1; i <= 1; i++) {
-		for (int j = -1; j <= 1; j++) {
-			bend = max(bend, 1.0 - dot(n, normal_at(p + ivec2(i, j) * t, size)));
+	int step_px = max(1, t / 3);
+	for (int i = -t; i <= t; i += step_px) {
+		for (int j = -t; j <= t; j += step_px) {
+			if (i * i + j * j <= t * t) {
+				bend = max(bend, 1.0 - dot(n, normal_at(p + ivec2(i, j), size)));
+			}
 		}
 	}
 	float normal_edge = smoothstep(normal_threshold, normal_threshold * 1.3, bend);

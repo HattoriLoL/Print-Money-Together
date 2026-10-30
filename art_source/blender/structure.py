@@ -255,23 +255,35 @@ def windows(coll):
     p.finish("Curtain_Main", coll)
 
 
+# Altura das molduras das almofadas das portas (as trancas da 301 nascem em cima delas).
+MOLDING = 0.01
+
+
 def _door_frame(p, axis, t0, t1, a0, a1, h, mat):
     """Batente dentro do vão e guarnição saltada nas duas faces."""
-    gw, gp, lt = 0.06, 0.012, 0.02
+    gw, gp, lt = 0.06, 0.016, 0.02
 
-    def bx(s0, s1, u0, u1, z0, z1):
+    def bx(s0, s1, u0, u1, z0, z1, side=None):
+        if side is None:
+            if axis == "x":
+                p.box(s0, u0, z0, s1, u1, z1, mat)
+            else:
+                p.box(u0, s0, z0, u1, s1, z1, mat)
+            return
+        # Guarnição: friso chanfrado virado para fora da parede.
+        face = ("+" if side > 0 else "-") + ("y" if axis == "x" else "x")
         if axis == "x":
-            p.box(s0, u0, z0, s1, u1, z1, mat)
+            p.trim(s0, u0, z0, s1, u1, z1, mat, face, 0.012)
         else:
-            p.box(u0, s0, z0, u1, s1, z1, mat)
+            p.trim(u0, s0, z0, u1, s1, z1, mat, face, 0.012)
 
     bx(a0, a0 + lt, t0, t1, 0, h)
     bx(a1 - lt, a1, t0, t1, 0, h)
     bx(a0, a1, t0, t1, h - lt, h)
-    for u0, u1 in ((t0 - gp, t0), (t1, t1 + gp)):
-        bx(a0 - gw, a0, u0, u1, 0, h + gw)
-        bx(a1, a1 + gw, u0, u1, 0, h + gw)
-        bx(a0 - gw, a1 + gw, u0, u1, h, h + gw)
+    for u0, u1, side in ((t0 - gp, t0, -1), (t1, t1 + gp, 1)):
+        bx(a0 - gw, a0, u0, u1, 0, h + gw, side)
+        bx(a1, a1 + gw, u0, u1, 0, h + gw, side)
+        bx(a0 - gw, a1 + gw, u0, u1, h, h + gw, side)
 
 
 def _door_locks(p, w, y0):
@@ -317,16 +329,17 @@ def _leaf(name, coll, hinge, rot_z, width, mat, number=None, peephole=False, pus
     w = width - 0.04
     p = Part(bevel=0.003)
     p.box(0, -t / 2, 0.01, w, t / 2, h, mat)
-    # Duas almofadas em cada face (porta de madeira) com moldura saltada de 6 mm.
+    # Duas almofadas em cada face (porta de madeira) com moldura chanfrada saltada de 1 cm.
     if not push_bar:
-        m = 0.02
+        m, mh = 0.035, MOLDING
         for side in (-1, 1):
-            y0, y1 = sorted((side * t / 2, side * (t / 2 + 0.006)))
+            y0, y1 = sorted((side * t / 2, side * (t / 2 + mh)))
+            face = "+y" if side > 0 else "-y"
             for (px0, pz0, px1, pz1) in ((0.1, 0.15, w - 0.1, 0.98), (0.1, 1.12, w - 0.1, h - 0.12)):
-                p.box(px0, y0, pz0, px1, y1, pz0 + m, mat)
-                p.box(px0, y0, pz1 - m, px1, y1, pz1, mat)
-                p.box(px0, y0, pz0 + m, px0 + m, y1, pz1 - m, mat)
-                p.box(px1 - m, y0, pz0 + m, px1, y1, pz1 - m, mat)
+                p.trim(px0, y0, pz0, px1, y1, pz0 + m, mat, face, mh)
+                p.trim(px0, y0, pz1 - m, px1, y1, pz1, mat, face, mh)
+                p.trim(px0, y0, pz0 + m, px0 + m, y1, pz1 - m, mat, face, mh)
+                p.trim(px1 - m, y0, pz0 + m, px1, y1, pz1 - m, mat, face, mh)
     # Dobradiças do lado da origem.
     for z in (0.25, 1.05, h - 0.2):
         p.box(-0.006, -0.012, z - 0.05, 0.012, 0.012, z + 0.05, "M_Metal", bevel=0.002)
@@ -343,7 +356,7 @@ def _leaf(name, coll, hinge, rot_z, width, mat, number=None, peephole=False, pus
     if peephole:
         p.cyl((w / 2, 0, 1.55), t + 0.02, 0.012, "M_Metal", axis="Y", seg=10)
     if locks:
-        _door_locks(p, w, t / 2 + 0.006)
+        _door_locks(p, w, t / 2 + MOLDING)
     if push_bar:
         p.box(0.1, t / 2, 0.98, w - 0.08, t / 2 + 0.05, 1.04, "M_Metal")
         p.box(0.04, -t / 2 - 0.003, 1.3, w - 0.04, -t / 2, 1.9, "M_PlasticWhite")
@@ -389,11 +402,16 @@ def _bare_bulb(coll, name, loc, cord, size, zone=None):
     lamp = f"M_Lamp_{zone}"
     r = 0.055 * size
     top = -cord - 0.05
+    # Canopla, fio e bocal ficam numa malha à parte (Cord_) que faz sombra: o bocal tapa a luz que
+    # sobe e deixa uma rodela escura no teto em cima da lâmpada, como numa lâmpada pelada de
+    # verdade (sem ela, o teto em volta virava uma mancha clara enorme).
+    c = Part()
+    c.cyl((0, 0, -0.012), 0.024, 0.045, "M_PlasticWhite", seg=20)
+    c.cyl((0, 0, -cord / 2), cord, 0.004, "M_PlasticBlack", seg=6)
+    c.cyl((0, 0, top + 0.012), 0.07, 0.03, "M_PlasticBlack", seg=14)
+    c.cyl((0, 0, top - 0.035), 0.03, 0.026, "M_Metal", seg=14, radius2=0.03)
+    c.finish(f"Cord_Lamp_{name}", coll, loc=loc)
     p = Part()
-    p.cyl((0, 0, -0.012), 0.024, 0.045, "M_PlasticWhite", seg=20)
-    p.cyl((0, 0, -cord / 2), cord, 0.004, "M_PlasticBlack", seg=6)
-    p.cyl((0, 0, top + 0.012), 0.07, 0.022, "M_PlasticBlack", seg=14)
-    p.cyl((0, 0, top - 0.035), 0.03, 0.02, "M_Metal", seg=14, radius2=0.026)
     p.cyl((0, 0, top - 0.058), 0.02, 0.026, lamp, seg=14, radius2=r * 0.7)
     p.rounded(-r, -r, top - 0.07 - 2 * r, r, r, top - 0.07, lamp, r * 0.95)
     p.finish(f"LAMP_{name}", coll, loc=loc)

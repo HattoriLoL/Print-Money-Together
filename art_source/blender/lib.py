@@ -240,6 +240,25 @@ class Part:
                             profile=0.5, affect="EDGES", clamp_overlap=True, material=self._index(mat))
             self._beveled = True
 
+    def trim(self, x0, y0, z0, x1, y1, z1, mat, face, chamfer):
+        """Friso (moldura, guarnição): caixa com as quinas da face `face` ('+y', '-x'...)
+        chanfradas a 45°. Um friso fino de quina viva, visto de frente, some entre os pixels e o
+        contorno sai pontilhado; o chanfro aparece com alguns pixels de largura."""
+        size = Vector((abs(x1 - x0), abs(y1 - y0), abs(z1 - z0)))
+        center = Vector(((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2))
+        res = bmesh.ops.create_cube(self.bm, size=1.0, matrix=Matrix.Translation(center) @ Matrix.Diagonal((*size, 1.0)))
+        self._tag(res["verts"], mat)
+        axis = "xyz".index(face[1])
+        sign = 1.0 if face[0] == "+" else -1.0
+        verts = set(res["verts"])
+        self.bm.normal_update()
+        front = next(f for f in self.bm.faces if set(f.verts) <= verts and f.normal[axis] * sign > 0.99)
+        width = min(s for i, s in enumerate(size) if i != axis)
+        b = min(chamfer, size[axis] * 0.9, width * 0.45)
+        bmesh.ops.bevel(self.bm, geom=list(front.edges), offset=b, segments=1, profile=0.5,
+                        affect="EDGES", clamp_overlap=True, material=self._index(mat))
+        self._beveled = True
+
     def rounded(self, x0, y0, z0, x1, y1, z1, mat, radius):
         """Caixa bem arredondada (almofada, vaso sanitário, CRT)."""
         self.box(x0, y0, z0, x1, y1, z1, mat, bevel=radius)

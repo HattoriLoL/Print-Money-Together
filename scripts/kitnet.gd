@@ -20,9 +20,9 @@ const Toon := preload("res://scripts/toon.gd")
 
 ## Portas que os jogadores não abrem (vizinhos e a escada, por onde o fiscal vai chegar).
 const LOCKED_DOORS := ["302", "303", "Stairs"]
-## Malhas sem colisão: luminárias, panos, o varal (acima da cabeça), as pás do ventilador,
+## Malhas sem colisão: luminárias (e o fio da lâmpada pelada), panos, o varal (acima da cabeça), as pás do ventilador,
 ## as manchas e tudo lá fora.
-const NO_COLLISION := ["LAMP_", "Curtain_", "MACHINE_ClothesLine", "MACHINE_Fan_Blades", "Decal_", "Newspaper_", "Outside_"]
+const NO_COLLISION := ["LAMP_", "Cord_", "Curtain_", "MACHINE_ClothesLine", "MACHINE_Fan_Blades", "Decal_", "Newspaper_", "Outside_"]
 ## Malhas que não fazem sombra (as manchas ficam a 3 mm da parede; lá fora é só fundo).
 const NO_SHADOW := ["LAMP_", "Decal_", "Outside_"]
 ## Luz de cada zona (LIGHT_<zona>_<n> do modelo): alcance (m), energia e sombra.
