@@ -194,6 +194,9 @@ func _test_printer(kitnet: Node3D, player: CharacterBody3D) -> void:
 	var held: Node = player.held_item()
 	_check(held != null and held.kind == "ream", "pegou uma resma")
 	_check(supply.stock == stock_before - 1, "o estoque de resmas baixou")
+	await _look(player, Vector3(3.0, 0, -2.6), Vector3(1.0, 1.2, -1.5), "10_resma_na_mao")
+	var hands_ok: bool = player._hands.size() == 2 and player._hands.all(func(h): return h.visible)
+	_check(hands_ok, "as luvas aparecem segurando a resma")
 
 	# Carregar no alimentador de trás.
 	player.global_position = Vector3(2.3, 0.05, -3.9)
@@ -235,6 +238,7 @@ func _test_printer(kitnet: Node3D, player: CharacterBody3D) -> void:
 	_check(player.held_item() == sheet, "pegou a folha")
 	_check(not printer.output_slots.has(sheet.id), "a vaga da bandeja liberou")
 	await _look(player, Vector3(2.3, 0, -3.4), Vector3(2.3, 0.4, -4.4), "13_folha_na_mao")
+	await _look(player, Vector3(3.2, 0, -2.4), Vector3(0.5, 1.3, -1.8), "14_folha_contra_a_luz")
 	player.global_position = Vector3(3.0, 0.05, -2.5)
 	player.rotation.y = 0.0
 	player.head.rotation.x = 0.0
@@ -243,6 +247,8 @@ func _test_printer(kitnet: Node3D, player: CharacterBody3D) -> void:
 	await create_timer(1.5).timeout
 	_check(player.held_item() == null and sheet.holder == 0, "soltou a folha")
 	_check(sheet.global_position.y < 0.1, "a folha caiu no chão (y %.2f)" % sheet.global_position.y)
+	_check(not player._hands[0].visible, "de mão vazia as luvas somem")
+	await _look(player, Vector3(3.0, 0, -2.0), sheet.global_position, "15_folha_no_chao")
 
 	# Sem papel: o LED âmbar acende e o visor avisa.
 	printer.paper = 0

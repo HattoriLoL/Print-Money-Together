@@ -6,14 +6,40 @@ máquinas ainda são só o modelo.
 
 ## Objetos carregáveis
 
-`scripts/items/`. Cada jogador segura um objeto por vez, no ponto `Hold` na frente da câmera.
-[E] pega e [G] solta (o objeto sai na frente do jogador, ou rente à parede se ela estiver no
-caminho).
+`scripts/items/`. Cada jogador segura um objeto por vez. [E] pega e [G] solta (o objeto sai na
+frente do jogador, ou rente à parede se ela estiver no caminho).
 
 | Tipo | O que é |
 |---|---|
-| `ream` | Resma de papel. Na impressora, vira `sheets_per_ream` folhas. |
-| `sheet` | Folha A4 impressa com 2 x 3 notas (`assets/textures/bill.png`, gerada pelo build do Blender). `data.wet` = ainda molhada da impressora. |
+| `ream` | Resma de papel embrulhada (marca fictícia OFFICE+). Na impressora, vira `sheets_per_ream` folhas. |
+| `sheet` | Folha A4 impressa com 2 x 3 notas, frente e verso. `data.wet` = tinta ainda fresca: mais escura e brilhando. |
+
+### Na mão
+
+- O item fica no ponto `Hold`, na frente da câmera (`player.HOLD_REST`), com a pose de `ItemKinds.hold_offset`. A folha fica inclinada para quem segura ver as notas; a resma, um pouco virada para mostrar a tampa.
+- Ao pegar, o item **voa até a mão**. Ao virar a câmera, ele vem **um pouco atrás**. Perto da parede, o ponto `Hold` **recua** para o item não atravessar.
+- Com algo na mão aparecem as **luvas amarelas de borracha** (`assets/models/hands.glb`), segurando o item:
+  - A folha fica presa entre o polegar e o indicador, nos cantos de perto; a resma, apertada pelos lados (`ItemKinds.hand_offset`).
+  - A manga do moletom tem a cor da vaga do jogador.
+  - Os outros jogadores também veem as luvas.
+- A folha usa o shader `shaders/paper.gdshader`:
+  - Na mão, a borda de longe cai um pouco e a folha tremula mais quanto mais rápido quem segura anda.
+  - Apoiada, as pontas levantam de leve.
+  - A fibra do papel aparece na luz.
+
+### De onde vêm
+
+- **As texturas do papel**: o `art_source/paper_textures.py` desenha a nota (frente com a capivara, verso com o prédio da kitnet), a folha A4 (6 notas, marcas de corte e barra de cores), a fibra do papel e a embalagem da resma. Ele roda com o Python do sistema e o Pillow, não no Blender. As decorações do mapa (varal, guilhotina) usam a mesma folha.
+
+  ```
+  python art_source/paper_textures.py
+  ```
+
+- **As luvas**: o `art_source/blender/hands.py` monta e exporta, com a origem no pulso. Os dedos apontam para -Z e a palma para baixo.
+
+  ```
+  blender --background --python art_source/blender/hands.py -- --export
+  ```
 
 Na rede, o host manda em tudo:
 

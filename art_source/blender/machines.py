@@ -204,7 +204,7 @@ def guillotine(coll):
     p.box(0.2, 0.12, 0.05, 0.25, 0.18, 0.1, "M_MetalDark")      # pivô
     # Folha impressa esperando o corte.
     p.quad(((-0.23, -0.17, 0.032), (0.067, -0.17, 0.032), (0.067, 0.04, 0.032), (-0.23, 0.04, 0.032)),
-           "M_MoneySheet", uvs=((0, 0), (2, 0), (2, 3), (0, 3)))
+           "M_MoneySheet", uvs=((0, 0), (1, 0), (1, 1), (0, 1)))
     base = p.finish("MACHINE_Guillotine", coll, loc=(2.25, 2.0, table_z), rot_z=0.15)
 
     arm = Part(bevel=0.003)
@@ -279,7 +279,7 @@ def clothesline(coll):
             sway = 0.012 * math.sin(yc * 7)
             a, b = yc - sw / 2, yc + sw / 2
             p.quad(((x + sway, a, z - sh), (x + sway, b, z - sh), (x, b, z - 0.004), (x, a, z - 0.004)),
-                   "M_MoneySheet", uvs=((0, 0), (2, 0), (2, 3), (0, 3)))
+                   "M_MoneySheet", uvs=((0, 0), (1, 0), (1, 1), (0, 1)))
             for pin_y in (a + 0.04, b - 0.04):
                 p.box(x - 0.008, pin_y - 0.006, z - 0.03, x + 0.008, pin_y + 0.006, z + 0.012, "M_PlasticBlue")
     p.finish("MACHINE_ClothesLine", coll)

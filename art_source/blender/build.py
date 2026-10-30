@@ -77,26 +77,11 @@ def run(export=False):
     for module in parts:
         module.build(colls)
     world()
-    save_bill_texture()
     bpy.context.scene.unit_settings.system = "METRIC"
     bpy.ops.wm.save_mainfile()
     if export:
         export_glb()
     print(f"kitnet: {len(bpy.data.objects)} objetos")
-
-
-def save_bill_texture():
-    """A nota desenhada pelo lib.py também vai para assets/textures/bill.png: as folhas que a
-    impressora solta no jogo são objetos do Godot e usam essa imagem."""
-    import lib
-    src = lib.money_image()
-    out = bpy.data.images.new("bill_export", *src.size)
-    out.pixels.foreach_set(src.pixels[:])
-    out.filepath_raw = os.path.join(ROOT, "assets", "textures", "bill.png")
-    out.file_format = "PNG"
-    os.makedirs(os.path.dirname(out.filepath_raw), exist_ok=True)
-    out.save()
-    bpy.data.images.remove(out)
 
 
 def export_glb(path=GLB):

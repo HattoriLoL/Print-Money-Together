@@ -92,14 +92,7 @@ func _ready() -> void:
 	_feeding = Node3D.new()
 	_feeding.rotation.y = PI / 2
 	_feeding.visible = false
-	for flip in [false, true]:
-		var quad := QuadMesh.new()
-		quad.size = Vector2(0.297, 0.21)
-		quad.material = ItemKinds.sheet_material(true)
-		var mesh := MeshInstance3D.new()
-		mesh.mesh = quad
-		mesh.rotation.x = PI / 2 if flip else -PI / 2
-		_feeding.add_child(mesh)
+	_feeding.add_child(ItemKinds.sheet_mesh_instance(true))
 	add_child(_feeding)
 
 	if multiplayer.is_server():

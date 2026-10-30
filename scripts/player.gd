@@ -7,13 +7,18 @@ extends CharacterBody3D
 ##   get_prompt(player) -> String   texto na tela ("" = nada a fazer)
 ##   interact(player)               [E] apertado
 ##   is_hold + begin_hold/end_hold  segurar [E] (zonas das máquinas: manivela, portinhola)
-## Carrega um item por vez no ponto Hold (na frente da câmera); [G] solta.
+## Carrega um item por vez no ponto Hold (na frente da câmera); [G] solta. Com algo na mão
+## aparecem as luvas (hands.glb, manga na cor da vaga) segurando o item, para todos verem. No
+## jogador local o ponto Hold balança atrasado quando a câmera vira e recua perto da parede.
 ##
 ## Camadas de colisão: 1 = mundo, 2 = jogadores (um esbarra no outro), 3 = itens,
 ## 4 = zonas de interação. A mira acerta mundo, itens e zonas.
 
 const Hud := preload("res://scripts/hud.gd")
 const ItemKinds := preload("res://scripts/items/item_kinds.gd")
+const HandsModel := preload("res://assets/models/hands.glb")
+## Onde o item fica na frente da câmera, parado.
+const HOLD_REST := Vector3(0.0, -0.25, -0.46)
 ## Quantas vezes por segundo o dono manda o estado para os outros.
 const SEND_RATE := 30.0
 ## Quão rápido os bonecos dos outros alcançam a última posição recebida.
@@ -56,6 +61,10 @@ var _body: Node3D
 var _tag: Label3D
 ## Zona em que o [E] está sendo segurado agora (só no jogador local).
 var _hold_zone: Node = null
+## Luvas: [direita, esquerda].
+var _hands: Array[MeshInstance3D] = []
+## Balanço do item na mão com o mouse (só no jogador local).
+var _sway := Vector2.ZERO
 
 @onready var head: Node3D = $Head
 @onready var camera: Camera3D = $Head/Camera3D
@@ -83,6 +92,8 @@ func _ready() -> void:
 	_target_position = position
 	_target_yaw = rotation.y
 	_build_body()
+	_build_hands()
+	hold_point.position = HOLD_REST
 	if is_local():
 		_setup_input()
 		camera.make_current()
@@ -105,6 +116,13 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and _has_control():
 		rotate_y(-event.relative.x * mouse_sensitivity)
 		head.rotation.x = clampf(head.rotation.x - event.relative.y * mouse_sensitivity, -1.5, 1.5)
+		_sway = (_sway + event.relative * 0.004).limit_length(1.0)
+
+
+func _process(delta: float) -> void:
+	if is_local():
+		_update_hold_point(delta)
+	_update_hands()
 
 
 func _physics_process(delta: float) -> void:
@@ -205,6 +223,61 @@ func _update_interaction() -> void:
 	if _has_control() and held != null and Input.is_action_just_pressed("drop"):
 		_drop_held()
 	hud.set_carry("" if held == null else "%s   [G] drop" % ItemKinds.label(held).capitalize())
+
+
+## Ponto Hold do jogador local: vem atrasado quando a câmera vira (o item "pesa") e recua
+## quando a parede está perto, para o item não atravessar.
+func _update_hold_point(delta: float) -> void:
+	_sway = _sway.lerp(Vector2.ZERO, clampf(9.0 * delta, 0.0, 1.0))
+	var reach := HOLD_REST.z
+	var from := camera.global_position
+	var query := PhysicsRayQueryParameters3D.create(from, from - camera.global_basis.z * 0.8, 1)
+	query.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if not hit.is_empty():
+		reach = -clampf(from.distance_to(hit.position) - 0.3, 0.2, -HOLD_REST.z)
+	var t := clampf(12.0 * delta, 0.0, 1.0)
+	var target := Vector3(HOLD_REST.x - _sway.x * 0.035, HOLD_REST.y + _sway.y * 0.03, reach)
+	hold_point.position = hold_point.position.lerp(target, t)
+	hold_point.rotation = hold_point.rotation.lerp(Vector3(_sway.y * 0.12, -_sway.x * 0.2, -_sway.x * 0.12), t)
+
+
+## Luvas segurando o item: cada uma no lugar de ItemKinds.hand_offset, em cima da pose atual do
+## item (os itens processam antes dos jogadores).
+func _update_hands() -> void:
+	var held := held_item()
+	for i in _hands.size():
+		var hand := _hands[i]
+		hand.visible = held != null
+		if held != null:
+			hand.global_transform = held.global_transform * ItemKinds.hand_offset(held.kind, 1 if i == 0 else -1)
+
+
+func _build_hands() -> void:
+	var model := HandsModel.instantiate()
+	var sleeve := StandardMaterial3D.new()
+	sleeve.albedo_color = Net.PLAYER_COLORS[slot].lightened(0.15)
+	sleeve.roughness = 0.95
+	var cuff := StandardMaterial3D.new()
+	cuff.albedo_color = Net.PLAYER_COLORS[slot].darkened(0.25)
+	cuff.roughness = 0.95
+	for hand_name in ["Hand_R", "Hand_L"]:
+		var hand: MeshInstance3D = model.find_child(hand_name, true, false)
+		hand.get_parent().remove_child(hand)
+		hand.owner = null
+		hand.top_level = true
+		hand.visible = false
+		for i in hand.mesh.get_surface_count():
+			var mat_name := String(hand.mesh.surface_get_material(i).resource_name)
+			if mat_name == "M_Sleeve":
+				hand.set_surface_override_material(i, sleeve)
+			elif mat_name == "M_SleeveCuff":
+				hand.set_surface_override_material(i, cuff)
+		if is_local():
+			hand.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(hand)
+		_hands.append(hand)
+	model.free()
 
 
 ## Solta o item na frente do jogador, ou rente à parede se ela estiver no caminho.

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dyexnywqghcia"
-path="res://.godot/imported/bill.png-2f7d76d0e6c7059be184b75e7152cb88.ctex"
+uid="uid://4qi433rn3tpb"
+path="res://.godot/imported/sheet_front.png-180711dfa38ca349ed6940a75e576b20.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/textures/bill.png"
-dest_files=["res://.godot/imported/bill.png-2f7d76d0e6c7059be184b75e7152cb88.ctex"]
+source_file="res://assets/textures/sheet_front.png"
+dest_files=["res://.godot/imported/sheet_front.png-180711dfa38ca349ed6940a75e576b20.ctex"]
 
 [params]
 

@@ -1,6 +1,7 @@
 """Peças básicas do gerador: materiais, malhas montadas de caixas e cilindros, e a textura da cédula."""
 
 import math
+import os
 
 import bmesh
 import bpy
@@ -155,68 +156,21 @@ def material(name):
     return mat
 
 
-# --- Cédula -------------------------------------------------------------------------------------
-# A "nota de 100" é desenhada pixel a pixel (sem fonte nem arquivo externo) e fica embutida no
-# .blend. Uma folha impressa tem 2 x 2 notas: o UV da folha vai de 0 a 2.
+# --- Cédula ---------------------------------------------------------------------------------------
+# A folha A4 impressa (2 x 3 notas) vem de assets/textures/sheet_front.png, desenhada pelo
+# art_source/paper_textures.py; os quads de folha usam UV de 0 a 1.
 
-BILL_W, BILL_H = 256, 128
-
-
-def money_image():
-    img = bpy.data.images.get("T_Bill")
-    if img is not None:
-        return img
-    img = bpy.data.images.new("T_Bill", BILL_W, BILL_H, alpha=False)
-    base = (0.62, 0.76, 0.52)
-    dark = (0.18, 0.36, 0.2)
-    mid = (0.4, 0.58, 0.36)
-    gold = (0.85, 0.7, 0.25)
-    px = []
-    for y in range(BILL_H):
-        for x in range(BILL_W):
-            c = base
-            # Guilhoché: ondas finas no fundo.
-            if (int(6 * math.sin(x * 0.12) + y) % 9) == 0:
-                c = mid
-            # Borda dupla.
-            if x < 6 or x >= BILL_W - 6 or y < 6 or y >= BILL_H - 6:
-                c = dark
-            elif 10 <= x < 12 or BILL_W - 12 <= x < BILL_W - 10 or 10 <= y < 12 or BILL_H - 12 <= y < BILL_H - 10:
-                c = dark
-            # Retrato oval no meio-esquerda.
-            dx, dy = (x - 88) / 34.0, (y - 64) / 44.0
-            r = dx * dx + dy * dy
-            if r < 1.0:
-                c = mid if r > 0.8 else (0.5, 0.66, 0.44)
-                if r < 0.45 and dy > -0.3 - 0.1 * abs(dx * 6):  # "cabeça e ombros"
-                    c = dark if (r < 0.2 or dy > 0.35) else mid
-            # Selo dourado à direita.
-            sx, sy = x - 200, y - 82
-            if sx * sx + sy * sy < 18 * 18:
-                c = gold if (sx * sx + sy * sy) > 9 * 9 or (abs(sx) + abs(sy)) % 5 else dark
-            # "100" em blocos no canto superior esquerdo e inferior direito.
-            for ox, oy in ((22, 92), (172, 20)):
-                lx, ly = x - ox, y - oy
-                if 0 <= lx < 52 and 0 <= ly < 20:
-                    d = lx // 18
-                    lx2 = lx - d * 18
-                    if d == 0 and 4 <= lx2 < 8:
-                        c = dark
-                    elif d > 0 and lx2 < 14 and (lx2 < 4 or lx2 >= 10 or ly < 4 or ly >= 16):
-                        c = dark
-            px.extend((*c, 1.0))
-    img.pixels.foreach_set(px)
-    img.pack()
-    return img
+SHEET_TEXTURE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                             "assets", "textures", "sheet_front.png")
 
 
 def _setup_money_sheet(mat, bsdf):
     tex = mat.node_tree.nodes.new("ShaderNodeTexImage")
-    tex.image = money_image()
+    tex.image = bpy.data.images.load(SHEET_TEXTURE, check_existing=True)
     tex.interpolation = "Linear"
     mat.node_tree.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
     bsdf.inputs["Roughness"].default_value = 0.75
-    mat.diffuse_color = (0.55, 0.7, 0.48, 1.0)
+    mat.diffuse_color = (0.75, 0.82, 0.72, 1.0)
 
 
 # --- Malhas ---------------------------------------------------------------------------------------

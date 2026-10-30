@@ -32,8 +32,10 @@ func _ready() -> void:
 	_message.modulate.a = 0.0
 	_place(_message, Vector2(0.5, 0.3), Rect2(-500, -60, 1000, 120))
 
+	# No canto de baixo à esquerda: no meio ficaria em cima do que está na mão.
 	_carry = _label(17)
-	_place(_carry, Vector2(0.5, 1.0), Rect2(-300, -76, 600, 26))
+	_carry.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_place(_carry, Vector2(0.0, 1.0), Rect2(20, -48, 500, 26))
 
 	_hint = _label(14)
 	_hint.modulate.a = 0.0
