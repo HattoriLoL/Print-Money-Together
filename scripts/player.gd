@@ -19,6 +19,7 @@ const Hud := preload("res://scripts/hud.gd")
 const ItemKinds := preload("res://scripts/items/item_kinds.gd")
 const HandsModel := preload("res://assets/models/hands.glb")
 const OutlineShader := preload("res://shaders/outline.gdshader")
+const CharacterRig := preload("res://scripts/character_rig.gd")
 ## Onde o item fica na frente da câmera, parado.
 const HOLD_REST := Vector3(0.0, -0.25, -0.46)
 ## Segurando [G]: segundos até a força máxima, abaixo de quanto é só soltar, e a velocidade
@@ -65,6 +66,9 @@ var _target_position := Vector3.ZERO
 var _target_yaw := 0.0
 var _target_pitch := 0.0
 var _body: Node3D
+## O boneco de desenho (character_rig.gd), dentro de _body.
+var character: Node3D
+var _last_body_pos := Vector3.ZERO
 var _tag: Label3D
 ## Zona em que o [E] está sendo segurado agora (só no jogador local).
 var _hold_zone: Node = null
@@ -133,6 +137,7 @@ func _process(delta: float) -> void:
 	if is_local():
 		_update_hold_point(delta)
 	_update_hands()
+	_animate_character(delta)
 
 
 func _physics_process(delta: float) -> void:
@@ -345,32 +350,15 @@ func _has_control() -> bool:
 
 # --- Corpo --------------------------------------------------------------------
 
-## Boneco provisório: cápsula na cor da vaga, viseira escura na frente (-Z) e o nome em cima.
+## O boneco de desenho (moletom na cor da vaga e o acessório dela) e o nome em cima.
 func _build_body() -> void:
 	_body = Node3D.new()
 	_body.name = "Body"
 	add_child(_body)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Net.PLAYER_COLORS[slot]
-	mat.roughness = 0.7
-	var capsule := CapsuleMesh.new()
-	capsule.radius = 0.3
-	capsule.height = stand_height
-	capsule.material = mat
-	var mesh := MeshInstance3D.new()
-	mesh.mesh = capsule
-	mesh.position.y = stand_height / 2.0
-	_body.add_child(mesh)
-	var visor_mat := StandardMaterial3D.new()
-	visor_mat.albedo_color = Color(0.08, 0.1, 0.12)
-	visor_mat.roughness = 0.15
-	var visor := BoxMesh.new()
-	visor.size = Vector3(0.36, 0.14, 0.12)
-	visor.material = visor_mat
-	var visor_mesh := MeshInstance3D.new()
-	visor_mesh.mesh = visor
-	visor_mesh.position = Vector3(0, stand_height - 0.2, -0.26)
-	_body.add_child(visor_mesh)
+	character = CharacterRig.new()
+	character.setup(slot, Net.PLAYER_COLORS[slot])
+	_body.add_child(character)
+	_last_body_pos = global_position
 	_tag = Label3D.new()
 	_tag.text = player_name
 	_tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -381,6 +369,20 @@ func _build_body() -> void:
 	_tag.no_depth_test = false
 	_tag.position.y = stand_height + 0.25
 	_body.add_child(_tag)
+
+
+## Anima o boneco pelo quanto ele andou (serve para o dono e para os bonecos dos outros). O
+## próprio boneco fica escondido para quem joga, então nele não precisa.
+func _animate_character(delta: float) -> void:
+	if character == null or not _body.visible or delta <= 0.0:
+		return
+	var moved := (global_position - _last_body_pos) / delta
+	_last_body_pos = global_position
+	var airborne := absf(moved.y) > 0.6
+	var targets := []
+	if held_item() != null and _hands.size() == 2:
+		targets = [_hands[0].global_position, _hands[1].global_position]
+	character.animate(delta, moved, airborne, head.rotation.x, targets)
 
 
 func _update_crouch(delta: float) -> void:

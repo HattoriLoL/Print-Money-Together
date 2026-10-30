@@ -15,6 +15,7 @@ extends SceneTree
 ## - vida no cenário: ventilador girando, vento no varal e na cortina, chuvisco na TV, vapor na panela,
 ##   lâmpada piscando e balançando quando alguém passa perto;
 ## - detalhes da história: prints da ficha do fiscal, do jornal, do lixo de notas, das pegadas e da pizza;
+## - bonecos: cada vaga com o acessório dela, andando, no ar e segurando (print do elenco);
 ## - com --solo, entra sozinho sem rede (o botão "Play solo") em vez de hospedar;
 ## - com --client, abre uma segunda janela que entra na sala e confere que ela aparece e se mexe.
 ## Prints de alguns pontos de vista na pasta --out (rode com janela, sem --headless).
@@ -204,10 +205,56 @@ func _run() -> void:
 	await _test_printer(kitnet, player)
 	await _test_drop_physics(kitnet, player)
 	await _test_guillotine(kitnet, player)
+	await _test_characters(kitnet, player)
 
 	if _with_client:
 		await _test_client(kitnet)
 	_finish()
+
+
+## Os bonecos (character_rig.gd) das 4 vagas lado a lado, sem o mapa: um parado, um andando, um
+## no ar e um segurando a resma (braços esticados até as luvas).
+func _test_characters(kitnet: Node3D, player: CharacterBody3D) -> void:
+	var Rig := preload("res://scripts/character_rig.gd")
+	var stage := Node3D.new()
+	stage.name = "CharacterLineup"
+	kitnet.add_child(stage)
+	var sun := DirectionalLight3D.new()
+	sun.rotation = Vector3(-0.7, 0.5, 0.0)
+	sun.light_energy = 1.2
+	stage.add_child(sun)
+	var rigs: Array[Node3D] = []
+	for i in 4:
+		var rig: Node3D = Rig.new()
+		rig.setup(i, Net.PLAYER_COLORS[i])
+		stage.add_child(rig)
+		rig.global_position = Vector3(1.15 + i * 0.85, 0.0, -4.2)
+		rig.rotation.y = PI
+		rigs.append(rig)
+	var ok_acc := true
+	for i in 4:
+		var shown: Array = Rig.ACCESSORIES.filter(func(a): return rigs[i].model.find_child(a, true, false).visible)
+		ok_acc = ok_acc and shown == [Rig.ACCESSORIES[i]]
+	_check(ok_acc, "cada vaga mostra só o acessório dela (boné, óculos, topete, gorro)")
+	kitnet.model.visible = false
+	var max_leg := 0.0
+	var walk_dir: Vector3 = -rigs[1].global_basis.z
+	for f in 50:
+		var dt := 1.0 / 60.0
+		rigs[0].animate(dt, Vector3.ZERO, false, 0.0)
+		rigs[1].animate(dt, walk_dir * 2.8, false, 0.0)
+		rigs[2].animate(dt, Vector3.ZERO, true, 0.3)
+		var hold: Vector3 = rigs[3].global_position + rigs[3].global_basis * Vector3(0, 1.35, -0.45)
+		rigs[3].animate(dt, Vector3.ZERO, false, 0.0, [hold + rigs[3].global_basis.x * 0.12, hold - rigs[3].global_basis.x * 0.12])
+		max_leg = maxf(max_leg, absf(rigs[1].legs[0].rotation.x))
+		await process_frame
+	_check(max_leg > 0.3, "andando, as pernas balançam (%.2f rad)" % max_leg)
+	_check(not rigs[3].gloves[0].visible and rigs[3].arms[0].basis.get_scale().y > 0.5,
+			"segurando, os braços apontam para as luvas (x%.2f)" % rigs[3].arms[0].basis.get_scale().y)
+	await _look(player, Vector3(2.4, 0, -2.0), Vector3(2.4, 0.85, -4.2), "37_elenco")
+	await _look(player, Vector3(1.4, 0, -3.35), Vector3(1.4, 1.5, -4.2), "38_rosto")
+	kitnet.model.visible = true
+	stage.queue_free()
 
 
 ## Segunda janela entrando na sala pelo menu (--join), como um amigo faria.
@@ -230,6 +277,9 @@ func _test_client(kitnet: Node3D) -> void:
 		await create_timer(2.0).timeout
 		_check(bot.global_position.distance_to(kitnet.spawns[1].origin) < 0.3,
 				"o boneco do Bot está no SPAWN_2 (%s)" % bot.global_position)
+		var rig: Node3D = bot.character
+		_check(rig != null and bot.get_node("Body").visible and rig.accessory != null
+				and rig.accessory.name == "Acc_Glasses", "o Bot aparece como o boneco de óculos (vaga 2)")
 		await _look(kitnet.local_player(), Vector3(1.5, 0, -1.8), kitnet.spawns[1].origin + Vector3.UP, "07_outro_jogador")
 	OS.kill(pid)
 	waited = 0.0
