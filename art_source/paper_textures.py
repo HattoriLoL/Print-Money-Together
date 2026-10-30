@@ -14,7 +14,7 @@ import os
 import random
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "assets", "textures")
@@ -346,9 +346,14 @@ def cutting_mat():
     return img
 
 
+def neon(bill):
+    """Visual de desenho: o verde da nota bem exagerado, quase neon."""
+    return ImageEnhance.Brightness(ImageEnhance.Color(bill).enhance(2.6)).enhance(1.06)
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
-    front, back = bill_front(), bill_back()
+    front, back = neon(bill_front()), neon(bill_back())
     front.save(os.path.join(OUT, "bill_front.png"))
     back.save(os.path.join(OUT, "bill_back.png"))
     smudged(front).save(os.path.join(OUT, "bill_front_smudged.png"))

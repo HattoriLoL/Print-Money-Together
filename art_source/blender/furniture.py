@@ -151,7 +151,8 @@ def kitchen(coll):
         p.cyl((kx, 0.59, 0.79), 0.02, 0.018, "M_Metal", axis="Y", seg=14)
         p.box(kx - 0.002, 0.598, 0.795, kx + 0.002, 0.601, 0.805, "M_PlasticBlack", bevel=0)
     p.box(2.305, 0.56, 0.14, 2.945, 0.59, 0.735, "M_PlasticBlack", bevel=0.006)
-    p.box(2.36, 0.59, 0.25, 2.89, 0.592, 0.6, "M_Glass", bevel=0)
+    # Visor 2 mm à frente da porta: o vidro aparece dos dois lados e, colado, brigava com ela.
+    p.box(2.36, 0.592, 0.25, 2.89, 0.594, 0.6, "M_Glass", bevel=0)
     _bar_handle(p, 2.625, 0.59, 0.68, None, vertical=False, length=0.46, s=1)
     # Armário de cima: corpo e quatro portas de moldura com puxador embaixo.
     p.box(x0, 0.01, 1.52, x1, 0.3, 2.2, "M_WoodLight", bevel=0.002)

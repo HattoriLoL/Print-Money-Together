@@ -64,7 +64,7 @@ A cortina da janela (`Curtain_Main`) fica meio aberta: dá para ver a impressora
 | `TV_Rack` | TV de tubo: pode virar o monitor de uma câmera do corredor. |
 
 | `Props_<cômodo>` | Objetos do dia a dia (botijão, roupas, latinhas, quadro de cortiça "do plano", eletroduto aparente...). Têm colisão. |
-| `Decal_*` | Mofo, infiltração e encardido, a 3 mm da parede. Sem colisão nem sombra. |
+| `Decal_*` | Mofo, infiltração, encardido e rachaduras, a 3 mm da parede. Sem colisão nem sombra. |
 | `Outside_*` | Lá fora: rua, postes, o prédio da frente e o da lateral com janelas acesas, e prédios ao longe. Sem colisão nem sombra. |
 
 As notas usam a textura `T_Bill`, desenhada pelo `lib.py` (sem arquivo externo) e embutida no
@@ -74,7 +74,7 @@ As notas usam a textura `T_Bill`, desenhada pelo `lib.py` (sem arquivo externo) 
 
 `art_source/blender/textures.py`:
 
-- **Fotos CC0 do Poly Haven:** reboco, forro de grafiato, granilite do corredor, madeiras, jeans e concreto. São baixadas uma vez para `art_source/textures/<asset>/` (fora do git), com um arquivo `SOURCE` de crédito em cada pasta. O reboco, o forro, o concreto e o granilite viram cinza, e a cor do material tinge a foto. Por isso a mesma foto serve à parede creme da kitnet e à verde do corredor.
+- **Pintadas em cinza:** papel de parede, reboco, granilite, madeiras e xadrez saem em cinza e a cor do material tinge. Por isso o mesmo reboco serve ao forro e à parede verde do corredor. Ver `docs/visual.md`.
 - **Geradas no script:** piso cerâmico de 45 cm, piso do banheiro, azulejo 20 x 20, pastilha da cozinha, granito preto da pia, tecido do sofá, tapete e as manchas. Ficam embutidas no `.blend`.
 
 As caixas ganham UV em metros, divididas pelo tamanho real de cada textura. Por isso a textura repete no tamanho certo em qualquer peça.
@@ -102,10 +102,10 @@ A kitnet fica no 3º andar. A rua passa 8,6 m abaixo, entre o nosso prédio e o 
 `scenes/kitnet.tscn` + `scripts/kitnet.gd` carregam o `.glb` e dão vida a ele:
 
 - Colisão do formato exato da malha em tudo, menos `LAMP_*`, `Curtain_*`, o varal, as pás do
-  ventilador, `Decal_*` e `Outside_*`.
-- Ambiente noturno: céu escuro com o horizonte alaranjado de cidade, luz rebatida (SSIL),
-  oclusão (SSAO), um pouco de névoa volumétrica (halo na lâmpada) e sondas de reflexo no
-  cômodo, no banheiro e no serviço.
+  ventilador, `Decal_*` e `Outside_*`. Os pisos (`Floor_*`) colidem como uma caixa sólida: na
+  malha de triângulos, uma resma parada às vezes afundava devagar e caía do mapa.
+- Ambiente noturno de desenho animado: céu escuro com o horizonte alaranjado de cidade, sombra
+  arroxeada chapada e um pouco de oclusão (SSAO). Ver `docs/visual.md`.
 - O jogador local não vê o próprio boneco nem a sombra dele (com a lâmpada a meio metro da
   cabeça, a sombra cobria o cômodo). Os outros jogadores aparecem com sombra.
 - `KEEP_Door_*` viram portas (`scripts/door.gd`) que abrem sempre para dentro (-Z local) com [E].

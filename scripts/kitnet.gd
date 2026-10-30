@@ -25,12 +25,6 @@ const LOCKED_DOORS := ["302", "303", "Stairs"]
 const NO_COLLISION := ["LAMP_", "Curtain_", "MACHINE_ClothesLine", "MACHINE_Fan_Blades", "Decal_", "Outside_"]
 ## Malhas que não fazem sombra (as manchas ficam a 3 mm da parede; lá fora é só fundo).
 const NO_SHADOW := ["LAMP_", "Decal_", "Outside_"]
-## Sondas de reflexo: (centro, tamanho) no referencial do Godot.
-const PROBES := [
-	[Vector3(2.5, 1.3, -2.5), Vector3(5.0, 2.6, 5.0)],
-	[Vector3(6.06, 1.2, -1.1), Vector3(1.9, 2.4, 2.2)],
-	[Vector3(6.06, 1.3, -3.66), Vector3(1.9, 2.6, 2.7)],
-]
 ## Luz de cada zona (LIGHT_<zona>_<n> do modelo): alcance (m), energia e sombra.
 const ZONE_LIGHT := {
 	"main": [7.0, 1.4, true],
@@ -226,12 +220,24 @@ func _add_door(leaf: MeshInstance3D) -> void:
 
 
 func _add_collision(mesh: MeshInstance3D) -> void:
-	var shape := mesh.mesh.create_trimesh_shape()
+	# Os pisos são lajes retas: uma caixa sólida segura melhor o que fica parado em cima do que
+	# uma malha de triângulos (por ela, uma resma às vezes afundava devagar e caía do mapa).
+	var shape: Shape3D
+	var center := Vector3.ZERO
+	if String(mesh.name).begins_with("Floor_"):
+		var aabb := mesh.mesh.get_aabb()
+		var box := BoxShape3D.new()
+		box.size = aabb.size
+		shape = box
+		center = aabb.get_center()
+	else:
+		shape = mesh.mesh.create_trimesh_shape()
 	if shape == null:
 		return
 	var body := StaticBody3D.new()
 	var col := CollisionShape3D.new()
 	col.shape = shape
+	col.position = center
 	body.add_child(col)
 	mesh.add_child(body)
 
@@ -269,11 +275,3 @@ func _build_environment() -> void:
 	world.environment = env
 	add_child(world)
 
-	for probe_cfg: Array in PROBES:
-		var probe := ReflectionProbe.new()
-		probe.position = probe_cfg[0]
-		probe.size = probe_cfg[1]
-		probe.box_projection = true
-		probe.interior = true
-		probe.update_mode = ReflectionProbe.UPDATE_ONCE
-		add_child(probe)

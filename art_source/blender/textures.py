@@ -1,52 +1,21 @@
-"""Texturas dos materiais.
+"""Texturas dos materiais, pintadas aqui como num desenho animado: cor chapada, traços simples e
+quase nenhum ruído. Ficam embutidas no .blend (nada em disco).
 
-- Fotos CC0 do Poly Haven (PHOTOS): baixadas uma vez para art_source/textures/<asset>/ (cor,
-  normal e rugosidade, com um SOURCE de crédito). As de RELIGHT viram cinza com brilho médio
-  fixo, e a cor do material (lib.MATERIALS) tinge a foto: a mesma foto de reboco serve à parede
-  creme da kitnet e à verde do corredor.
-- Padrões gerados aqui (GENERATED): piso cerâmico, azulejos, granito, tecido, tapete e as
-  manchas de mofo e infiltração. Ficam embutidos no .blend (nada em disco).
+- TINTED: desenhos em cinza (veio de madeira, papel de parede listrado, reboco, granilite,
+  xadrez). A cor do material (lib.MATERIALS) tinge, então a paleta manda em tudo.
+- O resto (pisos, azulejos, tecido, tapete, plástico, adesivos) já sai com a cor certa.
+- Manchas e rachaduras (M_Decal*) têm transparência.
 
 `tile(material)` diz quantos metros a textura cobre: o lib.Part usa nas UVs das caixas.
 """
 
-import json
-import os
-import urllib.request
+import math
 
 import bpy
 import numpy as np
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-TEXTURES = os.path.join(os.path.dirname(HERE), "textures")
-
-_API = "https://api.polyhaven.com"
-_HEADERS = {"User-Agent": "print-money-together-art/1.0"}
-# Mapa na API (minúsculas) -> arquivo. A normal é a do OpenGL (convenção do glTF e do Godot).
-_MAPS = {"diffuse": "color", "nor_gl": "normal", "rough": "roughness"}
-
-# material -> asset do Poly Haven.
-PHOTOS = {
-    "M_DeskWood": "fine_grained_wood",
-    "M_Wall": "painted_plaster_wall",
-    "M_Ceiling": "ceiling_interior",
-    "M_FloorHall": "terrazzo_tiles",
-    "M_WoodLight": "oak_veneer_01",
-    "M_Wood": "dark_wood",
-    "M_DoorWood": "wood_cabinet_worn_long",
-    "M_Blanket": "denim_fabric",
-    "M_Concrete": "concrete_floor_02",
-}
-# Materiais que usam a foto de outro (com a própria cor por cima).
-SHARED = {"M_WallHall": "M_Wall", "M_WallHallLow": "M_Wall", "M_Facade": "M_Concrete",
-          "M_FacadeFar": "M_Concrete"}
-# Fotos refeitas em cinza: material -> (brilho médio, contraste). A cor do material tinge.
-# As madeiras e o jeans também: assim a paleta do lib.MATERIALS manda na cor de tudo.
-RELIGHT = {"M_Wall": (0.9, 1.4), "M_Ceiling": (0.9, 0.5), "M_Concrete": (0.85, 1.0),
-           "M_FloorHall": (0.7, 1.3), "M_DeskWood": (0.75, 1.0), "M_WoodLight": (0.75, 1.0),
-           "M_Wood": (0.6, 1.0), "M_DoorWood": (0.7, 1.0), "M_Blanket": (0.7, 1.0)}
-# Força do relevo (normal map) quando não é 1: o grafiato do forro é forte demais na foto.
-NORMAL_STRENGTH = {"M_Ceiling": 0.3}
+# Brilho do fundo dos desenhos em cinza: a cor do material é dividida por ele ao tingir.
+PAINT_BASE = 0.9
 
 _tiles = {}
 _rng = np.random.default_rng(11)
@@ -57,18 +26,16 @@ def tile(name):
 
 
 def has_texture(name):
-    return name in PHOTOS or name in SHARED or name in GENERATED
+    return name in SHARED or name in GENERATED
 
 
 def prepare():
-    """Baixa o que falta e calcula o tamanho de cada textura. Chame antes de montar."""
+    """Calcula o tamanho de cada textura. Chame antes de montar."""
     _tiles.clear()
-    for name, asset in PHOTOS.items():
-        _tiles[name] = _fetch(asset)
-    for name, other in SHARED.items():
-        _tiles[name] = _tiles[other]
     for name, (_, size) in GENERATED.items():
         _tiles[name] = size
+    for name, other in SHARED.items():
+        _tiles[name] = _tiles[other]
 
 
 def wire(mat, bsdf, name):
@@ -77,20 +44,16 @@ def wire(mat, bsdf, name):
     nodes = mat.node_tree.nodes
     links = mat.node_tree.links
     tint = tuple(bsdf.inputs["Base Color"].default_value)[:3]
-    if source in GENERATED:
-        maps = _generated_maps(source)
-    else:
-        maps = _photo_maps(source)
+    maps = _generated_maps(source)
     color = nodes.new("ShaderNodeTexImage")
     color.image = maps["color"]
     color_out = color.outputs["Color"]
-    if source in RELIGHT or name != source:
+    if source in TINTED:
         mix = nodes.new("ShaderNodeMix")
         mix.data_type = "RGBA"
         mix.blend_type = "MULTIPLY"
         mix.inputs["Factor"].default_value = 1.0
-        brightness = RELIGHT.get(source, (1.0, 1.0))[0]
-        mix.inputs["B"].default_value = (*[min(c / brightness, 1.0) for c in tint], 1.0)
+        mix.inputs["B"].default_value = (*[min(c / PAINT_BASE, 1.0) for c in tint], 1.0)
         links.new(color_out, mix.inputs["A"])
         color_out = mix.outputs["Result"]
     links.new(color_out, bsdf.inputs["Base Color"])
@@ -106,72 +69,28 @@ def wire(mat, bsdf, name):
         normal.image = maps["normal"]
         normal.image.colorspace_settings.name = "Non-Color"
         nmap = nodes.new("ShaderNodeNormalMap")
-        nmap.inputs["Strength"].default_value = NORMAL_STRENGTH.get(source, 1.0)
         links.new(normal.outputs["Color"], nmap.inputs["Color"])
         links.new(nmap.outputs["Normal"], bsdf.inputs["Normal"])
     return "alpha" in maps
 
 
-# --- Poly Haven -------------------------------------------------------------------------------
+# --- Ferramentas de desenho -----------------------------------------------------------------------
+# As matrizes são (linha, coluna) com a linha 0 embaixo, como o Blender guarda as imagens. Tudo
+# que é repetido fecha na emenda (a textura se repete na parede).
 
-def _fetch(asset, resolution="1k"):
-    """Baixa o asset se ainda não está na pasta e devolve quantos metros ele cobre."""
-    folder = os.path.join(TEXTURES, asset)
-    source = os.path.join(folder, "SOURCE")
-    if not os.path.exists(source):
-        os.makedirs(folder, exist_ok=True)
-        files = {k.lower(): v for k, v in _get_json(f"{_API}/files/{asset}").items()}
-        for api_name, stem in _MAPS.items():
-            url = files[api_name][resolution]["jpg"]["url"]
-            with urllib.request.urlopen(urllib.request.Request(url, headers=_HEADERS), timeout=60) as r:
-                with open(os.path.join(folder, stem + ".jpg"), "wb") as out:
-                    out.write(r.read())
-        info = _get_json(f"{_API}/info/{asset}")
-        size = info.get("dimensions", [2000])[0] / 1000.0
-        with open(source, "w", encoding="utf-8") as out:
-            out.write(f"{info.get('name', asset)} - https://polyhaven.com/a/{asset}\n"
-                      f"Autores: {', '.join(info.get('authors', {}))}\n"
-                      f"Licença: CC0 (Poly Haven)\n"
-                      f"Tamanho real: {size} m\n")
-        print("baixada:", asset)
-    with open(source, encoding="utf-8") as f:
-        for line in f:
-            if line.startswith("Tamanho real:"):
-                return float(line.split(":")[1].split()[0])
-    return 2.0
+def _grid(size):
+    y, x = np.mgrid[0:size, 0:size]
+    return x.astype(float), y.astype(float)
 
 
-def _get_json(url):
-    with urllib.request.urlopen(urllib.request.Request(url, headers=_HEADERS), timeout=30) as r:
-        return json.loads(r.read().decode("utf-8"))
+def _wrap(d, size):
+    """Diferença com a volta da emenda (de -size/2 a size/2)."""
+    return (d + size / 2) % size - size / 2
 
 
-def _photo_maps(name):
-    folder = os.path.join(TEXTURES, PHOTOS[name])
-    maps = {}
-    for stem in ("color", "normal", "roughness"):
-        maps[stem] = bpy.data.images.load(os.path.join(folder, stem + ".jpg"), check_existing=True)
-    if name in RELIGHT:
-        maps["color"] = _relit(name, maps["color"], *RELIGHT[name])
-    return maps
+def _gray(value):
+    return np.repeat(value[..., None], 3, axis=2)
 
-
-def _relit(name, src, brightness, contrast):
-    key = f"TX_{name}_color"
-    img = bpy.data.images.get(key)
-    if img is not None:
-        return img
-    w, h = src.size
-    px = np.empty(w * h * 4, dtype=np.float32)
-    src.pixels.foreach_get(px)
-    rgb = px.reshape(h, w, 4)[..., :3]
-    luma = rgb @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
-    gray = np.clip(brightness + (luma - luma.mean()) * contrast, 0, 1)
-    return _image(key, np.repeat(gray[..., None], 3, axis=2))
-
-
-# --- Gerados --------------------------------------------------------------------------------------
-# As matrizes são (linha, coluna) com a linha 0 embaixo, como o Blender guarda as imagens.
 
 def _noise(size, scale, octaves=4):
     """Ruído suave e repetível (soma de senoides inteiras), de -scale a scale."""
@@ -185,146 +104,249 @@ def _noise(size, scale, octaves=4):
     return total / np.abs(total).max() * scale
 
 
-def _speckle(size, amount, strength):
-    return (_rng.random((size, size)) < amount) * _rng.uniform(-strength, strength, (size, size))
+def _wavy_lines(size, count, width, waves, amp):
+    """Linhas horizontais onduladas (veio de madeira): máscara de 0 a 1 com borda de 1 pixel."""
+    x, y = _grid(size)
+    mask = np.zeros((size, size))
+    for _ in range(count):
+        y0 = _rng.uniform(0, size)
+        k = _rng.integers(1, waves + 1)
+        center = y0 + _rng.uniform(0.4, 1.0) * amp * np.sin(2 * np.pi * k * x / size + _rng.uniform(0, 2 * np.pi))
+        w = _rng.uniform(0.6, 1.0) * width
+        mask = np.maximum(mask, np.clip(w - np.abs(_wrap(y - center, size)), 0, 1))
+    return mask
 
 
-def _tiles_pattern(size, count, base, jitter, grout_px, grout_color, marble=0.0):
-    """Ladrilhos quadrados: cor por peça, veio de mármore opcional e rejunte. Devolve cor e altura."""
+def _ellipse(size, cx, cy, rx, ry, angle=0.0):
+    """Distância normalizada ao centro de uma elipse (1 = na borda), com a volta da emenda."""
+    x, y = _grid(size)
+    dx, dy = _wrap(x - cx, size), _wrap(y - cy, size)
+    c, s = math.cos(angle), math.sin(angle)
+    u, v = dx * c + dy * s, -dx * s + dy * c
+    return np.sqrt((u / rx) ** 2 + (v / ry) ** 2)
+
+
+def _spots(size, count, rmin, rmax, values, base):
+    """Pintinhas e lascas chapadas (granilite, granito) por cima de `base` (cinza ou cor)."""
+    out = base.copy()
+    for _ in range(count):
+        r = _rng.uniform(rmin, rmax)
+        d = _ellipse(size, *_rng.uniform(0, size, 2), r, r * _rng.uniform(0.5, 1.0), _rng.uniform(0, np.pi))
+        inside = np.clip((1 - d) * r, 0, 1)
+        if out.ndim == 3:
+            inside = inside[..., None]
+        out = out * (1 - inside) + inside * np.asarray(values[_rng.integers(len(values))])
+    return out
+
+
+def _segment_dist(x, y, a, b):
+    ab = b - a
+    t = np.clip(((x - a[0]) * ab[0] + (y - a[1]) * ab[1]) / max(ab @ ab, 1e-9), 0, 1)
+    return np.hypot(x - a[0] - t * ab[0], y - a[1] - t * ab[1])
+
+
+def _dilate(mask, px):
+    out = mask.copy()
+    for dx in range(-px, px + 1):
+        for dy in range(-px, px + 1):
+            if dx * dx + dy * dy <= px * px:
+                out |= np.roll(np.roll(mask, dx, 1), dy, 0)
+    return out
+
+
+# --- Desenhos em cinza (a cor do material tinge) --------------------------------------------------
+
+def _paint_wood():
+    """Madeira de desenho: fundo liso, uns veios ondulados e um nó."""
+    size = 512
+    value = np.full((size, size), PAINT_BASE)
+    value -= 0.1 * _wavy_lines(size, 6, 2.2, 3, 22)
+    value -= 0.05 * _wavy_lines(size, 6, 1.4, 2, 30)
+    d = _ellipse(size, *_rng.uniform(0, size, 2), 16, 8)
+    value -= 0.14 * np.clip(1.5 - np.abs(d - 1) * 8, 0, 1)
+    value -= 0.06 * (d < 0.7)
+    return _gray(value), None, np.full((size, size), 0.6)
+
+
+def _paint_wallpaper():
+    """Papel de parede anos 70 (a textura cobre 60 cm): listras largas alternando o tom, um fio
+    entre elas e losangos na listra clara."""
+    size = 512
+    x, y = _grid(size)
+    period = 128
+    sx = x % period
+    value = np.where(sx < period / 2, PAINT_BASE + 0.06, PAINT_BASE - 0.04)
+    value[np.abs(sx - period / 2) < 2] = PAINT_BASE - 0.16
+    value[sx < 2] = PAINT_BASE - 0.16
+    cx, cy = period / 4, 32
+    dx, dy = np.abs((x % period) - cx), np.abs((y % 64) - cy)
+    value[(dx / 9 + dy / 13) < 1] = PAINT_BASE - 0.1
+    value[(dx / 4 + dy / 6) < 1] = PAINT_BASE + 0.06
+    return _gray(np.clip(value, 0, 1)), None, np.full((size, size), 0.85)
+
+
+def _paint_plaster(strength=1.0):
+    """Reboco pintado à mão: fundo liso com pinceladas largas um tom acima e abaixo."""
+    size = 512
+    value = np.full((size, size), PAINT_BASE)
+    for sign in (1, -1):
+        for _ in range(7):
+            d = _ellipse(size, *_rng.uniform(0, size, 2), _rng.uniform(40, 110), _rng.uniform(6, 14), _rng.uniform(-0.3, 0.3))
+            value += sign * 0.035 * strength * (d < 1)
+    for _ in range(40):
+        d = _ellipse(size, *_rng.uniform(0, size, 2), 2.5, 2.5)
+        value -= 0.08 * strength * (d < 1)
+    return _gray(np.clip(value, 0, 1)), None, np.full((size, size), 0.9)
+
+
+def _paint_terrazzo():
+    """Granilite de desenho: lascas chapadas grandes em três tons."""
+    size = 512
+    value = _spots(size, 170, 3, 9, (PAINT_BASE - 0.3, PAINT_BASE - 0.15, 1.0), np.full((size, size), PAINT_BASE - 0.05))
+    return _gray(value), None, np.full((size, size), 0.5)
+
+
+def _paint_plaid():
+    """Xadrez de cobertor: faixas escuras cruzadas e fios claros."""
+    size = 256
+    x, y = _grid(size)
+    value = np.full((size, size), PAINT_BASE)
+    value -= 0.14 * ((x % 128) < 40)
+    value -= 0.14 * ((y % 128) < 40)
+    value[((x % 64) == 52) | ((x % 64) == 53) | ((y % 64) == 52) | ((y % 64) == 53)] = 1.0
+    return _gray(np.clip(value, 0, 1)), None, np.full((size, size), 1.0)
+
+
+# --- Desenhos coloridos ---------------------------------------------------------------------------
+
+def _tiles_pattern(size, count, base, jitter, grout_px, grout_color, shine=0.12):
+    """Ladrilhos quadrados lisos, rejunte grosso e um risco de brilho no canto de cada peça (o
+    reflexo do desenho animado). Devolve cor e altura."""
     cell = size // count
-    y, x = np.mgrid[0:size, 0:size]
+    x, y = _grid(size)
     rgb = np.zeros((size, size, 3)) + np.array(base)
     for i in range(count):
         for j in range(count):
             rgb[i * cell:(i + 1) * cell, j * cell:(j + 1) * cell] *= _rng.uniform(1 - jitter, 1 + jitter)
-    if marble:
-        veins = np.abs(np.sin((x + y) / size * 6 * np.pi + _noise(size, 6.0)))
-        rgb *= (1 - marble * (veins < 0.12))[..., None]
-        rgb *= (1 + _noise(size, marble * 0.5))[..., None]
-    gx, gy = x % cell, y % cell
-    grout = (gx < grout_px) | (gy < grout_px)
+    gx, gy = x % cell, cell - (y % cell)  # gy a partir do alto da peça
+    stroke = (np.abs(gx + gy - 0.24 * cell) < cell * 0.018) & (gx > 0.07 * cell) & (gy > 0.07 * cell)
+    dot = np.hypot(gx - 0.3 * cell, gy - 0.07 * cell - 3) < cell * 0.02
+    rgb[stroke | dot] += shine
+    grout = (gx < grout_px) | ((y % cell) < grout_px)
     rgb[grout] = grout_color
-    height = np.where(grout, 0.0, 1.0)
-    # Borda levemente arredondada das peças.
-    edge = (gx < grout_px + 2) | (gy < grout_px + 2) | (gx >= cell - 2) | (gy >= cell - 2)
-    height[edge & ~grout] = 0.6
-    return rgb, height
-
-
-def _normal_from_height(height, strength):
-    dx = np.roll(height, -1, axis=1) - np.roll(height, 1, axis=1)
-    dy = np.roll(height, -1, axis=0) - np.roll(height, 1, axis=0)
-    n = np.stack([-dx * strength, -dy * strength, np.ones_like(height)], axis=2)
-    n /= np.linalg.norm(n, axis=2, keepdims=True)
-    return n * 0.5 + 0.5
+    return np.clip(rgb, 0, 1), np.where(grout, 0.0, 1.0)
 
 
 def _gen_floor():
-    # Piso cerâmico cor de telha de 45 cm, com veio de "mármore" bem leve (a textura cobre 2 x 2 peças).
-    rgb, height = _tiles_pattern(512, 2, (0.76, 0.45, 0.28), 0.05, 3, (0.45, 0.3, 0.2), marble=0.035)
-    rgb += _speckle(512, 0.15, 0.03)[..., None]
+    # Piso cerâmico cor de telha de 45 cm (a textura cobre 2 x 2 peças).
+    rgb, height = _tiles_pattern(512, 2, (0.76, 0.45, 0.28), 0.04, 5, (0.42, 0.27, 0.18), shine=0.08)
     return rgb, height, 0.32 + 0.4 * (1 - height)
 
 
 def _gen_floor_bath():
-    rgb, height = _tiles_pattern(512, 2, (0.42, 0.62, 0.66), 0.04, 3, (0.3, 0.4, 0.42))
-    return rgb + _speckle(512, 0.3, 0.025)[..., None], height, 0.3 + 0.4 * (1 - height)
+    rgb, height = _tiles_pattern(512, 2, (0.42, 0.62, 0.66), 0.04, 5, (0.28, 0.38, 0.4))
+    return rgb, height, 0.3 + 0.4 * (1 - height)
 
 
 def _gen_wall_tile():
     # Azulejo azul de piscina clarinho 20 x 20 (2 x 2 peças), rejunte encardido.
-    rgb, height = _tiles_pattern(512, 2, (0.66, 0.86, 0.88), 0.02, 4, (0.55, 0.58, 0.5))
-    return rgb + _noise(512, 0.015)[..., None], height, 0.12 + 0.6 * (1 - height)
+    rgb, height = _tiles_pattern(512, 2, (0.66, 0.86, 0.88), 0.03, 6, (0.55, 0.58, 0.5))
+    return rgb, height, 0.12 + 0.6 * (1 - height)
 
 
 def _gen_kitchen_tile():
     # Pastilha azul de piscina 10 x 10 (4 x 4 peças).
-    rgb, height = _tiles_pattern(512, 4, (0.48, 0.76, 0.78), 0.06, 4, (0.85, 0.85, 0.8))
+    rgb, height = _tiles_pattern(512, 4, (0.48, 0.76, 0.78), 0.06, 5, (0.88, 0.88, 0.82))
     return rgb, height, 0.12 + 0.6 * (1 - height)
 
 
 def _gen_granite():
-    # Granito preto São Gabriel: fundo quase preto com grãos cinza e brancos.
-    base = np.full((512, 512, 3), 0.06) + _noise(512, 0.015)[..., None]
-    grains = _rng.random((512, 512))
-    base[grains < 0.08] += 0.12
-    base[grains < 0.015] += 0.35
-    return base, None, np.full((512, 512), 0.18)
+    # Granito preto de desenho: fundo quase preto com bolinhas cinza e brancas.
+    base = np.full((512, 512, 3), 0.07)
+    rgb = _spots(512, 110, 1.5, 3.5, ((0.3, 0.3, 0.32), (0.75, 0.75, 0.78)), base)
+    return rgb, None, np.full((512, 512), 0.18)
 
 
 def _gen_fabric():
-    # Trama de sofá: fios cruzados em laranja queimado.
-    y, x = np.mgrid[0:256, 0:256]
-    weave = (np.sin(x * np.pi / 2) * np.sin(y * np.pi / 2) > 0).astype(float)
-    rgb = np.array((0.8, 0.4, 0.14)) * (0.85 + 0.15 * weave)[..., None]
-    rgb *= (1 + _noise(256, 0.08))[..., None]
-    return rgb, weave * 0.5, np.full((256, 256), 0.95)
+    # Sofá laranja queimado: liso, com umas manchas de uso um tom abaixo.
+    size = 256
+    rgb = np.zeros((size, size, 3)) + np.array((0.8, 0.4, 0.14))
+    for _ in range(5):
+        d = _ellipse(size, *_rng.uniform(0, size, 2), _rng.uniform(20, 50), _rng.uniform(15, 35), _rng.uniform(0, np.pi))
+        rgb *= np.where(d < 1, 0.92, 1.0)[..., None]
+    return rgb, None, np.full((size, size), 0.95)
 
 
 def _gen_rug():
     # Tapete listrado verde musgo, com borda mostarda.
-    y, x = np.mgrid[0:256, 0:256]
+    x, y = _grid(256)
     rgb = np.where(((x // 32) % 2 == 0)[..., None], np.array((0.45, 0.5, 0.25)), np.array((0.36, 0.42, 0.2)))
     rgb[(y % 128 < 6)] = (0.85, 0.65, 0.2)
-    rgb = rgb * (1 + _speckle(256, 0.6, 0.12))[..., None]
     return rgb, None, np.full((256, 256), 1.0)
 
 
 def _stain(color, ring):
-    """Mancha com transparência: bolha irregular, mais escura na borda quando `ring`."""
+    """Mancha de desenho com transparência: bolha irregular chapada e a borda mais escura."""
     size = 256
     y, x = (np.mgrid[0:size, 0:size] - size / 2) / (size / 2)
     r = np.sqrt(x * x + y * y)
-    edge = 0.75 + _noise(size, 0.18, octaves=5)
-    inside = np.clip((edge - r) / 0.25, 0, 1)
-    alpha = inside * (0.55 + _noise(size, 0.25))
-    if ring:
-        alpha += np.clip(1 - np.abs(edge - r - 0.05) / 0.05, 0, 1) * 0.5
-    alpha = np.clip(alpha, 0, 0.9)
+    edge = 0.75 + _noise(size, 0.16, octaves=3)
+    inside = np.clip((edge - r) * 60, 0, 1)
+    rim = np.clip((edge - r) * 60, 0, 1) * np.clip(1 - (edge - r - (0.06 if ring else 0.03)) * 60, 0, 1)
+    alpha = np.clip(inside * 0.45 + rim * 0.4, 0, 0.85)
     rgb = np.zeros((size, size, 3)) + np.array(color)
-    rgb *= (1 + _noise(size, 0.2))[..., None]
+    rgb *= (1 - 0.35 * rim)[..., None]
     return rgb, alpha
 
 
-# material -> (gerador, metros que a textura cobre)
+def _crack():
+    """Rachadura no reboco em traço preto: um risco que anda torto e solta dois galhos."""
+    size = 256
+    x, y = _grid(size)
+    dist = np.full((size, size), 1e9)
+    branches = [(np.array((20.0, size / 2)), 0.0, 22, 3.0)]
+    while branches:
+        pos, angle, steps, width = branches.pop()
+        for i in range(steps):
+            angle += _rng.uniform(-0.5, 0.5)
+            nxt = pos + np.array((math.cos(angle), math.sin(angle))) * 10
+            dist = np.minimum(dist, _segment_dist(x, y, pos, nxt) - width * (1 - i / steps) * 0.8)
+            pos = nxt
+            if i in (6, 13) and width > 2:
+                branches.append((pos.copy(), angle + _rng.choice((-1, 1)) * _rng.uniform(0.6, 1.0), 8, width * 0.6))
+    alpha = np.clip(1.5 - dist, 0, 1) * 0.95
+    return np.zeros((size, size, 3)) + 0.05, alpha
+
+
 def _gen_old_plastic(base, yellow):
-    """Plástico de equipamento velho: granulado fino (textura de molde), amarelado irregular do
-    sol, manchas e riscos claros. Devolve cor, altura (o granulado) e rugosidade."""
+    """Plástico de equipamento velho, liso: manchas amareladas de sol com borda dura e uns riscos
+    claros."""
     size = 512
-    stipple = _rng.random((size, size))
-    for _ in range(2):  # suaviza o granulado para não virar chiado
-        stipple = (stipple + np.roll(stipple, 1, 0) + np.roll(stipple, -1, 0)
-                   + np.roll(stipple, 1, 1) + np.roll(stipple, -1, 1)) / 5
-    stipple = (stipple - stipple.min()) / (stipple.max() - stipple.min())
     rgb = np.zeros((size, size, 3)) + np.array(base)
-    rgb *= (1 + _noise(size, 0.035))[..., None]
     if yellow:
-        amount = np.clip((_noise(size, 1.0, octaves=3) + 1) / 2, 0, 1)[..., None] * yellow
-        rgb = rgb * (1 - amount) + np.array((0.74, 0.64, 0.42)) * amount
-    rgb *= (0.96 + 0.08 * stipple)[..., None]
-    rough = 0.5 + 0.2 * stipple
-    # Riscos: traços finos mais claros e menos ásperos.
-    for _ in range(14):
-        x, y = _rng.integers(0, size, 2)
+        for _ in range(6):
+            d = _ellipse(size, *_rng.uniform(0, size, 2), _rng.uniform(40, 110), _rng.uniform(30, 80), _rng.uniform(0, np.pi))
+            rgb = np.where((d < 1)[..., None], rgb * (1 - yellow) + np.array((0.74, 0.64, 0.42)) * yellow, rgb)
+    rough = np.full((size, size), 0.55)
+    x, y = _grid(size)
+    for _ in range(8):
+        a = _rng.uniform(0, size, 2)
         ang = _rng.uniform(0, np.pi)
-        length = _rng.integers(20, 90)
-        for t in range(length):
-            px = int(x + np.cos(ang) * t) % size
-            py = int(y + np.sin(ang) * t) % size
-            rgb[py, px] = np.minimum(rgb[py, px] * 1.12 + 0.03, 1.0)
-            rough[py, px] = 0.35
-    return rgb, stipple * 0.6, rough
+        b = a + np.array((math.cos(ang), math.sin(ang))) * _rng.uniform(25, 80)
+        line = _segment_dist(x, y, a, b) < 1.0
+        rgb[line] = np.minimum(rgb[line] * 1.12 + 0.03, 1.0)
+    return rgb, None, rough
 
 
 def _gen_desk_metal():
-    """Chapa de aço pintada de verde musgo, com lascas mostrando o metal escuro."""
+    """Chapa pintada de verde musgo, com lascas mostrando o metal escuro e um contorno nelas."""
     size = 256
     rgb = np.zeros((size, size, 3)) + np.array((0.45, 0.52, 0.3))
-    rgb *= (1 + _noise(size, 0.05))[..., None]
     chips = _noise(size, 1.0, octaves=5) > 0.82
+    rgb[_dilate(chips, 2)] = (0.3, 0.35, 0.2)
     rgb[chips] = (0.16, 0.15, 0.14)
     rough = np.where(chips, 0.7, 0.42)
-    return rgb, np.where(chips, 0.0, 1.0), rough
+    return rgb, None, rough
 
 
 def _gen_sticker_warning():
@@ -362,7 +384,17 @@ def _gen_sticker_label():
     return rgb, None, np.full((h, w), 0.6)
 
 
+# material -> (gerador, metros que a textura cobre)
 GENERATED = {
+    "M_Wall": (_paint_wallpaper, 0.6),
+    "M_Ceiling": (lambda: _paint_plaster(0.6), 1.5),
+    "M_Concrete": (lambda: _paint_plaster(1.6), 2.0),
+    "M_FloorHall": (_paint_terrazzo, 1.0),
+    "M_Wood": (_paint_wood, 0.8),
+    "M_WoodLight": (_paint_wood, 0.8),
+    "M_DoorWood": (_paint_wood, 0.9),
+    "M_DeskWood": (_paint_wood, 0.8),
+    "M_Blanket": (_paint_plaid, 0.5),
     "M_OldPlastic": (lambda: _gen_old_plastic((0.8, 0.76, 0.66), 0.35), 0.15),
     "M_OldPlasticDark": (lambda: _gen_old_plastic((0.3, 0.3, 0.31), 0.0), 0.15),
     "M_DeskMetal": (_gen_desk_metal, 0.5),
@@ -373,12 +405,19 @@ GENERATED = {
     "M_Tile": (_gen_wall_tile, 0.4),
     "M_TileKitchen": (_gen_kitchen_tile, 0.4),
     "M_Granite": (_gen_granite, 0.6),
-    "M_Fabric": (_gen_fabric, 0.25),
+    "M_Fabric": (_gen_fabric, 0.5),
     "M_Rug": (_gen_rug, 0.8),
-    "M_DecalMold": (lambda: _stain((0.24, 0.26, 0.2), False), 1.0),
-    "M_DecalWater": (lambda: _stain((0.55, 0.45, 0.3), True), 1.0),
-    "M_DecalGrime": (lambda: _stain((0.2, 0.18, 0.15), False), 1.0),
+    "M_DecalMold": (lambda: _stain((0.3, 0.36, 0.18), False), 1.0),
+    "M_DecalWater": (lambda: _stain((0.6, 0.45, 0.25), True), 1.0),
+    "M_DecalGrime": (lambda: _stain((0.25, 0.2, 0.15), False), 1.0),
+    "M_DecalCrack": (_crack, 1.0),
 }
+# Desenhos em cinza que a cor do material tinge.
+TINTED = {"M_Wall", "M_Ceiling", "M_Concrete", "M_FloorHall", "M_Wood", "M_WoodLight", "M_DoorWood",
+          "M_DeskWood", "M_Blanket"}
+# Materiais que usam a textura de outro (com a própria cor por cima).
+SHARED = {"M_WallHall": "M_Ceiling", "M_WallHallLow": "M_Ceiling", "M_Facade": "M_Concrete",
+          "M_FacadeFar": "M_Concrete"}
 
 
 def _generated_maps(name):
@@ -402,6 +441,14 @@ def _generated_maps(name):
         if img is not None:
             maps[stem] = img
     return maps
+
+
+def _normal_from_height(height, strength):
+    dx = np.roll(height, -1, axis=1) - np.roll(height, 1, axis=1)
+    dy = np.roll(height, -1, axis=0) - np.roll(height, 1, axis=0)
+    n = np.stack([-dx * strength, -dy * strength, np.ones_like(height)], axis=2)
+    n /= np.linalg.norm(n, axis=2, keepdims=True)
+    return n * 0.5 + 0.5
 
 
 def _image(name, rgb, alpha=None):

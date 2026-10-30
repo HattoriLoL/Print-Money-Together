@@ -98,6 +98,7 @@ MATERIALS = {
     "M_DecalMold": ((1.0, 1.0, 1.0), 0.9, 0.0, 0.0),
     "M_DecalWater": ((1.0, 1.0, 1.0), 0.9, 0.0, 0.0),
     "M_DecalGrime": ((1.0, 1.0, 1.0), 0.9, 0.0, 0.0),
+    "M_DecalCrack": ((1.0, 1.0, 1.0), 0.9, 0.0, 0.0),
     # Lá fora: janelas dos prédios em volta e postes.
     "M_WinLit": ((1.0, 0.7, 0.4), 0.3, 0.0, 0.8),
     "M_WinCool": ((0.7, 0.8, 1.0), 0.3, 0.0, 0.6),
@@ -181,6 +182,8 @@ def _setup_image(mat, bsdf, filename, roughness):
 
 # Quinas mais fechadas que isso ficam vivas no sombreamento; as do bevel (45° ou menos), suaves.
 SHARP_ANGLE = math.radians(50)
+# Visual de desenho: todas as quinas um pouco mais gorduchas do que cada peça pede.
+BEVEL_SCALE = 1.5
 
 
 class Part:
@@ -222,7 +225,7 @@ class Part:
         m = matrix @ Matrix.Diagonal((*size, 1.0))
         res = bmesh.ops.create_cube(self.bm, size=1.0, matrix=m)
         self._tag(res["verts"], mat)
-        b = self.bevel if bevel is None else bevel
+        b = (self.bevel if bevel is None else bevel) * BEVEL_SCALE
         b = min(b, min(size) * 0.45)
         if b > 0.0008:
             edges = list({e for v in res["verts"] for e in v.link_edges})

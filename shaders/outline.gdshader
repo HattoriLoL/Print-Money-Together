@@ -19,6 +19,10 @@ uniform float normal_threshold = 0.2;
 // Metros em que a linha começa a sumir e some de vez (lá fora, a cidade não tem contorno).
 uniform float fade_start = 9.0;
 uniform float fade_end = 25.0;
+// As linhas de quina somem mais perto: de longe, um sulco ou quina arredondada fica menor que um
+// pixel, aparece e some de um pixel para o outro, e a linha saía tracejada. Fica a silhueta.
+uniform float crease_fade_start = 2.0;
+uniform float crease_fade_end = 4.0;
 
 void vertex() {
 	POSITION = vec4(VERTEX.xy, 1.0, 1.0);
@@ -48,12 +52,20 @@ void fragment() {
 			+ inv_depth(p - dy, size, INV_PROJECTION_MATRIX) + inv_depth(p + dy, size, INV_PROJECTION_MATRIX);
 	float depth_edge = smoothstep(depth_threshold, depth_threshold * 1.5, abs(around - 4.0 * c) / c);
 
+	// A quina olha os 8 vizinhos: uma quina arredondada com 1 pixel de largura escapava ora de
+	// um, ora de outro, e a linha saía pontilhada.
 	vec3 n = normal_at(p, size);
-	float bend = max(max(1.0 - dot(n, normal_at(p - dx, size)), 1.0 - dot(n, normal_at(p + dx, size))),
-			max(1.0 - dot(n, normal_at(p - dy, size)), 1.0 - dot(n, normal_at(p + dy, size))));
+	float bend = 0.0;
+	for (int i = -1; i <= 1; i++) {
+		for (int j = -1; j <= 1; j++) {
+			bend = max(bend, 1.0 - dot(n, normal_at(p + ivec2(i, j) * t, size)));
+		}
+	}
 	float normal_edge = smoothstep(normal_threshold, normal_threshold * 1.3, bend);
 
-	float edge = max(depth_edge, normal_edge) * (1.0 - smoothstep(fade_start, fade_end, 1.0 / c));
+	float dist = 1.0 / c;
+	normal_edge *= 1.0 - smoothstep(crease_fade_start, crease_fade_end, dist);
+	float edge = max(depth_edge, normal_edge) * (1.0 - smoothstep(fade_start, fade_end, dist));
 	ALBEDO = line_color.rgb;
 	ALPHA = edge * line_color.a;
 }

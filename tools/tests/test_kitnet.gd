@@ -407,6 +407,9 @@ func _throw(kitnet: Node3D, player: CharacterBody3D, kind: String, at: Vector3, 
 	var item: Node = kitnet.items.give(1, kind)
 	await create_timer(0.4).timeout
 	var from := Vector2(player.global_position.x, player.global_position.z)
+	# O giro ao soltar é sorteado (às vezes a resma vira e rola mais um pouco): semente fixa para
+	# o teste dar sempre o mesmo resultado.
+	seed(301)
 	player._drop_held(charge)
 	await physics_frame
 	await _wait_landed(item, 4.0)

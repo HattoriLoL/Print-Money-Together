@@ -7,8 +7,8 @@ extends RefCounted
 ## O kitnet.gd chama apply_one() em toda malha que entra na cena. Quem troca um material depois
 ## (material_override) passa ele por material(); quem muda a cor de um já convertido chama sync().
 
-## Quanto as texturas vão para a cor média (0 = foto, 1 = cor lisa).
-const FLATTEN := 0.55
+## Quanto as texturas vão para a cor média (0 = como foram pintadas, 1 = cor lisa).
+const FLATTEN := 0.15
 
 const CODE := """shader_type spatial;
 render_mode %s;

@@ -222,7 +222,7 @@ def hall(coll):
 
 
 def decals(coll):
-    """Mofo, infiltração e encardido. Ficam 3 mm na frente da superfície."""
+    """Mofo, infiltração, encardido e rachaduras. Ficam 3 mm na frente da superfície."""
     e = 0.003
     p = Part()
     # Mofo no canto do fundo, em cima do sofá, e infiltração no teto.
@@ -239,4 +239,10 @@ def decals(coll):
     decal(p, (6.5, P.HALL_Y[0] + 0.006 + e, 2.3), "+y", 1.4, 0.6, "M_DecalWater", rot=0.1)
     decal(p, (1.0, -P.EXT_T - 0.006 - e, 0.35), "-y", 0.6, 0.3, "M_DecalGrime")
     decal(p, (5.5, P.HALL_Y[0] + 0.006 + e, 0.3), "+y", 0.5, 0.25, "M_DecalGrime", rot=0.2)
+    # Rachaduras no reboco: perto da janela, no alto da parede da esquerda, embaixo no fundo e
+    # no corredor.
+    decal(p, (1.2, P.D - e, 1.9), "-y", 0.7, 0.45, "M_DecalCrack", rot=0.5)
+    decal(p, (e, 2.2, 2.25), "+x", 0.6, 0.4, "M_DecalCrack", rot=-0.3)
+    decal(p, (3.8, P.D - e, 0.6), "-y", 0.5, 0.35, "M_DecalCrack", rot=2.6)
+    decal(p, (3.2, P.HALL_Y[0] + 0.006 + e, 1.7), "+y", 0.8, 0.5, "M_DecalCrack", rot=-0.2)
     p.finish("Decal_Stains", coll)

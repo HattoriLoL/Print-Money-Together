@@ -33,10 +33,10 @@ COLLECTIONS = {
 
 
 def _reload():
-    import textures, lib, plan, structure, furniture, machines, props, exterior
-    for m in (plan, textures, lib, structure, furniture, machines, props, exterior):
+    import textures, lib, plan, structure, furniture, machines, props, exterior, wonky
+    for m in (plan, textures, lib, structure, furniture, machines, props, exterior, wonky):
         importlib.reload(m)
-    return textures, (structure, furniture, machines, props, exterior)
+    return textures, wonky, (structure, furniture, machines, props, exterior)
 
 
 def clear():
@@ -70,12 +70,13 @@ def world():
 
 
 def run(export=False):
-    textures, parts = _reload()
+    textures, wonky, parts = _reload()
     clear()
     textures.prepare()
     colls = collections()
     for module in parts:
         module.build(colls)
+    wonky.apply()
     world()
     bpy.context.scene.unit_settings.system = "METRIC"
     bpy.ops.wm.save_mainfile()
