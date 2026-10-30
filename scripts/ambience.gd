@@ -36,6 +36,8 @@ var tv_material: ShaderMaterial
 var steam: CPUParticles3D
 ## Quanto a lâmpada brilha agora (1 = normal), para o teste.
 var bulb_level := 1.0
+## Brilho da luz da lâmpada sem piscar.
+var light_energy_full := 1.0
 ## Ângulo do fio (x e z, radianos).
 var swing := Vector2.ZERO
 
@@ -43,7 +45,6 @@ var _model: Node3D
 var _kitnet: Node
 var _rng := RandomNumberGenerator.new()
 var _light: Light3D
-var _light_energy := 1.0
 var _light_rest := Vector3.ZERO
 var _bulb_parts: Array[Node3D] = []
 var _bulb_rest: Array[Basis] = []
@@ -93,7 +94,7 @@ func _setup_wind(mesh_name: String, cfg: Array, top_y: float, length: float) -> 
 func _setup_bulb() -> void:
 	_light = _model.find_child("LIGHT_" + BULB_NAME, true, false)
 	if _light != null:
-		_light_energy = _light.light_energy
+		light_energy_full = _light.light_energy
 		_light_rest = _light.global_position
 	for part_name in ["LAMP_" + BULB_NAME, "Cord_Lamp_" + BULB_NAME]:
 		var part: MeshInstance3D = _model.find_child(part_name, true, false)
@@ -141,7 +142,7 @@ func _set_bulb(level: float) -> void:
 		return
 	bulb_level = level
 	if _light != null:
-		_light.light_energy = _light_energy * level
+		_light.light_energy = light_energy_full * level
 	for i in _bulb_materials.size():
 		_bulb_materials[i].set_shader_parameter("emission_energy", _bulb_emission[i] * level)
 

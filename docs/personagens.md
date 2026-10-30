@@ -27,18 +27,19 @@ Todos usam o mesmo boneco. A vaga muda a cor do moletom (`Net.PLAYER_COLORS`) e 
 blender --background --python art_source/blender/character.py -- --export
 ```
 
-São peças rígidas, cada uma com a origem no ponto onde gira (braço e perna em duas partes):
+- **Corpo (`Char_Body`)**: uma malha só, com esqueleto. É feito de metaballs que se fundem: o
+  tronco (quadril, barriga, peito e ombros, em `TORSO`) e cada braço e perna (cápsulas entre as
+  juntas e bolas no ombro, cotovelo, quadril e joelho). Não tem emenda: ombro, cotovelo, quadril
+  e joelho dobram como pano. A roupa sai do pedaço e da altura (calça, moletom, barra de ribana
+  em `HEM`, punho), e os pesos da distância até os ossos.
+- **Peças rígidas presas nos ossos**: a cabeça (`Char_Head`, com o rosto e os quatro `Acc_*`), as
+  luvas (`Char_Glove_L/R`), os tênis com a barra da calça (`Char_Shoe_L/R`), os punhos das
+  mangas (`Char_Cuff_L/R`), o capuz caído nas costas com a gola e os cordões (`Char_Hood`), o
+  bolso canguru (`Char_Pocket`) e os bolsos de trás (`Char_BackPockets`).
 
-| Peça | Origem | O que é |
-|---|---|---|
-| `Character` | pés | raiz |
-| `Char_Body` | quadril | moletom (peito e barriga), gola, capuz, cordões e o cós com os bolsos de trás |
-| `Char_Head` | pescoço | cabeça, rosto (com narinas, orelha por dentro e pomo de adão) e os quatro `Acc_*` |
-| `Char_Arm_L` / `_R` | ombro | braço da manga (`UPPER_ARM` = 0,3 m) |
-| `Char_Forearm_L` / `_R` | cotovelo | antebraço e o punho de ribana (`FOREARM` = 0,3 m) |
-| `Char_Glove_L` / `_R` | pulso | luva de desenho (três dedos e o polegar) |
-| `Char_Leg_L` / `_R` | quadril | coxa (`THIGH` = 0,38 m) |
-| `Char_Shin_L` / `_R` | joelho | canela, a barra embolada e o tênis |
+Ossos: `Hips > Spine > Chest > Neck > Head`, `Chest > UpperArm.L/R > Forearm.L/R > Hand.L/R` e
+`Hips > Thigh.L/R > Shin.L/R > Foot.L/R`. As juntas ficam em `SHOULDER`, `ELBOW`, `WRIST`,
+`HIP_JOINT`, `KNEE` e `ANKLE` (só o lado esquerdo; o direito é o espelho).
 
 L é o lado esquerdo do boneco. No Blender a frente é -Y; o `character_rig.gd` gira o modelo para
 a frente do jogador (-Z no Godot). Os materiais `M_Hoodie` e `M_HoodieDark` são trocados no jogo
@@ -46,15 +47,16 @@ pela cor da vaga.
 
 ## Animação
 
-`scripts/character_rig.gd` anima por código, a partir de quanto o boneco andou em cada quadro
-(serve para os bonecos dos outros, que só recebem a posição):
+`scripts/character_rig.gd` anima por código, girando os ossos em cima da pose de descanso, a
+partir de quanto o boneco andou em cada quadro (serve para os bonecos dos outros, que só recebem
+a posição):
 
 - sempre um pouco curvado para frente (`SLOUCH`);
 - andando: pernas e braços balançam (ao contrário), o joelho dobra quando a perna vem para
   frente, o cotovelo dobra quando o braço vai para frente, o corpo quica de leve, curva mais e
-  rebola;
+  rebola; os pés ficam sempre retos;
   andar para trás roda o passo ao contrário;
-- parado: respira (o corpo estica e encolhe de leve), com os cotovelos meio dobrados;
+- parado: o peito respira (estica e encolhe de leve), com os cotovelos meio dobrados;
 - no ar: joelhos encolhidos e braços para cima;
 - a cabeça acompanha metade do olhar (para cima e para baixo);
 - segurando um item: IK de dois ossos, o ombro e o cotovelo se ajustam para a mão chegar nas
@@ -67,10 +69,11 @@ O próprio boneco fica escondido para quem joga (só aparecem as luvas na primei
 | Ajuste | Onde |
 |---|---|
 | Passos por metro, balanço das pernas e dos braços, quique, rebolado, curvatura | constantes no topo de `character_rig.gd` |
-| Abertura dos braços parados (contornando a barriga) e o cotovelo dobrado | `ARM_SPLAY`, `ELBOW_REST` |
+| Abertura dos braços parados (além do descanso) e o cotovelo dobrado | `ARM_SPLAY`, `ELBOW_REST` |
 | Quanto o joelho dobra no passo | `KNEE_BEND` |
 | Para onde o cotovelo aponta segurando | `pole` em `_reach` |
-| Proporções, rosto e acessórios | `character.py` (`HIP`, `NECK`, `SHOULDER`, `HEAD_C`, `HEAD_R`...) |
+| Proporções do corpo | `TORSO`, `ARM_CAPSULES`, `LEG_CAPSULES` e as juntas em `character.py` |
+| Rosto e acessórios | `head()` e `accessories()` em `character.py` |
 
 A barba por fazer é uma casca aberta, rente à pele: com tampa, o contorno desenhava uma linha
 preta atravessando o rosto.

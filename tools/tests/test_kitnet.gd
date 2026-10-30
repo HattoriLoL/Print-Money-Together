@@ -163,7 +163,8 @@ func _run() -> void:
 	_check(amb.tv_material != null, "a TV mostra chuvisco")
 	_check(amb.steam != null and amb.steam.emitting, "a panela de tinta solta vapor")
 	var bulb_light: Light3D = kitnet.model.find_child("LIGHT_main_0", true, false)
-	var full_energy := bulb_light.light_energy
+	# O brilho de repouso (uma piscada sorteada pode estar acontecendo agora).
+	var full_energy: float = amb.light_energy_full
 	amb.flicker_now()
 	await process_frame
 	await process_frame
@@ -221,8 +222,8 @@ func _test_characters(kitnet: Node3D, player: CharacterBody3D) -> void:
 	stage.name = "CharacterLineup"
 	kitnet.add_child(stage)
 	var sun := DirectionalLight3D.new()
-	# Vindo de trás da câmera, para pegar a frente dos bonecos (que olham para ela).
-	sun.rotation = Vector3(-0.6, PI + 0.4, 0.0)
+	# A luz anda para -Z, como a câmera olha: pega a frente dos bonecos (que olham para ela).
+	sun.rotation = Vector3(-0.6, 0.4, 0.0)
 	sun.light_energy = 1.2
 	stage.add_child(sun)
 	var rigs: Array[Node3D] = []
@@ -249,13 +250,13 @@ func _test_characters(kitnet: Node3D, player: CharacterBody3D) -> void:
 		rigs[2].animate(dt, Vector3.ZERO, true, 0.3)
 		var hold: Vector3 = rigs[3].global_position + rigs[3].global_basis * Vector3(0, 1.35, -0.45)
 		rigs[3].animate(dt, Vector3.ZERO, false, 0.0, [hold + rigs[3].global_basis.x * 0.12, hold - rigs[3].global_basis.x * 0.12])
-		max_leg = maxf(max_leg, absf(rigs[1].legs[0].rotation.x))
-		max_knee = maxf(max_knee, rigs[1].shins[0].rotation.x)
+		max_leg = maxf(max_leg, absf(rigs[1].leg_angles[0]))
+		max_knee = maxf(max_knee, rigs[1].knee_angles[0])
 		await process_frame
 	_check(max_leg > 0.3, "andando, as pernas balançam (%.2f rad)" % max_leg)
 	_check(max_knee > 0.4, "andando, o joelho dobra (%.2f rad)" % max_knee)
 	var hold_r: Vector3 = rigs[3].global_position + rigs[3].global_basis * Vector3(0, 1.35, -0.45) + rigs[3].global_basis.x * 0.12
-	var hand_r: Vector3 = rigs[3].forearms[0].global_transform * Vector3(0, -Rig.FOREARM, 0)
+	var hand_r: Vector3 = rigs[3].hand_position(0)
 	_check(not rigs[3].gloves[0].visible and hand_r.distance_to(hold_r) < 0.03,
 			"segurando, ombro e cotovelo levam a mão até a luva (%.3f m)" % hand_r.distance_to(hold_r))
 	await _look(player, Vector3(2.4, 0, -2.0), Vector3(2.4, 0.85, -4.2), "37_elenco")
