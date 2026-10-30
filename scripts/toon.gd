@@ -28,9 +28,21 @@ uniform vec3 emission : source_color = vec3(0.0);
 uniform float emission_energy = 1.0;
 uniform sampler2D emission_tex : source_color, hint_default_white, filter_linear_mipmap, repeat_enable;
 uniform float alpha_scissor = 0.5;
+// Vento (scripts/ambience.gd), por malha: força (m), altura do topo no mundo (lá não mexe),
+// comprimento até mexer tudo e velocidade. Força 0 = parado.
+instance uniform vec4 wind = vec4(0.0);
+instance uniform vec3 wind_dir = vec3(1.0, 0.0, 0.0);
 
 void vertex() {
 	UV = UV * uv1_scale.xy + uv1_offset.xy;
+	if (wind.x > 0.0) {
+		vec3 world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+		float hang = clamp((wind.y - world.y) / wind.z, 0.0, 1.0);
+		float gust = 0.35 + 0.65 * sin(TIME * wind.w + world.x * 2.3 + world.z * 3.1)
+				+ 0.2 * sin(TIME * wind.w * 2.7 + world.y * 6.0);
+		vec3 push = wind_dir * wind.x * hang * gust;
+		VERTEX += (inverse(MODEL_MATRIX) * vec4(push, 0.0)).xyz;
+	}
 }
 
 void fragment() {

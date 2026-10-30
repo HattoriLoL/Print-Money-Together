@@ -12,6 +12,8 @@ extends SceneTree
 ## - guilhotina: pôr a folha, cortar linha por linha (2 notas por corte no montinho da frente,
 ##   borradas se a folha estava molhada), somar no mesmo montinho e carregar o montinho;
 ## - etapa 3 do visual: prints da fita na impressora, jornal, retrato, geladeira, TV, pizza, trancas e lâmpada;
+## - vida no cenário: ventilador girando, vento no varal e na cortina, chuvisco na TV, vapor na panela,
+##   lâmpada piscando e balançando quando alguém passa perto;
 ## - com --solo, entra sozinho sem rede (o botão "Play solo") em vez de hospedar;
 ## - com --client, abre uma segunda janela que entra na sala e confere que ela aparece e se mexe.
 ## Prints de alguns pontos de vista na pasta --out (rode com janela, sem --headless).
@@ -145,6 +147,34 @@ func _run() -> void:
 	await _look(player, Vector3(3.6, 0, -3.2), Vector3(4.55, 0.1, -4.5), "25_caixas_de_pizza")
 	await _look(player, Vector3(4.1, 0, -1.4), Vector3(4.1, 1.3, 0.1), "26_trancas_da_porta")
 	await _look(player, Vector3(2.6, 0, -2.0), Vector3(2.6, 2.1, -2.7), "27_lampada_pelada")
+
+	# --- Vida no cenário (scripts/ambience.gd) ---
+	var amb: Node = kitnet.ambience
+	var blades_before: Basis = amb.fan_blades.transform.basis
+	await create_timer(0.2).timeout
+	_check(not amb.fan_blades.transform.basis.is_equal_approx(blades_before), "as pás do ventilador giram")
+	var clothes: GeometryInstance3D = kitnet.model.find_child("MACHINE_ClothesLine", true, false)
+	var curtain: GeometryInstance3D = kitnet.model.find_child("Curtain_Main", true, false)
+	_check(clothes.get_instance_shader_parameter("wind").x > 0.0 and curtain.get_instance_shader_parameter("wind").x > 0.0,
+			"as folhas do varal e a cortina pegam vento")
+	_check(amb.tv_material != null, "a TV mostra chuvisco")
+	_check(amb.steam != null and amb.steam.emitting, "a panela de tinta solta vapor")
+	var bulb_light: Light3D = kitnet.model.find_child("LIGHT_main_0", true, false)
+	var full_energy := bulb_light.light_energy
+	amb.flicker_now()
+	await process_frame
+	await process_frame
+	_check(amb.bulb_level < 0.5 and bulb_light.light_energy < full_energy * 0.5,
+			"a lâmpada pisca (brilho %.2f)" % amb.bulb_level)
+	# Passar perto da lâmpada (na frente da mesa) balança o fio.
+	for i in 40:
+		player.global_position = Vector3(1.8 + i * 0.05, 0.05, -3.3)
+		await physics_frame
+	_check(amb.swing.length() > 0.02, "quem passa perto balança a lâmpada (%.3f rad)" % amb.swing.length())
+	await _look(player, Vector3(2.6, 0, -2.0), Vector3(2.6, 2.1, -2.7), "31_lampada_balancando")
+	await _look(player, Vector3(2.45, 0, -1.25), Vector3(2.45, 1.15, -0.24), "28_vapor_da_tinta")
+	await _look(player, Vector3(3.6, 0, -2.25), Vector3(4.7, 0.9, -2.25), "29_tv_chuvisco")
+	await _look(player, Vector3(4.3, 0, -3.5), Vector3(5.8, 1.9, -3.7), "30_varal_ao_vento")
 
 	# --- Portas ---
 	var door: AnimatableBody3D = kitnet.doors["301"]

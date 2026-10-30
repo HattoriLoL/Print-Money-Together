@@ -51,7 +51,7 @@ A cortina da janela (`Curtain_Main`) fica meio aberta: dá para ver a impressora
 | `MACHINE_*` / `SUPPLY_*` | Estações da produção. A origem fica na base. |
 | `MACHINE_Guillotine_Arm` | Alavanca da guilhotina, com a origem no pivô; gira no Y local (filha da base). |
 | `MACHINE_Washer_Lid` | Tampa da máquina de lavar, gira no X local na dobradiça de trás. |
-| `MACHINE_Fan_Blades` | Pás do ventilador, giram no Y local. |
+| `MACHINE_Fan_Blades` | Pás do ventilador, giram no Y local (o `ambience.gd` gira sempre). |
 | `HIDE_*` | Esconderijos: `HIDE_SofaBed` (vão de 12 cm embaixo), `HIDE_Wardrobe` (e a mala em cima), `HIDE_Fridge`. |
 | `KEEP_BathHatch` | Tampa do alçapão do forro do banheiro (o pacote vai entre o forro e a laje). |
 | `KEEP_Door_<n>` | Porta com a origem na dobradiça, folha para +X local, face de fora para -Y local: `301` (entrada, com olho mágico), `302`, `303`, `Stairs`, `Bath`. |
@@ -62,7 +62,7 @@ A cortina da janela (`Curtain_Main`) fica meio aberta: dá para ver a impressora
 | `SPAWN_1` a `SPAWN_4` | Onde os jogadores nascem. |
 | `POINT_Knock` | Onde o fiscal para para bater na porta. |
 | `Glass_*`, `Curtain_*` | Vidro e pano. |
-| `TV_Rack` | TV de tubo: pode virar o monitor de uma câmera do corredor. |
+| `TV_Rack` | TV de tubo: a tela (`M_TVScreen`) mostra chuvisco (`ambience.gd`); pode virar o monitor de uma câmera do corredor. |
 
 | `Props_<cômodo>` | Objetos do dia a dia (botijão, roupas, latinhas, quadro de cortiça "do plano", eletroduto aparente...). Têm colisão. |
 | `Newspaper_Window` | Jornal e silver tape no vidro da janela principal. Sem colisão. |

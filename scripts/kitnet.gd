@@ -17,6 +17,7 @@ const Printer := preload("res://scripts/machines/printer.gd")
 const PaperSupply := preload("res://scripts/machines/paper_supply.gd")
 const Guillotine := preload("res://scripts/machines/guillotine.gd")
 const Toon := preload("res://scripts/toon.gd")
+const Ambience := preload("res://scripts/ambience.gd")
 
 ## Portas que os jogadores não abrem (vizinhos e a escada, por onde o fiscal vai chegar).
 const LOCKED_DOORS := ["302", "303", "Stairs"]
@@ -49,6 +50,8 @@ var items: Node
 var printer: Node3D
 var paper_supply: Node3D
 var guillotine: Node3D
+## Animações do cenário (ventilador, lâmpada, TV, vapor, vento).
+var ambience: Node
 
 var _players_root: Node3D
 
@@ -180,6 +183,9 @@ func _setup_model() -> void:
 		var marker: Node3D = model.find_child("SPAWN_%d" % (i + 1), true, false)
 		spawns.append(Transform3D(Basis.IDENTITY, marker.global_position + Vector3.UP * 0.05))
 	_add_stations()
+	ambience = Ambience.new()
+	add_child(ambience)
+	ambience.setup(model, self)
 
 
 func _on_node_added(node: Node) -> void:

@@ -35,6 +35,16 @@ primeira pessoa.
    - geladeira mais baixa e gorda, em pezinhos, com puxadores cromados grandes e a fruteira em
      cima do micro-ondas.
 
+5. **Feito:** vida no cenário (`scripts/ambience.gd`, só visual, nada passa pela rede):
+   - o ventilador gira e o vento dele faz as folhas de notas do varal tremularem; a cortina
+     balança devagar;
+   - a lâmpada pelada pisca de vez em quando (a luz junto) e balança no fio quando alguém passa
+     perto, levando a luz e as sombras;
+   - a TV de tubo mostra chuvisco;
+   - a panela de tinta solta nuvenzinhas de vapor com contorno.
+   Cada máquina sorteia as próprias piscadas: dois jogadores não veem a lâmpada piscar na mesma
+   hora.
+
 ## Como funciona
 
 - **Paleta:** as cores ficam em `lib.MATERIALS` (`art_source/blender/lib.py`).
@@ -66,6 +76,9 @@ primeira pessoa.
   marca linha onde a profundidade dá degrau ou quina e onde a normal vira. As linhas de quina
   somem entre 2 e 4 m (de longe, sulcos menores que um pixel saíam tracejados); a silhueta some
   entre 9 e 25 m.
+- **Vento no vértice:** o toon tem `instance uniform`s `wind` (força, topo, comprimento,
+  velocidade) e `wind_dir`, por malha (`set_instance_shader_parameter`). O que fica abaixo do
+  topo balança, mais quanto mais longe dele. Força 0 (o padrão) não mexe nada.
 - **Ambiente** (`kitnet._build_environment`): a sombra é um tom arroxeado chapado (luz ambiente
   0,3). Fica só um pouco de oclusão de ambiente; a luz rebatida, a neblina e as sondas de
   reflexo saíram (o espelho do banheiro é só um cinza claro).
@@ -79,4 +92,5 @@ primeira pessoa.
 | Quanto e como tudo entorta | `LAYERS` e `GRID` em `wonky.py` |
 | Grossura, cor e sensibilidade do contorno | uniforms do `outline.gdshader` |
 | Quanto da luz cheia cada material aceita (o teto) | `Toon.FULL_LIGHT` |
+| Vento do varal e da cortina, giro do ventilador, piscadas e balanço da lâmpada, vapor | constantes no topo de `ambience.gd` |
 | Cor e força do tom de sombra | `ambient_light_*` em `kitnet._build_environment` |
