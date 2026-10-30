@@ -385,7 +385,7 @@ def _gen_sticker_label():
 
 
 
-# --- Desenhos da etapa 3 (jornal, retrato, tampa de pizza) ----------------------------------------
+# --- Desenhos da etapa 3 (retrato) ----------------------------------------
 # Imagens soltas (UV de 0 a 1 num quad), com a linha 0 embaixo.
 
 def _canvas(w, h, color):
@@ -402,32 +402,6 @@ def _fill(rgb, mask, color, outline=0, line=0.04):
 
 def _ell(x, y, cx, cy, rx, ry):
     return ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1.0
-
-
-def _gen_newspaper():
-    """Folha de jornal: título grosso, manchete, foto riscada e colunas de texto."""
-    w = h = 256
-    rgb, x, y = _canvas(w, h, (0.88, 0.85, 0.74))
-    rgb[(x < 3) | (x >= w - 3) | (y < 3) | (y >= h - 3)] = 0.35
-    rgb[(y > 214) & (y < 242) & (x > 14) & (x < w - 14)] = 0.08  # título
-    for i in range(6):  # letrinhas claras no título
-        rgb[(y > 222) & (y < 234) & (x > 24 + i * 36) & (x < 42 + i * 36)] = 0.88
-    rgb[(y > 206) & (y < 209) & (x > 14) & (x < w - 14)] = 0.2
-    rgb[(y > 176) & (y < 196) & (x > 14) & (x < 200)] = 0.12  # manchete
-    rgb[(y > 160) & (y < 170) & (x > 14) & (x < 150)] = 0.12
-    photo = (y > 90) & (y < 150) & (x > 14) & (x < 112)  # foto: cinza com diagonais
-    rgb[photo] = 0.62
-    rgb[photo & (((x + y) // 6) % 2 == 0)] = 0.5
-    rgb[(y > 88) & (y < 152) & (x > 12) & (x < 114) & ~photo] = 0.1
-    for col, x0 in enumerate((124, 188)):  # colunas de texto
-        for row in range(9):
-            yy = 92 + row * 8 + col * 3
-            rgb[(y >= yy) & (y < yy + 3) & (x > x0) & (x < x0 + 56 - (row % 3) * 9)] = 0.3
-    for row in range(8):  # texto embaixo da foto
-        yy = 16 + row * 9
-        rgb[(y >= yy) & (y < yy + 3) & (x > 14) & (x < 230 - (row % 4) * 22)] = 0.3
-    rgb[(y > 70) & (y < 76) & (x > 14) & (x < 112)] = 0.2
-    return rgb, None, np.full((h, w), 0.9)
 
 
 def _gen_portrait():
@@ -480,27 +454,41 @@ def _gen_portrait():
     rgb[(x < 5) | (x >= w - 5) | (y < 3) | (y >= h - 5)] = 0.05
     return rgb, None, np.full((h, w), 0.6)
 
+def _ink_splat():
+    """Respingo de tinta verde neon: bolha central, gotas em volta e dois escorridos, com a borda
+    mais escura (como as manchas, tem transparência)."""
+    size = 256
+    x, y = _grid(size)
+    c = size / 2
+    blob = _ellipse(size, c, c, 58, 50) - _noise(size, 0.25, octaves=3) < 1.0
+    for _ in range(9):
+        a = _rng.uniform(0, 2 * math.pi)
+        d = _rng.uniform(70, 112)
+        r = _rng.uniform(5, 13)
+        blob |= _ellipse(size, c + d * math.cos(a), c + d * math.sin(a), r, r) < 1.0
+    for _ in range(2):
+        a = _rng.uniform(0, 2 * math.pi)
+        tip = np.array((c + 105 * math.cos(a), c + 105 * math.sin(a)))
+        blob |= _segment_dist(x, y, np.array((c, c)), tip) < 7
+    rim = _dilate(blob, 3) & ~_dilate(~blob, 3)
+    rgb = np.zeros((size, size, 3)) + np.array((0.3, 0.95, 0.35))
+    rgb[rim] = (0.08, 0.4, 0.12)
+    return rgb, blob.astype(float) * 0.92
 
-def _gen_pizza_lid():
-    """Tampa de caixa de pizza: papelão, faixa vermelha e uma fatia com queijo e pepperoni."""
-    w = h = 256
-    rgb, x, y = _canvas(w, h, (0.9, 0.78, 0.55))
-    rgb[(x < 5) | (x >= w - 5) | (y < 5) | (y >= h - 5)] = 0.45
-    band = (y > 178) & (y < 232)
-    _fill(rgb, band, (0.8, 0.14, 0.1), outline=3)
-    for i in range(7):  # letrões do nome
-        rgb[(y > 192) & (y < 218) & (x > 22 + i * 30) & (x < 40 + i * 30)] = 0.97
-    # Fatia: triângulo de borda (massa), queijo e pepperoni.
-    tri = (y > 22) & (y < 160) & (np.abs(x - 128) < (y - 22) * 0.62)
-    _fill(rgb, tri, (0.98, 0.78, 0.2), outline=4)
-    crust = (y > 138) & (y < 160) & (np.abs(x - 128) < (y - 22) * 0.62)
-    rgb[crust] = (0.8, 0.5, 0.2)
-    for (px, py, r) in ((128, 120, 13), (100, 98, 11), (156, 100, 11), (128, 70, 10)):
-        _fill(rgb, _ell(x, y, px, py, r, r), (0.78, 0.16, 0.12), outline=2)
-    # Gordura escorrendo e vapor.
-    for sx in (60, 196):
-        rgb[(np.abs(x - sx) < 3) & (y > 30) & (y < 110) & ~tri] = (0.95, 0.65, 0.2)
-    return rgb, None, np.full((h, w), 0.9)
+
+def _footprint():
+    """Pegada de tênis em tinta verde: sola da frente e calcanhar, com as ranhuras da sola. O bico
+    aponta para +V (cima da imagem)."""
+    size = 256
+    x, y = _grid(size)
+    front = _ellipse(size, 128, 165, 62, 84) < 1.0
+    heel = _ellipse(size, 128, 48, 50, 44) < 1.0
+    # Sola cheia com três ranhuras largas (finas demais, de longe a pegada virava risquinhos).
+    sole = (front | heel) & ~((np.abs(y - 140) < 6) | (np.abs(y - 190) < 6) | (np.abs(y - 60) < 5))
+    rim = _dilate(sole, 3) & ~sole
+    rgb = np.zeros((size, size, 3)) + np.array((0.3, 0.95, 0.35))
+    rgb[rim] = (0.08, 0.4, 0.12)
+    return rgb, (sole | rim).astype(float) * 0.9
 
 # material -> (gerador, metros que a textura cobre)
 GENERATED = {
@@ -518,9 +506,7 @@ GENERATED = {
     "M_DeskMetal": (_gen_desk_metal, 0.5),
     "M_StickerWarning": (_gen_sticker_warning, 1.0),
     "M_StickerLabel": (_gen_sticker_label, 1.0),
-    "M_Newspaper": (_gen_newspaper, 1.0),
     "M_Portrait": (_gen_portrait, 1.0),
-    "M_PizzaLid": (_gen_pizza_lid, 1.0),
     "M_Floor": (_gen_floor, 0.9),
     "M_FloorBath": (_gen_floor_bath, 0.6),
     "M_Tile": (_gen_wall_tile, 0.4),
@@ -532,6 +518,8 @@ GENERATED = {
     "M_DecalWater": (lambda: _stain((0.6, 0.45, 0.25), True), 1.0),
     "M_DecalGrime": (lambda: _stain((0.25, 0.2, 0.15), False), 1.0),
     "M_DecalCrack": (_crack, 1.0),
+    "M_DecalInk": (_ink_splat, 1.0),
+    "M_DecalFootprint": (_footprint, 1.0),
 }
 # Desenhos em cinza que a cor do material tinge.
 TINTED = {"M_Wall", "M_Ceiling", "M_Concrete", "M_FloorHall", "M_Wood", "M_WoodLight", "M_DoorWood",

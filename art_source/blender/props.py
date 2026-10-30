@@ -3,6 +3,7 @@
 Os Props_ têm colisão no Godot; os Decal_, não."""
 
 import math
+import random
 
 from mathutils import Matrix
 
@@ -16,6 +17,8 @@ def build(colls):
     main_room(c)
     newspaper_window(c)
     portrait(c)
+    trash_bin(c)
+    ink_marks(c)
     conduit(c)
     bathroom(c)
     service(c)
@@ -110,16 +113,21 @@ def main_room(coll):
     _can(p, 1.15, 2.95, 0, "M_Can", lying=True, rot=0.6)
     _can(p, 1.02, 4.3, 0, "M_CanBlue", lying=True, rot=-0.3)
     _can(p, 3.1, 1.8, 0.76, "M_Can")
-    # Quadro de cortiça "do plano" na parede do fundo, com papéis, fotos e barbante vermelho.
+    # Quadro de cortiça "do plano" na parede do fundo, com papéis, fotos, a ficha do fiscal e
+    # barbante vermelho.
     bx0, bx1, bz0, bz1 = 3.6, 4.6, 1.25, 1.95
     y = P.D
     p.box(bx0, y - 0.025, bz0, bx1, y, bz1, "M_Wood")
     p.box(bx0 + 0.03, y - 0.03, bz0 + 0.03, bx1 - 0.03, y - 0.025, bz1 - 0.03, "M_Cork")
     pins = []
     for (x, z, w, h, mat) in ((3.68, 1.62, 0.2, 0.26, "M_Paper"), (3.95, 1.7, 0.16, 0.18, "M_ClothWhite"),
-                              (4.2, 1.55, 0.3, 0.2, "M_Paper"), (3.75, 1.32, 0.22, 0.16, "M_Money"),
+                              (4.17, 1.5, 0.34, 0.28, "M_Dossier"), (3.75, 1.32, 0.22, 0.16, "M_Money"),
                               (4.1, 1.3, 0.14, 0.18, "M_ClothWhite"), (4.35, 1.33, 0.18, 0.14, "M_Paper")):
-        p.box(x, y - 0.034, z, x + w, y - 0.03, z + h, mat)
+        p.box(x, y - 0.034, z, x + w, y - 0.03, z + h, "M_Paper" if mat == "M_Dossier" else mat)
+        if mat == "M_Dossier":
+            # Ficha do fiscal (foto com círculo vermelho e "NEVER open the door!!").
+            yq = y - 0.0345
+            p.quad(((x, yq, z), (x + w, yq, z), (x + w, yq, z + h), (x, yq, z + h)), mat, double=False)
         pins.append((x + w / 2, z + h - 0.02))
         p.box(x + w / 2 - 0.008, y - 0.04, z + h - 0.028, x + w / 2 + 0.008, y - 0.034, z + h - 0.012, "M_Red")
     for (ax, az), (bx, bz) in ((pins[0], pins[2]), (pins[1], pins[4]), (pins[3], pins[2]), (pins[4], pins[5])):
@@ -167,7 +175,7 @@ def _pizza_open(p, x, y, z, rot):
     # O desenho vai na face de dentro da tampa (a que fica virada para a sala).
     c = [hinge @ Matrix.Translation((sx * 0.17, -0.18 + sy * 0.17, -0.0015)).translation
          for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
-    p.quad(list(reversed(c)), "M_PizzaLid", uvs=((0, 1), (1, 1), (1, 0), (0, 0)), double=False)
+    p.quad(list(reversed(c)), "M_PizzaLid", uvs=((0, 0), (1, 0), (1, 1), (0, 1)), double=False)
 
 
 def newspaper_window(coll):
@@ -187,7 +195,7 @@ def newspaper_window(coll):
             du, dv = u * w / 2, v * h / 2
             corners.append((cx + du * c - dv * s, y, cz + du * s + dv * c))
         # De dentro da sala (olhando para +Y) o U cresce para +X e a face aponta para -Y.
-        p.quad(corners, "M_Newspaper", double=True)
+        p.quad(corners, "M_Newspaper2" if k % 3 == 1 else "M_Newspaper", double=True)
         # Dois pedaços de silver tape nos cantos de cima, em X.
         for sx in (-1, 1):
             tx, tz = cx + sx * (w / 2 - 0.03), cz + h / 2 - 0.02
@@ -216,6 +224,64 @@ def portrait(coll):
     # Fita de luto: laço vermelho no topo.
     p.cyl((t + 0.01, (y0 + y1) / 2, z1 + fr + 0.015), 0.03, 0.035, "M_Red", axis="X", seg=10)
     p.finish("Props_Portrait", coll, loc=(0.0, 0.0, 0.0))
+
+
+def trash_bin(coll):
+    """Cesto de lixo ao lado da escrivaninha, transbordando de bolas de papel e notas que saíram
+    erradas; algumas erraram o cesto e ficaram no chão."""
+    p = Part(bevel=0.003)
+    x, y = 1.33, 4.7
+    p.cyl((x, y, 0.15), 0.3, 0.11, "M_MetalDark", seg=16, radius2=0.14)
+    p.cyl((x, y, 0.3), 0.016, 0.148, "M_MetalDark", seg=16)
+    rng = random.Random(7)
+    balls = [(0.0, 0.0, 0.33), (0.06, 0.05, 0.34), (-0.07, 0.03, 0.335), (0.02, -0.07, 0.34),
+             (-0.03, -0.02, 0.4), (0.05, -0.01, 0.39), (-0.06, 0.07, 0.385)]
+    for i, (dx, dy, z) in enumerate(balls):
+        _paper_ball(p, x + dx, y + dy, z, rng, "M_Money" if i % 2 else "M_Paper")
+    for (bx, by) in ((1.12, 4.45), (1.55, 4.5), (1.08, 4.88)):
+        _paper_ball(p, bx, by, 0.035, rng, "M_Money")
+    # Uma nota amassada aberta no chão e outra rasgada ao meio.
+    for (bx, by, rot) in ((1.5, 4.32, 0.5), (1.18, 4.32, -0.9)):
+        m = Matrix.Translation((bx, by, 0.003)) @ Matrix.Rotation(rot, 4, "Z")
+        p.box_m((0.155, 0.07, 0.004), m, "M_Money", bevel=0)
+    m = Matrix.Translation((1.24, 4.25, 0.003)) @ Matrix.Rotation(1.9, 4, "Z")
+    p.box_m((0.07, 0.07, 0.004), m, "M_Money", bevel=0)
+    p.finish("Props_Trash", coll)
+
+
+def _paper_ball(p, x, y, z, rng, mat):
+    """Bola de papel amassado: um bloco quase redondo, cada eixo de um tamanho."""
+    r = rng.uniform(0.03, 0.04)
+    sx, sy, sz = (r * rng.uniform(0.85, 1.15) for _ in range(3))
+    p.rounded(x - sx, y - sy, z - sz, x + sx, y + sy, z + sz, mat, min(sx, sy, sz) * 0.95)
+
+
+def ink_marks(coll):
+    """Tinta verde onde a produção passa: respingos em volta da panela, na bancada, na mesa da
+    guilhotina e embaixo da impressora, e uma trilha de pegadas da cozinha até a impressora,
+    contornando a mesa. A 3 mm da superfície, sem colisão (Decal_)."""
+    e = 0.003
+    p = Part()
+    for (x, y, z, size, rot) in ((2.55, 0.85, 0.0, 0.38, 0.3), (2.15, 1.05, 0.0, 0.16, 1.2),
+                                 (2.78, 0.5, 0.9, 0.16, 2.0), (2.66, 1.6, 0.76, 0.14, 0.7),
+                                 (2.05, 4.22, 0.0, 0.24, 2.6), (2.75, 4.3, 0.0, 0.12, 0.1)):
+        decal(p, (x, y, z + e), "+z", size, size, "M_DecalInk", rot=rot)
+    path = [(2.8, 1.0), (3.6, 1.25), (3.75, 2.4), (3.65, 3.4), (2.9, 4.0)]
+    step = 0.32
+    left = True
+    for (ax, ay), (bx, by) in zip(path, path[1:]):
+        dx, dy = bx - ax, by - ay
+        length = math.hypot(dx, dy)
+        ux, uy = dx / length, dy / length
+        rot = math.atan2(-ux, uy)
+        n = int(length / step)
+        for i in range(n):
+            side = 0.06 if left else -0.06
+            cx = ax + ux * i * step + uy * side
+            cy = ay + uy * i * step - ux * side
+            decal(p, (cx, cy, e), "+z", 0.14, 0.3, "M_DecalFootprint", rot=rot)
+            left = not left
+    p.finish("Decal_Ink", coll)
 
 
 def conduit(coll):

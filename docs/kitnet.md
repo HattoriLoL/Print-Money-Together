@@ -65,9 +65,11 @@ A cortina da janela (`Curtain_Main`) fica meio aberta: dá para ver a impressora
 | `TV_Rack` | TV de tubo: a tela (`M_TVScreen`) mostra chuvisco (`ambience.gd`); pode virar o monitor de uma câmera do corredor. |
 
 | `Props_<cômodo>` | Objetos do dia a dia (botijão, roupas, latinhas, quadro de cortiça "do plano", eletroduto aparente...). Têm colisão. |
-| `Newspaper_Window` | Jornal e silver tape no vidro da janela principal. Sem colisão. |
-| `Decal_*` | Mofo, infiltração, encardido e rachaduras, a 3 mm da parede. Sem colisão nem sombra. |
+| `Newspaper_Window` | Jornal (capa e classificados) e silver tape no vidro da janela principal. Sem colisão. |
+| `Decal_*` | Mofo, infiltração, encardido, rachaduras e a tinta verde (respingos e pegadas), a 3 mm da superfície. Sem colisão nem sombra. |
 | `Outside_*` | Lá fora: rua, postes, o prédio da frente e o da lateral com janelas acesas, e prédios ao longe. Sem colisão nem sombra. |
+
+O jornal, a tampa da pizza e a ficha do fiscal saem do `art_source/story_textures.py` (como as notas, com Pillow).
 
 As notas usam a textura `T_Bill`, desenhada pelo `lib.py` (sem arquivo externo) e embutida no
 `.blend` e no `.glb`. Uma folha impressa tem 2 x 2 notas.

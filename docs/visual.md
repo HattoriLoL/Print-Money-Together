@@ -45,6 +45,17 @@ primeira pessoa.
    Cada máquina sorteia as próprias piscadas: dois jogadores não veem a lâmpada piscar na mesma
    hora.
 
+6. **Feito:** detalhes que contam a história:
+   - texto de verdade (em inglês) no jornal da janela, que alterna a capa ("FAKE BILLS FLOOD
+     CITY") e os classificados, e na tampa da pizza da Zé's; a ficha do fiscal ("SUSPECT FILE
+     #1", "NEVER open the door!!") no quadro de cortiça. Desenhados por
+     `art_source/story_textures.py` (Pillow e fontes do Windows), como as notas;
+   - cesto de lixo ao lado da escrivaninha transbordando de papel e notas que saíram erradas,
+     com algumas no chão (`Props_Trash`);
+   - respingos de tinta verde em volta da panela, na bancada, na mesa da guilhotina e embaixo da
+     impressora, e uma trilha de pegadas verdes da cozinha até a impressora (`Decal_Ink`,
+     `M_DecalInk` e `M_DecalFootprint`).
+
 ## Como funciona
 
 - **Paleta:** as cores ficam em `lib.MATERIALS` (`art_source/blender/lib.py`).

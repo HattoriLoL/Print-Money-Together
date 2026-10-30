@@ -14,6 +14,7 @@ extends SceneTree
 ## - etapa 3 do visual: prints da fita na impressora, jornal, retrato, geladeira, TV, pizza, trancas e lâmpada;
 ## - vida no cenário: ventilador girando, vento no varal e na cortina, chuvisco na TV, vapor na panela,
 ##   lâmpada piscando e balançando quando alguém passa perto;
+## - detalhes da história: prints da ficha do fiscal, do jornal, do lixo de notas, das pegadas e da pizza;
 ## - com --solo, entra sozinho sem rede (o botão "Play solo") em vez de hospedar;
 ## - com --client, abre uma segunda janela que entra na sala e confere que ela aparece e se mexe.
 ## Prints de alguns pontos de vista na pasta --out (rode com janela, sem --headless).
@@ -175,6 +176,12 @@ func _run() -> void:
 	await _look(player, Vector3(2.45, 0, -1.25), Vector3(2.45, 1.15, -0.24), "28_vapor_da_tinta")
 	await _look(player, Vector3(3.6, 0, -2.25), Vector3(4.7, 0.9, -2.25), "29_tv_chuvisco")
 	await _look(player, Vector3(4.3, 0, -3.5), Vector3(5.8, 1.9, -3.7), "30_varal_ao_vento")
+	# Detalhes que contam a história.
+	await _look(player, Vector3(4.2, 0, -4.0), Vector3(4.35, 1.62, -5.0), "32_ficha_do_fiscal")
+	await _look(player, Vector3(2.5, 0, -4.0), Vector3(2.3, 1.6, -5.1), "33_jornal_de_perto")
+	await _look(player, Vector3(2.0, 0, -3.6), Vector3(1.3, 0.15, -4.6), "34_lixo_de_notas")
+	await _look(player, Vector3(2.9, 0, -0.75), Vector3(3.7, 0.0, -2.6), "35_pegadas_de_tinta")
+	await _look(player, Vector3(1.5, 0, -3.9), Vector3(0.56, 0.62, -4.35), "36_pizza_aberta")
 
 	# --- Portas ---
 	var door: AnimatableBody3D = kitnet.doors["301"]

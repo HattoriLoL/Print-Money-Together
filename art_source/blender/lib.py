@@ -75,10 +75,8 @@ MATERIALS = {
     "M_DeskWood": ((0.7, 0.48, 0.28), 0.5, 0.0, 0.0),
     "M_StickerWarning": ((0.95, 0.78, 0.1), 0.4, 0.0, 0.0),
     "M_StickerLabel": ((0.93, 0.92, 0.88), 0.6, 0.0, 0.0),
-    # Etapa 3: jornal na janela, retrato do presidente, tampa de pizza, silver tape.
-    "M_Newspaper": ((0.88, 0.85, 0.74), 0.9, 0.0, 0.0),
+    # Etapa 3: retrato do presidente, silver tape e a pizza.
     "M_Portrait": ((0.5, 0.2, 0.15), 0.6, 0.0, 0.0),
-    "M_PizzaLid": ((0.9, 0.78, 0.55), 0.9, 0.0, 0.0),
     "M_SilverTape": ((0.78, 0.8, 0.82), 0.2, 0.9, 0.0),
     "M_Cheese": ((0.98, 0.78, 0.2), 0.5, 0.0, 0.0),
     "M_Pepperoni": ((0.78, 0.16, 0.12), 0.5, 0.0, 0.0),
@@ -106,6 +104,9 @@ MATERIALS = {
     "M_DecalWater": ((1.0, 1.0, 1.0), 0.9, 0.0, 0.0),
     "M_DecalGrime": ((1.0, 1.0, 1.0), 0.9, 0.0, 0.0),
     "M_DecalCrack": ((1.0, 1.0, 1.0), 0.9, 0.0, 0.0),
+    # Respingos e pegadas de tinta verde.
+    "M_DecalInk": ((1.0, 1.0, 1.0), 0.6, 0.0, 0.0),
+    "M_DecalFootprint": ((1.0, 1.0, 1.0), 0.6, 0.0, 0.0),
     # Lá fora: janelas dos prédios em volta e postes.
     "M_WinLit": ((1.0, 0.7, 0.4), 0.3, 0.0, 0.8),
     "M_WinCool": ((0.7, 0.8, 1.0), 0.3, 0.0, 0.6),
@@ -127,9 +128,14 @@ ALPHA = {"M_Glass": 0.1, "M_GlassFrosted": 0.7}
 TEXTURED = {
     "M_MoneySheet": ("sheet_front.png", 0.75),
     "M_CuttingMat": ("cutting_mat.png", 0.6),
+    # Com texto (art_source/story_textures.py): jornal, tampa de pizza e o dossiê do fiscal.
+    "M_Newspaper": ("newspaper_front.png", 0.9),
+    "M_Newspaper2": ("newspaper_classifieds.png", 0.9),
+    "M_PizzaLid": ("pizza_lid.png", 0.9),
+    "M_Dossier": ("dossier.png", 0.8),
 }
 # Folhas feitas com frente e verso separados (Part.quad/sheet): sem isso as duas faces brigam.
-ONE_SIDED = {"M_MoneySheet", "M_Curtain", "M_ShowerCurtain"}
+ONE_SIDED = {"M_MoneySheet", "M_Curtain", "M_ShowerCurtain", "M_Newspaper", "M_Newspaper2"}
 
 
 def _bsdf(mat):
