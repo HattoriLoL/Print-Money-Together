@@ -78,12 +78,13 @@ func request_pickup(id: int) -> void:
 		_rpc_pickup.rpc_id(1, id)
 
 
-## Solta o que o jogador local segura em `xform`, com velocidade `velocity`.
-func request_drop(xform: Transform3D, velocity: Vector3) -> void:
+## Solta (ou arremessa) o que o jogador local segura em `xform`, com velocidade `velocity` e
+## giro `spin`.
+func request_drop(xform: Transform3D, velocity: Vector3, spin := Vector3.ZERO) -> void:
 	if multiplayer.is_server():
-		_drop(multiplayer.get_unique_id(), xform, velocity)
+		_drop(multiplayer.get_unique_id(), xform, velocity, spin)
 	else:
-		_rpc_drop.rpc_id(1, xform, velocity)
+		_rpc_drop.rpc_id(1, xform, velocity, spin)
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -93,9 +94,9 @@ func _rpc_pickup(id: int) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
-func _rpc_drop(xform: Transform3D, velocity: Vector3) -> void:
+func _rpc_drop(xform: Transform3D, velocity: Vector3, spin: Vector3) -> void:
 	if multiplayer.is_server():
-		_drop(multiplayer.get_remote_sender_id(), xform, velocity)
+		_drop(multiplayer.get_remote_sender_id(), xform, velocity, spin)
 
 
 func _pickup(peer: int, id: int) -> void:
@@ -105,11 +106,11 @@ func _pickup(peer: int, id: int) -> void:
 		return
 	if player.global_position.distance_to(item.global_position) > REACH:
 		return
-	_set_holder(id, peer, item.global_transform, Vector3.ZERO)
-	_kitnet.rpc_roster(self, &"_set_holder", [id, peer, item.global_transform, Vector3.ZERO])
+	_set_holder(id, peer, item.global_transform, Vector3.ZERO, Vector3.ZERO)
+	_kitnet.rpc_roster(self, &"_set_holder", [id, peer, item.global_transform, Vector3.ZERO, Vector3.ZERO])
 
 
-func _drop(peer: int, xform: Transform3D, velocity: Vector3) -> void:
+func _drop(peer: int, xform: Transform3D, velocity: Vector3, spin: Vector3) -> void:
 	var item := held_by(peer)
 	var player: Node3D = _kitnet.players.get(peer)
 	if item == null or player == null:
@@ -117,12 +118,13 @@ func _drop(peer: int, xform: Transform3D, velocity: Vector3) -> void:
 	# Não deixa soltar longe de onde o jogador está (cliente trapaceando ou lag grande).
 	if player.global_position.distance_to(xform.origin) > 2.5:
 		xform.origin = player.hold_point.global_position
-	_release(item, xform, velocity.limit_length(6.0))
+	_release(item, xform, velocity.limit_length(9.0), spin.limit_length(15.0))
+	item.ignore_briefly(player)
 
 
-func _release(item: Node, xform: Transform3D, velocity: Vector3) -> void:
-	_set_holder(item.id, 0, xform, velocity)
-	_kitnet.rpc_roster(self, &"_set_holder", [item.id, 0, xform, velocity])
+func _release(item: Node, xform: Transform3D, velocity: Vector3, spin := Vector3.ZERO) -> void:
+	_set_holder(item.id, 0, xform, velocity, spin)
+	_kitnet.rpc_roster(self, &"_set_holder", [item.id, 0, xform, velocity, spin])
 
 
 # --- Aplicado em todas as máquinas ------------------------------------------------------------
@@ -155,7 +157,7 @@ func _set_data(id: int, key: String, value: Variant) -> void:
 
 
 @rpc("authority", "call_remote", "reliable")
-func _set_holder(id: int, holder: int, xform: Transform3D, velocity: Vector3) -> void:
+func _set_holder(id: int, holder: int, xform: Transform3D, velocity: Vector3, spin: Vector3) -> void:
 	var item: Node = items.get(id)
 	if item == null:
 		return
@@ -166,6 +168,6 @@ func _set_holder(id: int, holder: int, xform: Transform3D, velocity: Vector3) ->
 	item.apply_mode()
 	if holder == 0 and multiplayer.is_server():
 		item.linear_velocity = velocity
-		item.angular_velocity = Vector3.ZERO
+		item.angular_velocity = spin
 	elif holder != 0:
 		picked.emit(item)

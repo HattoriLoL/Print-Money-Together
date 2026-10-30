@@ -27,6 +27,19 @@ frente do jogador, ou rente à parede se ela estiver no caminho).
   - Apoiada, as pontas levantam de leve.
   - A fibra do papel aparece na luz.
 
+### Soltar e arremessar
+
+- **Tocar [G]** solta o item na frente, na pose em que estava na mão. **Segurar [G]** carrega a força (uma barrinha aparece embaixo da mira, até 0,8 s); soltar a tecla arremessa a 2,5–7,5 m/s, um pouco para cima, girando mais quanto mais forte.
+- **A resma** pesa 2,5 kg: cai rápido, quica pouco (bounce 0,12) e tem atrito alto. Um arremesso forte leva uns 4 m.
+- **A folha** pesa 5 g e sente o ar (`item.gd`, `_paper_air`):
+  - Arrasto forte contra a face e fraco pela borda: deitada ela cai a ~1 m/s, e inclinada ela plana para o lado.
+  - Um torque vira a face contra o vento, passa do ponto e volta. Ela desce balançando como folha de árvore e pousa deitada.
+  - Arremessada, ela perde força no ar e não passa de ~1 m.
+- **Esbarrões:** os itens soltos batem nos jogadores. Uma resma arremessada acerta quem estiver no caminho, e andando dá para chutar folhas e empurrar resmas. Quem soltou fica 0,5 s sem esbarrar no próprio item.
+- **Fora do mapa:** um item que cair para fora (pela janela, por exemplo) volta para o meio da kitnet.
+- **Na rede:** tudo isso é simulado no host. Os outros recebem a posição 20 vezes por segundo e seguem suavizando.
+- Os números ficam em `ItemKinds` (`MASS`, `PHYSICS`, `PAPER_*`) e em `player.gd` (`THROW_*`).
+
 ### De onde vêm
 
 - **As texturas do papel**: o `art_source/paper_textures.py` desenha a nota (frente com a capivara, verso com o prédio da kitnet), a folha A4 (6 notas, marcas de corte e barra de cores), a fibra do papel e a embalagem da resma. Ele roda com o Python do sistema e o Pillow, não no Blender. As decorações do mapa (varal, guilhotina) usam a mesma folha.

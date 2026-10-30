@@ -5,6 +5,9 @@ extends SceneTree
 ## - a porta 301 abre com interact e a trancada não;
 ## - impressora: pegar resma, carregar, ligar no botão, esquentar, imprimir sozinha, desligar,
 ##   pegar e soltar a folha;
+## - física ao soltar: a folha cai devagar balançando e pousa deitada, a resma cai rápido, o
+##   arremesso carregado vai longe (a resma mais que a folha), andando se empurra a resma e o
+##   que cai fora do mapa volta;
 ## - com --solo, entra sozinho sem rede (o botão "Play solo") em vez de hospedar;
 ## - com --client, abre uma segunda janela que entra na sala e confere que ela aparece e se mexe.
 ## Prints de alguns pontos de vista na pasta --out (rode com janela, sem --headless).
@@ -142,6 +145,7 @@ func _run() -> void:
 	_check(not door.is_open, "a 301 fechou")
 
 	await _test_printer(kitnet, player)
+	await _test_drop_physics(kitnet, player)
 
 	if _with_client:
 		await _test_client(kitnet)
@@ -244,7 +248,7 @@ func _test_printer(kitnet: Node3D, player: CharacterBody3D) -> void:
 	player.head.rotation.x = 0.0
 	await physics_frame
 	player._drop_held()
-	await create_timer(1.5).timeout
+	await _wait_landed(sheet, 5.0)
 	_check(player.held_item() == null and sheet.holder == 0, "soltou a folha")
 	_check(sheet.global_position.y < 0.1, "a folha caiu no chão (y %.2f)" % sheet.global_position.y)
 	_check(not player._hands[0].visible, "de mão vazia as luvas somem")
@@ -257,6 +261,96 @@ func _test_printer(kitnet: Node3D, player: CharacterBody3D) -> void:
 	await physics_frame
 	_check(printer._screen_text() == "PAPER OUT", "sem papel o visor mostra PAPER OUT")
 	printer.powered = false
+
+
+func _test_drop_physics(kitnet: Node3D, player: CharacterBody3D) -> void:
+	var items: Node = kitnet.items
+	var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
+	var free_fall := sqrt(2.0 * 1.5 / gravity)
+
+	# Folha solta de 1,5 m, um pouco inclinada, longe dos móveis.
+	var start := Vector3(3.9, 1.55, -3.3)
+	var sheet: Node = items.spawn("sheet", Transform3D(Basis(Vector3.RIGHT, 0.25), start))
+	await physics_frame
+	var t := await _wait_landed(sheet, 6.0)
+	var drift := Vector2(sheet.global_position.x - start.x, sheet.global_position.z - start.z).length()
+	_check(t > free_fall * 1.6, "a folha cai devagar (%.2f s; queda livre %.2f s)" % [t, free_fall])
+	_check(absf(sheet.global_basis.y.normalized().y) > 0.9, "a folha pousa deitada")
+	_check(drift > 0.03, "a folha plana para o lado ao cair (%.2f m)" % drift)
+	items.consume(sheet)
+
+	# Resma solta da mesma altura: cai quase em queda livre.
+	var ream: Node = items.spawn("ream", Transform3D(Basis.IDENTITY, start))
+	await physics_frame
+	t = 0.0
+	while ream.global_position.y > 0.06 and t < 3.0:
+		await physics_frame
+		t += 1.0 / Engine.physics_ticks_per_second
+	_check(t < free_fall * 1.3, "a resma cai rápido: bate no chão em %.2f s" % t)
+	await _wait_landed(ream, 3.0)
+	items.consume(ream)
+
+	# Arremessos para -X pelo corredor livre em z = -1 (da entrada até a geladeira).
+	var throw_from := Vector3(4.2, 0.05, -1.0)
+	var dist_ream := await _throw(kitnet, player, "ream", throw_from, 1.0)
+	var dist_sheet := await _throw(kitnet, player, "sheet", throw_from, 1.0)
+	var dist_drop := await _throw(kitnet, player, "ream", throw_from, 0.0)
+	_check(dist_ream > 2.0, "arremesso forte leva a resma longe (%.2f m)" % dist_ream)
+	_check(dist_sheet < dist_ream, "a folha arremessada vai menos que a resma (%.2f m)" % dist_sheet)
+	_check(dist_drop < 1.2, "tocar [G] só solta na frente (%.2f m)" % dist_drop)
+
+	# Andar contra uma resma no chão empurra ela.
+	var pushed: Node = items.spawn("ream", Transform3D(Basis.IDENTITY, Vector3(3.9, 0.1, -3.2)))
+	await _wait_landed(pushed, 2.0)
+	var before: Vector3 = pushed.global_position
+	player.global_position = Vector3(3.9, 0.05, -2.5)
+	player.rotation.y = 0.0
+	Input.action_press("move_forward")
+	await create_timer(0.9).timeout
+	Input.action_release("move_forward")
+	await create_timer(0.5).timeout
+	_check(pushed.global_position.distance_to(before) > 0.1,
+			"andando se empurra a resma (%.2f m)" % pushed.global_position.distance_to(before))
+
+	# O que cai fora do mapa volta para dentro.
+	pushed.snap(Transform3D(Basis.IDENTITY, Vector3(3.0, -6.0, -3.0)))
+	await physics_frame
+	await physics_frame
+	_check(pushed.global_position.y > -1.0, "a resma que caiu fora do mapa voltou (y %.2f)" % pushed.global_position.y)
+	items.consume(pushed)
+	await _shot("16_depois_dos_arremessos")
+
+
+## Dá um item na mão do jogador em `at`, olhando para -X, solta com a força `charge` e devolve
+## quanto ele andou no chão até parar. O item some depois.
+func _throw(kitnet: Node3D, player: CharacterBody3D, kind: String, at: Vector3, charge: float) -> float:
+	player.global_position = at
+	player.rotation.y = PI / 2
+	player.head.rotation.x = 0.0
+	player.velocity = Vector3.ZERO
+	await physics_frame
+	var item: Node = kitnet.items.give(1, kind)
+	await create_timer(0.4).timeout
+	var from := Vector2(player.global_position.x, player.global_position.z)
+	player._drop_held(charge)
+	await physics_frame
+	await _wait_landed(item, 4.0)
+	var dist := Vector2(item.global_position.x, item.global_position.z).distance_to(from)
+	kitnet.items.consume(item)
+	await physics_frame
+	return dist
+
+
+## Espera o item parar no chão (dormindo ou quase parado perto do chão); devolve quanto levou.
+func _wait_landed(item: Node, timeout: float) -> float:
+	var t := 0.0
+	await physics_frame
+	while t < timeout:
+		await physics_frame
+		t += 1.0 / Engine.physics_ticks_per_second
+		if item.sleeping or (item.global_position.y < 0.12 and item.linear_velocity.length() < 0.05):
+			break
+	return t
 
 
 func _look(player: CharacterBody3D, at: Vector3, target: Vector3, shot_name: String) -> void:

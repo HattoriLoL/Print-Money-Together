@@ -16,7 +16,21 @@ const SIZES := {
 	"ream": Vector3(0.3, 0.052, 0.21),
 	"sheet": Vector3(0.297, 0.003, 0.21),
 }
-const MASS := {"ream": 2.5, "sheet": 0.05}
+## Uma resma de 500 folhas pesa uns 2,5 kg; uma folha A4 de 75 g/m², 5 g.
+const MASS := {"ream": 2.5, "sheet": 0.005}
+## Atrito, quique e amortecimento do giro de cada tipo.
+const PHYSICS := {
+	"ream": {"friction": 0.8, "bounce": 0.12, "angular_damp": 0.6},
+	"sheet": {"friction": 0.9, "bounce": 0.0, "angular_damp": 1.0},
+}
+## Ar na folha (ver item.gd, _paper_air). Arrasto da face: 0,5 · ρ · Cd · área (1,2 · 1,2 · 0,062 / 2),
+## o que dá ~1 m/s de velocidade final caindo deitada. O de lado (pela borda) é bem menor.
+const PAPER_FACE_DRAG := 0.045
+const PAPER_EDGE_DRAG := 0.002
+## Quanto a face vira contra o vento (passa do ponto e volta: a folha balança ao cair).
+const PAPER_ALIGN := 0.0004
+## Tremor aleatório do ar.
+const PAPER_FLUTTER := 0.00004
 ## Quanto a borda de longe da folha cai quando alguém segura pela de perto (m).
 const SHEET_DROOP := 0.03
 
@@ -60,6 +74,12 @@ static func hand_offset(kind: String, side: int) -> Transform3D:
 static func build(item: RigidBody3D) -> void:
 	var size: Vector3 = SIZES.get(item.kind, Vector3(0.2, 0.2, 0.2))
 	item.mass = MASS.get(item.kind, 1.0)
+	var phys: Dictionary = PHYSICS.get(item.kind, {})
+	var material := PhysicsMaterial.new()
+	material.friction = phys.get("friction", 0.7)
+	material.bounce = phys.get("bounce", 0.1)
+	item.physics_material_override = material
+	item.angular_damp = phys.get("angular_damp", 0.5)
 	var shape := BoxShape3D.new()
 	shape.size = size
 	var col := CollisionShape3D.new()

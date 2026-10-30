@@ -7,7 +7,8 @@ extends CharacterBody3D
 ##   get_prompt(player) -> String   texto na tela ("" = nada a fazer)
 ##   interact(player)               [E] apertado
 ##   is_hold + begin_hold/end_hold  segurar [E] (zonas das máquinas: manivela, portinhola)
-## Carrega um item por vez no ponto Hold (na frente da câmera); [G] solta. Com algo na mão
+## Carrega um item por vez no ponto Hold (na frente da câmera). Tocar [G] solta na frente;
+## segurar [G] carrega a força e soltar a tecla arremessa (THROW_*). Com algo na mão
 ## aparecem as luvas (hands.glb, manga na cor da vaga) segurando o item, para todos verem. No
 ## jogador local o ponto Hold balança atrasado quando a câmera vira e recua perto da parede.
 ##
@@ -19,6 +20,11 @@ const ItemKinds := preload("res://scripts/items/item_kinds.gd")
 const HandsModel := preload("res://assets/models/hands.glb")
 ## Onde o item fica na frente da câmera, parado.
 const HOLD_REST := Vector3(0.0, -0.25, -0.46)
+## Segurando [G]: segundos até a força máxima, abaixo de quanto é só soltar, e a velocidade
+## do arremesso (m/s) da mais fraca à mais forte.
+const THROW_CHARGE_TIME := 0.8
+const THROW_MIN_CHARGE := 0.15
+const THROW_SPEED := Vector2(2.5, 7.5)
 ## Quantas vezes por segundo o dono manda o estado para os outros.
 const SEND_RATE := 30.0
 ## Quão rápido os bonecos dos outros alcançam a última posição recebida.
@@ -65,6 +71,8 @@ var _hold_zone: Node = null
 var _hands: Array[MeshInstance3D] = []
 ## Balanço do item na mão com o mouse (só no jogador local).
 var _sway := Vector2.ZERO
+## Força do arremesso sendo carregada, de 0 a 1 (-1 = não está segurando [G]).
+var _throw_charge := -1.0
 
 @onready var head: Node3D = $Head
 @onready var camera: Camera3D = $Head/Camera3D
@@ -104,7 +112,7 @@ func _ready() -> void:
 		# sombra dele cobria o cômodo. Os outros continuam vendo (e com sombra).
 		_body.visible = false
 		hud.show_message("KITNET 301\nPrint the money. Don't get caught.", 4.0)
-		hud.show_hint("WASD move · Shift run · Ctrl/C crouch · Space jump · E interact · G drop · Esc menu")
+		hud.show_hint("WASD move · Shift run · Ctrl/C crouch · Space jump · E interact · G drop (hold to throw) · Esc menu")
 	else:
 		interact_ray.enabled = false
 
@@ -158,7 +166,7 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 
 	_update_bob(delta, horizontal.length())
-	_update_interaction()
+	_update_interaction(delta)
 	_send_state(delta)
 
 
@@ -199,7 +207,7 @@ func held_item() -> Node:
 	return kitnet.items.held_by(name.to_int()) if kitnet != null else null
 
 
-func _update_interaction() -> void:
+func _update_interaction(delta: float) -> void:
 	var target: Object = interact_ray.get_collider() if interact_ray.is_colliding() else null
 	var prompt := ""
 	if _has_control() and target != null and target.has_method("get_prompt"):
@@ -220,9 +228,18 @@ func _update_interaction() -> void:
 		target.interact(self)
 
 	var held := held_item()
-	if _has_control() and held != null and Input.is_action_just_pressed("drop"):
-		_drop_held()
-	hud.set_carry("" if held == null else "%s   [G] drop" % ItemKinds.label(held).capitalize())
+	if not _has_control() or held == null:
+		_throw_charge = -1.0
+	elif Input.is_action_just_pressed("drop"):
+		_throw_charge = 0.0
+	elif _throw_charge >= 0.0:
+		if Input.is_action_pressed("drop"):
+			_throw_charge = minf(_throw_charge + delta / THROW_CHARGE_TIME, 1.0)
+		else:
+			_drop_held(_throw_charge)
+			_throw_charge = -1.0
+	hud.set_throw(_throw_charge if _throw_charge >= THROW_MIN_CHARGE else -1.0)
+	hud.set_carry("" if held == null else "%s   [G] drop · hold [G] to throw" % ItemKinds.label(held).capitalize())
 
 
 ## Ponto Hold do jogador local: vem atrasado quando a câmera vira (o item "pesa") e recua
@@ -280,17 +297,27 @@ func _build_hands() -> void:
 	model.free()
 
 
-## Solta o item na frente do jogador, ou rente à parede se ela estiver no caminho.
-func _drop_held() -> void:
-	var xform := hold_point.global_transform
-	var query := PhysicsRayQueryParameters3D.create(camera.global_position, xform.origin, 1 | 4)
+## Solta o item na frente do jogador (charge abaixo de THROW_MIN_CHARGE) ou arremessa com a força
+## `charge` (0 a 1). Sai na pose em que estava na mão, girando um pouco (mais forte, mais gira),
+## e rente à parede se ela estiver no caminho.
+func _drop_held(charge := 0.0) -> void:
+	var held := held_item()
+	if held == null:
+		return
+	var origin: Vector3 = held.global_position
+	var query := PhysicsRayQueryParameters3D.create(camera.global_position, origin, 1 | 4)
 	query.exclude = [get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(query)
 	if not hit.is_empty():
-		xform.origin = hit.position + hit.normal * 0.12
-	var throw := -camera.global_basis.z * 1.2 + Vector3(velocity.x, 0, velocity.z)
+		origin = hit.position + hit.normal * 0.12
+	var forward := -camera.global_basis.z
+	var throw := forward * 1.2
+	if charge >= THROW_MIN_CHARGE:
+		throw = forward * lerpf(THROW_SPEED.x, THROW_SPEED.y, charge) + Vector3.UP * 1.2 * charge
+	throw += Vector3(velocity.x, 0, velocity.z)
+	var spin := Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * (0.8 + 6.0 * maxf(charge, 0.0))
 	var kitnet := get_tree().get_first_node_in_group("kitnet")
-	kitnet.items.request_drop(Transform3D(Basis(Vector3.UP, rotation.y), xform.origin), throw)
+	kitnet.items.request_drop(Transform3D(held.global_basis.orthonormalized(), origin), throw, spin)
 
 
 func _has_control() -> bool:

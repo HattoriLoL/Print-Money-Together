@@ -9,6 +9,8 @@ var _roster: VBoxContainer
 var _pause: Control
 var _capture_hint: Label
 var _carry: Label
+var _throw_back: ColorRect
+var _throw_bar: ColorRect
 var _message_tween: Tween
 var _hint_tween: Tween
 var _poll := 0.0
@@ -36,6 +38,18 @@ func _ready() -> void:
 	_carry = _label(17)
 	_carry.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_place(_carry, Vector2(0.0, 1.0), Rect2(20, -48, 500, 26))
+
+	_throw_back = ColorRect.new()
+	_throw_back.color = Color(0, 0, 0, 0.45)
+	_throw_back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_throw_back.visible = false
+	_place(_throw_back, Vector2(0.5, 0.5), Rect2(-50, 52, 100, 8))
+	_throw_bar = ColorRect.new()
+	_throw_bar.color = Color(1.0, 0.8, 0.25, 0.9)
+	_throw_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_throw_bar.position = Vector2(1, 1)
+	_throw_bar.size = Vector2(0, 6)
+	_throw_back.add_child(_throw_bar)
 
 	_hint = _label(14)
 	_hint.modulate.a = 0.0
@@ -89,6 +103,14 @@ func set_paused(open: bool) -> void:
 
 func set_prompt(text: String) -> void:
 	_prompt.text = text
+
+
+## Força do arremesso sendo carregada, de 0 a 1 (negativo = esconde a barra).
+func set_throw(charge: float) -> void:
+	_throw_back.visible = charge >= 0.0
+	if charge >= 0.0:
+		_throw_bar.size.x = 98.0 * charge
+		_throw_bar.color = Color(1.0, 0.8 - 0.5 * charge, 0.25 - 0.15 * charge, 0.9)
 
 
 ## O que o jogador está carregando ("" = mãos vazias).
