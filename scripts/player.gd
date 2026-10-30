@@ -31,6 +31,10 @@ const THROW_SPEED := Vector2(2.5, 7.5)
 const SEND_RATE := 30.0
 ## Quão rápido os bonecos dos outros alcançam a última posição recebida.
 const FOLLOW_SPEED := 15.0
+## Primeira pessoa: quanto o próprio boneco fica atrás da câmera olhando para frente e olhando
+## todo para baixo (metros), e a partir de que inclinação ele já recuou tudo (radianos).
+const FIRST_PERSON_BACK := Vector2(0.08, 0.3)
+const FIRST_PERSON_FULL_DOWN := 1.2
 
 @export_group("Movimento")
 @export var walk_speed := 2.8
@@ -114,9 +118,7 @@ func _ready() -> void:
 		hud = Hud.new()
 		add_child(hud)
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-		# O próprio boneco some para quem joga: com a lâmpada a meio metro da cabeça, até a
-		# sombra dele cobria o cômodo. Os outros continuam vendo (e com sombra).
-		_body.visible = false
+		_setup_first_person_body()
 		hud.show_message("KITNET 301\nPrint the money. Don't get caught.", 4.0)
 		hud.show_hint("WASD move · Shift run · Ctrl/C crouch · Space jump · E interact · G drop (hold to throw) · Esc menu")
 	else:
@@ -371,8 +373,22 @@ func _build_body() -> void:
 	_body.add_child(_tag)
 
 
-## Anima o boneco pelo quanto ele andou (serve para o dono e para os bonecos dos outros). O
-## próprio boneco fica escondido para quem joga, então nele não precisa.
+## Quem joga vê o próprio corpo olhando para baixo (barriga, pernas e tênis) e os braços indo
+## até o que segura. Somem só a cabeça (a câmera fica dentro dela) e o nome em cima, e o boneco
+## não faz sombra: com a lâmpada a meio metro da cabeça, a sombra dele cobria o cômodo. Os outros
+## continuam vendo o boneco inteiro, com sombra.
+func _setup_first_person_body() -> void:
+	_tag.visible = false
+	# A cabeça (a câmera fica dentro dela) e a gola com o capuz, que ficam colados na câmera.
+	for part in ["Char_Head", "Char_Hood"]:
+		var node: Node3D = character.model.find_child(part, true, false)
+		if node != null:
+			node.visible = false
+	for mesh: GeometryInstance3D in character.model.find_children("*", "GeometryInstance3D", true, false):
+		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## Anima o boneco pelo quanto ele andou (serve para o dono e para os bonecos dos outros).
 func _animate_character(delta: float) -> void:
 	if character == null or not _body.visible or delta <= 0.0:
 		return
@@ -383,6 +399,11 @@ func _animate_character(delta: float) -> void:
 	if held_item() != null and _hands.size() == 2:
 		targets = [_hands[0].global_position, _hands[1].global_position]
 	character.animate(delta, moved, airborne, head.rotation.x, targets)
+	if is_local():
+		# Olhando para baixo, o corpo recua para trás da câmera: aparecem a barriga, as pernas e
+		# os tênis, em vez do buraco da gola e dos ombros.
+		var down := clampf(-head.rotation.x / FIRST_PERSON_FULL_DOWN, 0.0, 1.0)
+		character.position.z = lerpf(FIRST_PERSON_BACK.x, FIRST_PERSON_BACK.y, down)
 
 
 func _update_crouch(delta: float) -> void:

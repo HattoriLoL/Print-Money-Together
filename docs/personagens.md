@@ -64,7 +64,12 @@ a posição):
   para trás), e as luvas do boneco somem. Longe demais, o braço estica reto na direção;
 - agachado: o `player.gd` achata o boneco inteiro (`_body.scale.y`).
 
-O próprio boneco fica escondido para quem joga (só aparecem as luvas na primeira pessoa).
+Em primeira pessoa, quem joga vê o próprio boneco: olhando para baixo aparecem a barriga, os
+braços e as luvas, e segurando um item os braços vão até as luvas do `hands.glb`. Somem só a
+cabeça (a câmera fica dentro dela), a gola com o capuz e o nome em cima, e o boneco não faz
+sombra (com a lâmpada a meio metro da cabeça, a sombra cobria o cômodo). Quanto mais o jogador
+olha para baixo, mais o boneco recua para trás da câmera (`FIRST_PERSON_BACK` no `player.gd`), senão
+ele veria o buraco da gola e os ombros. Os outros veem o boneco inteiro, com sombra.
 
 | Ajuste | Onde |
 |---|---|

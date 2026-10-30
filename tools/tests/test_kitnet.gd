@@ -17,6 +17,7 @@ extends SceneTree
 ## - detalhes da história: prints da ficha do fiscal, do jornal, do lixo de notas, das pegadas e da pizza;
 ## - bonecos: cada vaga com o acessório dela, andando (joelho dobrando), no ar e segurando (a mão chega
 ##   na luva pelo IK do braço), com print do elenco;
+## - primeira pessoa: o próprio corpo aparece (sem a cabeça) e o braço chega na luva que segura;
 ## - com --solo, entra sozinho sem rede (o botão "Play solo") em vez de hospedar;
 ## - com --client, abre uma segunda janela que entra na sala e confere que ela aparece e se mexe.
 ## Prints de alguns pontos de vista na pasta --out (rode com janela, sem --headless).
@@ -208,6 +209,7 @@ func _run() -> void:
 	await _test_drop_physics(kitnet, player)
 	await _test_guillotine(kitnet, player)
 	await _test_characters(kitnet, player)
+	await _test_first_person(kitnet, player)
 
 	if _with_client:
 		await _test_client(kitnet)
@@ -264,6 +266,26 @@ func _test_characters(kitnet: Node3D, player: CharacterBody3D) -> void:
 	await _look(player, Vector3(3.3, 0, -3.0), Vector3(3.6, 0.7, -4.2), "39_maos_e_tenis")
 	kitnet.model.visible = true
 	stage.queue_free()
+
+
+## Primeira pessoa: quem joga vê o próprio corpo (sem a cabeça, onde fica a câmera) e os braços
+## indo até o que segura.
+func _test_first_person(kitnet: Node3D, player: CharacterBody3D) -> void:
+	var rig: Node3D = player.character
+	var head_mesh: Node3D = rig.model.find_child("Char_Head", true, false)
+	_check(player.get_node("Body").visible and not head_mesh.visible,
+			"em primeira pessoa o corpo aparece e a cabeça não")
+	var at := Vector3(2.4, 0, -2.6)
+	await _look(player, at, at + Vector3(0, 0, -0.35), "40_primeira_pessoa_olhando_para_baixo")
+	kitnet.items.give(1, "ream")
+	await create_timer(0.3).timeout
+	await _look(player, at, at + Vector3(0, 0.9, -1.6), "41_primeira_pessoa_segurando_a_resma")
+	var hand: Vector3 = rig.hand_position(0)
+	_check(hand.distance_to(player._hands[0].global_position) < 0.05,
+			"segurando, o braço do próprio boneco chega na luva (%.3f m)" % hand.distance_to(player._hands[0].global_position))
+	await _look(player, at, at + Vector3(0, -0.2, -0.8), "42_primeira_pessoa_resma_olhando_para_baixo")
+	player._drop_held()
+	await create_timer(0.3).timeout
 
 
 ## Segunda janela entrando na sala pelo menu (--join), como um amigo faria.
