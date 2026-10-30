@@ -1,0 +1,14 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+
+# Blender
+__pycache__/
+*.blend1
+
+# Texturas baixadas do Poly Haven (o build baixa de novo) e as que o Godot extrai do .glb
+art_source/textures/
+assets/models/*.png
+assets/models/*.jpg
+assets/models/*.png.import
+assets/models/*.jpg.import

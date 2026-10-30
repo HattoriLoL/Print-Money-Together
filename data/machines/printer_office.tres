@@ -1,0 +1,15 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/machines/printer_stats.gd" id="1_stats"]
+
+[resource]
+script = ExtResource("1_stats")
+display_name = "Old office printer"
+warmup_seconds = 3.0
+seconds_per_sheet = 5.0
+sheets_per_ream = 5
+paper_capacity = 15
+output_capacity = 8
+ink_per_sheet = 0.02
+noise = 0.35
+power_watts = 300.0
