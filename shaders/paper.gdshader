@@ -7,6 +7,7 @@
 // uniform": cada item muda os seus sem duplicar o material.
 shader_type spatial;
 render_mode cull_disabled, depth_draw_opaque;
+#include "res://shaders/toon_light.gdshaderinc"
 
 uniform sampler2D front_tex : source_color, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D back_tex : source_color, filter_linear_mipmap_anisotropic, repeat_disable;

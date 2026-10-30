@@ -18,6 +18,7 @@ extends CharacterBody3D
 const Hud := preload("res://scripts/hud.gd")
 const ItemKinds := preload("res://scripts/items/item_kinds.gd")
 const HandsModel := preload("res://assets/models/hands.glb")
+const OutlineShader := preload("res://shaders/outline.gdshader")
 ## Onde o item fica na frente da câmera, parado.
 const HOLD_REST := Vector3(0.0, -0.25, -0.46)
 ## Segurando [G]: segundos até a força máxima, abaixo de quanto é só soltar, e a velocidade
@@ -105,6 +106,7 @@ func _ready() -> void:
 	if is_local():
 		_setup_input()
 		camera.make_current()
+		_add_outline()
 		hud = Hud.new()
 		add_child(hud)
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -268,6 +270,23 @@ func _update_hands() -> void:
 		hand.visible = held != null
 		if held != null:
 			hand.global_transform = held.global_transform * ItemKinds.hand_offset(held.kind, 1 if i == 0 else -1)
+
+
+## O contorno preto do visual de desenho: um quadrado na frente da câmera que o shader estica
+## até cobrir a tela.
+func _add_outline() -> void:
+	var quad := QuadMesh.new()
+	quad.size = Vector2(2.0, 2.0)
+	var mat := ShaderMaterial.new()
+	mat.shader = OutlineShader
+	quad.material = mat
+	var outline := MeshInstance3D.new()
+	outline.name = "Outline"
+	outline.mesh = quad
+	outline.position = Vector3(0.0, 0.0, -0.5)
+	outline.extra_cull_margin = 16384.0
+	outline.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	camera.add_child(outline)
 
 
 func _build_hands() -> void:

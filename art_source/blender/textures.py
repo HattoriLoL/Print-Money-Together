@@ -41,8 +41,10 @@ PHOTOS = {
 SHARED = {"M_WallHall": "M_Wall", "M_WallHallLow": "M_Wall", "M_Facade": "M_Concrete",
           "M_FacadeFar": "M_Concrete"}
 # Fotos refeitas em cinza: material -> (brilho médio, contraste). A cor do material tinge.
+# As madeiras e o jeans também: assim a paleta do lib.MATERIALS manda na cor de tudo.
 RELIGHT = {"M_Wall": (0.9, 1.4), "M_Ceiling": (0.9, 0.5), "M_Concrete": (0.85, 1.0),
-           "M_FloorHall": (0.7, 1.3)}
+           "M_FloorHall": (0.7, 1.3), "M_DeskWood": (0.75, 1.0), "M_WoodLight": (0.75, 1.0),
+           "M_Wood": (0.6, 1.0), "M_DoorWood": (0.7, 1.0), "M_Blanket": (0.7, 1.0)}
 # Força do relevo (normal map) quando não é 1: o grafiato do forro é forte demais na foto.
 NORMAL_STRENGTH = {"M_Ceiling": 0.3}
 
@@ -218,26 +220,26 @@ def _normal_from_height(height, strength):
 
 
 def _gen_floor():
-    # Piso cerâmico bege de 45 cm, com veio de "mármore" bem leve (a textura cobre 2 x 2 peças).
-    rgb, height = _tiles_pattern(512, 2, (0.74, 0.63, 0.5), 0.05, 3, (0.45, 0.4, 0.34), marble=0.035)
+    # Piso cerâmico cor de telha de 45 cm, com veio de "mármore" bem leve (a textura cobre 2 x 2 peças).
+    rgb, height = _tiles_pattern(512, 2, (0.76, 0.45, 0.28), 0.05, 3, (0.45, 0.3, 0.2), marble=0.035)
     rgb += _speckle(512, 0.15, 0.03)[..., None]
     return rgb, height, 0.32 + 0.4 * (1 - height)
 
 
 def _gen_floor_bath():
-    rgb, height = _tiles_pattern(512, 2, (0.56, 0.6, 0.62), 0.04, 3, (0.4, 0.42, 0.42))
+    rgb, height = _tiles_pattern(512, 2, (0.42, 0.62, 0.66), 0.04, 3, (0.3, 0.4, 0.42))
     return rgb + _speckle(512, 0.3, 0.025)[..., None], height, 0.3 + 0.4 * (1 - height)
 
 
 def _gen_wall_tile():
-    # Azulejo branco 20 x 20 (2 x 2 peças), rejunte encardido.
-    rgb, height = _tiles_pattern(512, 2, (0.88, 0.92, 0.93), 0.02, 4, (0.6, 0.6, 0.55))
+    # Azulejo azul de piscina clarinho 20 x 20 (2 x 2 peças), rejunte encardido.
+    rgb, height = _tiles_pattern(512, 2, (0.66, 0.86, 0.88), 0.02, 4, (0.55, 0.58, 0.5))
     return rgb + _noise(512, 0.015)[..., None], height, 0.12 + 0.6 * (1 - height)
 
 
 def _gen_kitchen_tile():
-    # Pastilha verde-água 10 x 10 (4 x 4 peças).
-    rgb, height = _tiles_pattern(512, 4, (0.6, 0.78, 0.7), 0.06, 4, (0.85, 0.85, 0.8))
+    # Pastilha azul de piscina 10 x 10 (4 x 4 peças).
+    rgb, height = _tiles_pattern(512, 4, (0.48, 0.76, 0.78), 0.06, 4, (0.85, 0.85, 0.8))
     return rgb, height, 0.12 + 0.6 * (1 - height)
 
 
@@ -251,19 +253,19 @@ def _gen_granite():
 
 
 def _gen_fabric():
-    # Trama de sofá: fios cruzados em mostarda.
+    # Trama de sofá: fios cruzados em laranja queimado.
     y, x = np.mgrid[0:256, 0:256]
     weave = (np.sin(x * np.pi / 2) * np.sin(y * np.pi / 2) > 0).astype(float)
-    rgb = np.array((0.62, 0.4, 0.15)) * (0.85 + 0.15 * weave)[..., None]
+    rgb = np.array((0.8, 0.4, 0.14)) * (0.85 + 0.15 * weave)[..., None]
     rgb *= (1 + _noise(256, 0.08))[..., None]
     return rgb, weave * 0.5, np.full((256, 256), 0.95)
 
 
 def _gen_rug():
-    # Tapete listrado com borda.
+    # Tapete listrado verde musgo, com borda mostarda.
     y, x = np.mgrid[0:256, 0:256]
-    rgb = np.where(((x // 32) % 2 == 0)[..., None], np.array((0.28, 0.4, 0.34)), np.array((0.22, 0.33, 0.28)))
-    rgb[(y % 128 < 6)] = (0.75, 0.68, 0.5)
+    rgb = np.where(((x // 32) % 2 == 0)[..., None], np.array((0.45, 0.5, 0.25)), np.array((0.36, 0.42, 0.2)))
+    rgb[(y % 128 < 6)] = (0.85, 0.65, 0.2)
     rgb = rgb * (1 + _speckle(256, 0.6, 0.12))[..., None]
     return rgb, None, np.full((256, 256), 1.0)
 
@@ -315,9 +317,9 @@ def _gen_old_plastic(base, yellow):
 
 
 def _gen_desk_metal():
-    """Chapa de aço pintada de cinza-esverdeado, com lascas mostrando o metal escuro."""
+    """Chapa de aço pintada de verde musgo, com lascas mostrando o metal escuro."""
     size = 256
-    rgb = np.zeros((size, size, 3)) + np.array((0.42, 0.46, 0.43))
+    rgb = np.zeros((size, size, 3)) + np.array((0.45, 0.52, 0.3))
     rgb *= (1 + _noise(size, 0.05))[..., None]
     chips = _noise(size, 1.0, octaves=5) > 0.82
     rgb[chips] = (0.16, 0.15, 0.14)

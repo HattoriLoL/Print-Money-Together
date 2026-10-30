@@ -1,6 +1,7 @@
 extends SceneTree
 ## Teste da kitnet (scenes/kitnet.tscn) com o jogador de verdade, hospedando uma sala:
 ## - o modelo carrega com 5 portas (3 trancadas), 4 spawns e as luzes das zonas;
+## - visual de desenho: o mapa com o material toon e a câmera com o contorno;
 ## - o jogador nasce em pé no chão e a colisão segura (andar até a parede do fundo);
 ## - a porta 301 abre com interact e a trancada não;
 ## - impressora: pegar resma, carregar, ligar no botão, esquentar, imprimir sozinha, desligar,
@@ -80,6 +81,9 @@ func _run() -> void:
 	var spawn: Vector3 = kitnet.spawns[0].origin
 	_check(player.global_position.distance_to(Vector3(spawn.x, player.global_position.y, spawn.z)) < 0.2,
 			"nasceu no SPAWN_1")
+	var wall: MeshInstance3D = kitnet.model.find_child("Walls_Kitnet", true, false)
+	_check(wall != null and wall.get_surface_override_material(0) is ShaderMaterial, "o mapa ganhou o visual de desenho (toon)")
+	_check(player.camera.get_node_or_null("Outline") != null, "a câmera tem o contorno preto")
 	await _shot("01_spawn")
 
 	# Olhar com o mouse de verdade (o evento passa pela interface antes de chegar ao jogador).
@@ -369,6 +373,9 @@ func _test_guillotine(kitnet: Node3D, player: CharacterBody3D) -> void:
 	await create_timer(swing).timeout
 	_check(pile.data["count"] == total + stats.bills_per_row and pile.data["smudged"] == total,
 			"a folha seca soma no montinho sem borrar")
+	var top: Material = pile.get_node("Mesh").get_surface_override_material(0)
+	_check(top is ShaderMaterial and top.get_shader_parameter("albedo_tex") == preload("res://assets/textures/bill_front.png"),
+			"a nota de cima do montinho voltou a ser a limpa (toon acompanhou a troca de malha)")
 	await _look(player, Vector3(2.62, 0, -1.4), Vector3(2.25, 0.78, -1.85), "18_montinho")
 	# Cortar com a mão ocupada não dá; outra coisa que não folha também não entra.
 	items.give(1, "ream")

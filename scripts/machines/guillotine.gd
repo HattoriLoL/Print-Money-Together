@@ -13,6 +13,7 @@ extends Node3D
 
 const InteractZone := preload("res://scripts/interact_zone.gd")
 const ItemKinds := preload("res://scripts/items/item_kinds.gd")
+const Toon := preload("res://scripts/toon.gd")
 const DEFAULT_STATS := preload("res://data/machines/guillotine_manual.tres")
 const SHEET_FRONT := preload("res://assets/textures/sheet_front.png")
 
@@ -204,6 +205,7 @@ func _update_strips(animate: bool) -> void:
 		var mat := strip.mesh.material as StandardMaterial3D
 		mat.albedo_color = Color(0.75, 0.84, 0.76) if sheet_wet else Color.WHITE
 		mat.roughness = 0.15 if sheet_wet else 0.8
+		Toon.sync(mat)
 		# A linha da vez fica logo depois da lâmina; as outras atrás dela.
 		var target := Vector3(SHEET_X, TOP_Y, CUT_Z + row_h / 2.0 - (r - cut) * row_h)
 		if animate and strip.visible:

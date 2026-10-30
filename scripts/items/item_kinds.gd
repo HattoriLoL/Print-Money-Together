@@ -9,6 +9,7 @@ extends RefCounted
 ## As texturas saem do art_source/paper_textures.py (assets/textures/).
 
 const PAPER_SHADER := preload("res://shaders/paper.gdshader")
+const Toon := preload("res://scripts/toon.gd")
 const SHEET_FRONT := preload("res://assets/textures/sheet_front.png")
 const SHEET_BACK := preload("res://assets/textures/sheet_back.png")
 const PAPER_NORMAL := preload("res://assets/textures/paper_normal.png")
@@ -136,6 +137,7 @@ static func refresh(item: RigidBody3D) -> void:
 		var count: int = maxi(item.data.get("count", 1), 1)
 		var height := maxf(count * BILL_THICKNESS, 0.0015)
 		mesh.mesh = _bills_mesh(item.data.get("top_smudged", false))
+		Toon.apply_one(mesh)
 		mesh.scale = Vector3(1.0, height, 1.0)
 		var col: CollisionShape3D = item.get_child(0)
 		(col.shape as BoxShape3D).size = Vector3(SIZES["bills"].x, height, SIZES["bills"].z)

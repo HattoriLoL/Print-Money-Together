@@ -14,6 +14,7 @@ extends Node3D
 
 const InteractZone := preload("res://scripts/interact_zone.gd")
 const ItemKinds := preload("res://scripts/items/item_kinds.gd")
+const Toon := preload("res://scripts/toon.gd")
 const DEFAULT_STATS := preload("res://data/machines/printer_office.tres")
 
 ## Folha parada na bandeja de saída (a primeira; as outras empilham).
@@ -246,7 +247,7 @@ func _update_visuals() -> void:
 
 func _set_led(led: MeshInstance3D, on: bool) -> void:
 	if led:
-		led.material_override = null if on else _led_off
+		led.material_override = null if on else Toon.material(_led_off)
 
 
 func _screen_text() -> String:

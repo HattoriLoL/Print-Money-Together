@@ -16,6 +16,7 @@ const ItemManager := preload("res://scripts/items/item_manager.gd")
 const Printer := preload("res://scripts/machines/printer.gd")
 const PaperSupply := preload("res://scripts/machines/paper_supply.gd")
 const Guillotine := preload("res://scripts/machines/guillotine.gd")
+const Toon := preload("res://scripts/toon.gd")
 
 ## Portas que os jogadores não abrem (vizinhos e a escada, por onde o fiscal vai chegar).
 const LOCKED_DOORS := ["302", "303", "Stairs"]
@@ -60,6 +61,8 @@ var _players_root: Node3D
 
 func _ready() -> void:
 	add_to_group("kitnet")
+	# Tudo que entra na cena (mapa, itens, luvas, jogadores) ganha o visual de desenho.
+	get_tree().node_added.connect(_on_node_added)
 	_build_environment()
 	items = ItemManager.new()
 	items.name = "Items"
@@ -185,6 +188,17 @@ func _setup_model() -> void:
 	_add_stations()
 
 
+func _on_node_added(node: Node) -> void:
+	if node is GeometryInstance3D:
+		# Depois do quadro: quem criou a malha ainda pode estar trocando os materiais dela.
+		_toon_later.call_deferred(node)
+
+
+func _toon_later(node: GeometryInstance3D) -> void:
+	if is_instance_valid(node):
+		Toon.apply_one(node)
+
+
 ## As máquinas viram filhas das malhas delas (o referencial é o do modelo).
 func _add_stations() -> void:
 	printer = Printer.new()
@@ -236,26 +250,21 @@ func _build_environment() -> void:
 	env.sky.sky_material = sky_mat
 	env.background_mode = Environment.BG_SKY
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.45, 0.45, 0.55)
-	env.ambient_light_energy = 0.08
+	# Visual de desenho: a sombra é um tom arroxeado chapado, não um breu (ver scripts/toon.gd).
+	env.ambient_light_color = Color(0.55, 0.5, 0.75)
+	env.ambient_light_energy = 0.3
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
+	# Só um pouco de sombra de contato nos cantos; a luz rebatida suave e a neblina saíram (o
+	# desenho tem tons duros).
 	env.ssao_enabled = true
-	env.ssao_intensity = 1.6
-	# Luz rebatida das paredes (a lâmpada pelada clareia o cômodo todo, não só o que ela vê).
-	env.ssil_enabled = true
-	env.ssil_intensity = 1.2
+	env.ssao_intensity = 0.8
 	env.glow_enabled = true
 	env.glow_bloom = 0.06
 	env.glow_intensity = 0.7
-	# Um fio de poeira no ar: a lâmpada ganha um halo.
-	env.volumetric_fog_enabled = true
-	env.volumetric_fog_density = 0.012
-	env.volumetric_fog_albedo = Color(0.9, 0.85, 0.75)
-	env.volumetric_fog_sky_affect = 0.0
 	env.adjustment_enabled = true
-	env.adjustment_contrast = 1.06
-	env.adjustment_saturation = 1.08
+	env.adjustment_contrast = 1.05
+	env.adjustment_saturation = 1.2
 	var world := WorldEnvironment.new()
 	world.environment = env
 	add_child(world)
