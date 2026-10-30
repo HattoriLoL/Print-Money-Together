@@ -191,29 +191,72 @@ def ink(coll):
     p.finish("SUPPLY_Ink", coll)
 
 
-def guillotine(coll):
-    """Guilhotina de papel na mesa. O braço gira em torno do X local (sobe a lâmina)."""
-    table_z = 0.76
-    p = Part(bevel=0.004)
-    p.box(-0.25, -0.18, 0, 0.25, 0.18, 0.03, "M_WoodLight")
-    for i in range(1, 5):
-        x = -0.25 + i * 0.1
-        p.box(x - 0.002, -0.17, 0.03, x + 0.002, 0.17, 0.031, "M_MetalDark")
-    p.box(-0.25, 0.15, 0.03, 0.2, 0.18, 0.06, "M_Metal")       # esquadro
-    p.box(0.2, -0.18, 0.03, 0.25, 0.18, 0.05, "M_MetalDark")    # trilho da lâmina
-    p.box(0.2, 0.12, 0.05, 0.25, 0.18, 0.1, "M_MetalDark")      # pivô
-    # Folha impressa esperando o corte.
-    p.quad(((-0.23, -0.17, 0.032), (0.067, -0.17, 0.032), (0.067, 0.04, 0.032), (-0.23, 0.04, 0.032)),
-           "M_MoneySheet", uvs=((0, 0), (1, 0), (1, 1), (0, 1)))
-    base = p.finish("MACHINE_Guillotine", coll, loc=(2.25, 2.0, table_z), rot_z=0.15)
+# Guilhotina na mesa do meio. O Godot (scripts/machines/guillotine.gd) usa as mesmas medidas.
+GUILLOTINE_LOC = (2.35, 2.08, 0.76)
+GUILLOTINE_CUT_Y = -0.1                   # linha da lâmina, no y local (frente = -Y)
+GUILLOTINE_HINGE = (-0.235, -0.1, 0.062)  # pivô da alavanca (gira no Y local)
+GUILLOTINE_OPEN = math.radians(50)        # alavanca levantada
 
-    arm = Part(bevel=0.003)
-    m = Matrix.Translation((0, -0.25, 0))
-    arm.box_m((0.035, 0.5, 0.025), m, "M_Yellow")
-    arm.box_m((0.006, 0.48, 0.05), Matrix.Translation((-0.02, -0.25, -0.012)), "M_Metal")
-    arm.cyl((0, -0.52, 0), 0.12, 0.022, "M_Red", axis="X", seg=10)
-    ob = arm.finish("MACHINE_Guillotine_Arm", coll, loc=(0.225, 0.15, 0.08), parent=base)
-    ob.rotation_euler.x = math.radians(-38)
+
+def guillotine(coll):
+    """Guilhotina de papel de mesa, de alavanca. O papel encosta no esquadro da esquerda; a
+    lâmina desce na linha de corte da frente. Peça que o Godot mexe: MACHINE_Guillotine_Arm
+    (origem no pivô, a ponta sobe girando no Y local)."""
+    cy = GUILLOTINE_CUT_Y
+    p = Part(bevel=0.004)
+    hx, hy = 0.25, 0.2
+    for fx in (-0.22, 0.22):
+        for fy in (-0.17, 0.17):
+            p.cyl((fx, fy, 0.003), 0.006, 0.015, "M_Rubber", seg=12)
+    p.box(-hx, -hy, 0.006, hx, hy, 0.03, "M_DeskMetal", bevel=0.006)
+    p.quad(((-0.24, -0.19, 0.0302), (0.24, -0.19, 0.0302), (0.24, 0.19, 0.0302), (-0.24, 0.19, 0.0302)),
+           "M_CuttingMat", double=False)
+    # Contra-lâmina de aço na linha de corte.
+    p.box(-0.245, cy - 0.006, 0.0295, 0.245, cy + 0.004, 0.0335, "M_Metal", bevel=0.001)
+    # Esquadro à esquerda e régua de metal atrás, com as marcas de centímetro.
+    p.box(-0.247, cy + 0.006, 0.03, -0.233, 0.19, 0.05, "M_Metal", bevel=0.002)
+    p.box(-0.233, 0.172, 0.03, 0.245, 0.19, 0.045, "M_Metal", bevel=0.002)
+    for i in range(48):
+        x = -0.228 + i * 0.01
+        length = 0.01 if i % 5 == 0 else 0.005
+        p.box(x - 0.0006, 0.19 - length, 0.045, x + 0.0006, 0.19, 0.0453, "M_PlasticBlack", bevel=0)
+    # Prensa do papel atrás da lâmina: barra, dois postes e o manípulo.
+    p.box(-0.21, cy + 0.018, 0.036, 0.215, cy + 0.034, 0.048, "M_MetalDark", bevel=0.003)
+    for x in (-0.215, 0.22):
+        p.box(x - 0.008, cy + 0.014, 0.03, x + 0.008, cy + 0.038, 0.07, "M_MetalDark", bevel=0.003)
+    p.cyl((0.22, cy + 0.026, 0.074), 0.012, 0.005, "M_Metal", seg=10)
+    p.cyl((0.22, cy + 0.026, 0.087), 0.018, 0.018, "M_Red", seg=18)
+    # Protetor de dedos de acrílico na frente da lâmina, com os suportes.
+    p.box(-0.2, cy - 0.034, 0.036, 0.215, cy - 0.028, 0.075, "M_Glass", bevel=0.001)
+    for x in (-0.19, 0.205):
+        p.box(x - 0.006, cy - 0.04, 0.03, x + 0.006, cy - 0.022, 0.078, "M_Metal", bevel=0.002)
+    # Bloco do pivô, o pino e a mola de torção enrolada atrás dele.
+    hx0, _hy0, hz0 = GUILLOTINE_HINGE
+    p.box(-0.25, cy - 0.02, 0.03, -0.215, cy + 0.02, 0.09, "M_MetalDark", bevel=0.004)
+    p.cyl((hx0, cy, hz0), 0.06, 0.006, "M_Metal", axis="Y", seg=12)
+    for i in range(8):
+        p.cyl((hx0, cy + 0.024 + i * 0.0035, hz0), 0.0025, 0.013, "M_Metal", axis="Y", seg=14)
+    p.box(hx0, cy + 0.03, hz0 - 0.002, hx0 + 0.04, cy + 0.034, hz0 + 0.002, "M_Metal", bevel=0)
+    p.quad(((0.06, -hy - 0.0005, 0.01), (0.18, -hy - 0.0005, 0.01), (0.18, -hy - 0.0005, 0.027),
+            (0.06, -hy - 0.0005, 0.027)), "M_StickerWarning", double=False)
+    base = p.finish("MACHINE_Guillotine", coll, loc=GUILLOTINE_LOC)
+
+    # Alavanca: lâmina parafusada embaixo, braço mais grosso perto do pivô e o pegador vermelho.
+    length = 0.5
+    a = Part(bevel=0.003)
+    a.box(0.0, -0.008, -0.03, length - 0.03, -0.002, -0.004, "M_Metal", bevel=0.0015)
+    a.box(0.0, -0.0085, -0.03, length - 0.03, -0.0078, -0.026, "M_MetalDark", bevel=0)
+    a.box(-0.02, -0.012, -0.006, length, 0.012, 0.022, "M_MetalDark", bevel=0.006)
+    a.box(-0.03, -0.016, -0.02, 0.06, 0.016, 0.03, "M_MetalDark", bevel=0.008)
+    for x in (0.08, 0.2, 0.32, 0.42):
+        a.cyl((x, -0.0085, -0.017), 0.003, 0.004, "M_Metal", axis="Y", seg=8)
+    a.box(length - 0.01, -0.01, -0.002, length + 0.012, 0.01, 0.02, "M_Metal")
+    a.cyl((length + 0.07, 0, 0.01), 0.14, 0.018, "M_Red", axis="X", seg=18)
+    a.cyl((length + 0.145, 0, 0.01), 0.012, 0.021, "M_Red", axis="X", seg=18)
+    a.quad(((0.18, -0.0122, -0.004), (0.3, -0.0122, -0.004), (0.3, -0.0122, 0.02), (0.18, -0.0122, 0.02)),
+           "M_StickerWarning", double=False)
+    ob = a.finish("MACHINE_Guillotine_Arm", coll, loc=GUILLOTINE_HINGE, parent=base)
+    ob.rotation_euler.y = -GUILLOTINE_OPEN
 
 
 def cash_counter(coll):

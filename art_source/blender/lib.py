@@ -113,7 +113,12 @@ MATERIALS = {
 }
 
 ALPHA = {"M_Glass": 0.1, "M_GlassFrosted": 0.7}
-TEXTURED = {"M_MoneySheet"}
+# Materiais com uma imagem de assets/textures/ (desenhadas pelo art_source/paper_textures.py),
+# aplicada em quads com UV de 0 a 1: nome -> (arquivo, rugosidade).
+TEXTURED = {
+    "M_MoneySheet": ("sheet_front.png", 0.75),
+    "M_CuttingMat": ("cutting_mat.png", 0.6),
+}
 # Folhas feitas com frente e verso separados (Part.quad/sheet): sem isso as duas faces brigam.
 ONE_SIDED = {"M_MoneySheet", "M_Curtain", "M_ShowerCurtain"}
 
@@ -132,7 +137,7 @@ def material(name):
     bsdf = _bsdf(mat)
     mat.use_backface_culling = name in ONE_SIDED
     if name in TEXTURED:
-        _setup_money_sheet(mat, bsdf)
+        _setup_image(mat, bsdf, *TEXTURED[name])
         return mat
     color, rough, metal, emit = MATERIALS[name]
     bsdf.inputs["Base Color"].default_value = (*color, 1.0)
@@ -156,21 +161,19 @@ def material(name):
     return mat
 
 
-# --- Cédula ---------------------------------------------------------------------------------------
-# A folha A4 impressa (2 x 3 notas) vem de assets/textures/sheet_front.png, desenhada pelo
-# art_source/paper_textures.py; os quads de folha usam UV de 0 a 1.
+# --- Imagens do projeto ---------------------------------------------------------------------------
 
-SHEET_TEXTURE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                             "assets", "textures", "sheet_front.png")
+TEXTURE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                           "assets", "textures")
 
 
-def _setup_money_sheet(mat, bsdf):
+def _setup_image(mat, bsdf, filename, roughness):
     tex = mat.node_tree.nodes.new("ShaderNodeTexImage")
-    tex.image = bpy.data.images.load(SHEET_TEXTURE, check_existing=True)
+    tex.image = bpy.data.images.load(os.path.join(TEXTURE_DIR, filename), check_existing=True)
     tex.interpolation = "Linear"
     mat.node_tree.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
-    bsdf.inputs["Roughness"].default_value = 0.75
-    mat.diffuse_color = (0.75, 0.82, 0.72, 1.0)
+    bsdf.inputs["Roughness"].default_value = roughness
+    mat.diffuse_color = (0.8, 0.82, 0.78, 1.0)
 
 
 # --- Malhas ---------------------------------------------------------------------------------------

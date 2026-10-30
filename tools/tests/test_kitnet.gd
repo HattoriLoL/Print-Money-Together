@@ -8,6 +8,8 @@ extends SceneTree
 ## - física ao soltar: a folha cai devagar balançando e pousa deitada, a resma cai rápido, o
 ##   arremesso carregado vai longe (a resma mais que a folha), andando se empurra a resma e o
 ##   que cai fora do mapa volta;
+## - guilhotina: pôr a folha, cortar linha por linha (2 notas por corte no montinho da frente,
+##   borradas se a folha estava molhada), somar no mesmo montinho e carregar o montinho;
 ## - com --solo, entra sozinho sem rede (o botão "Play solo") em vez de hospedar;
 ## - com --client, abre uma segunda janela que entra na sala e confere que ela aparece e se mexe.
 ## Prints de alguns pontos de vista na pasta --out (rode com janela, sem --headless).
@@ -146,6 +148,7 @@ func _run() -> void:
 
 	await _test_printer(kitnet, player)
 	await _test_drop_physics(kitnet, player)
+	await _test_guillotine(kitnet, player)
 
 	if _with_client:
 		await _test_client(kitnet)
@@ -270,7 +273,7 @@ func _test_drop_physics(kitnet: Node3D, player: CharacterBody3D) -> void:
 
 	# Folha solta de 1,5 m, um pouco inclinada, longe dos móveis.
 	var start := Vector3(3.9, 1.55, -3.3)
-	var sheet: Node = items.spawn("sheet", Transform3D(Basis(Vector3.RIGHT, 0.25), start))
+	var sheet: Node = items.spawn("sheet", Transform3D(Basis(Vector3.RIGHT, 0.45), start))
 	await physics_frame
 	var t := await _wait_landed(sheet, 6.0)
 	var drift := Vector2(sheet.global_position.x - start.x, sheet.global_position.z - start.z).length()
@@ -319,6 +322,71 @@ func _test_drop_physics(kitnet: Node3D, player: CharacterBody3D) -> void:
 	_check(pushed.global_position.y > -1.0, "a resma que caiu fora do mapa voltou (y %.2f)" % pushed.global_position.y)
 	items.consume(pushed)
 	await _shot("16_depois_dos_arremessos")
+
+
+func _test_guillotine(kitnet: Node3D, player: CharacterBody3D) -> void:
+	var g: Node3D = kitnet.guillotine
+	var items: Node = kitnet.items
+	var stats: Resource = g.stats
+	var swing: float = stats.swing_down + stats.swing_up + 0.1
+	_check(g != null and g.rows_left == 0, "guilhotina montada e vazia")
+	# Em pé na frente da guilhotina (lado da lâmina), olhando para ela.
+	var stand := Vector3(2.35, 0.05, -1.35)
+	player.global_position = stand
+	await physics_frame
+	_check(g._prompt(player).begins_with("[E] Pull the lever"), "vazia ela oferece só bater a alavanca")
+
+	# Folha molhada: põe, corta as 3 linhas.
+	items.give(1, "sheet", {"wet": true})
+	await create_timer(0.3).timeout
+	_check(g._prompt(player).contains("smudge"), "avisa que a folha molhada vai borrar")
+	g.zone.interact(player)
+	await physics_frame
+	_check(player.held_item() == null and g.rows_left == stats.rows_per_sheet, "a folha foi para a guilhotina (3 linhas)")
+	_check(g._strips.all(func(st): return st.visible), "as 3 faixas da folha aparecem")
+	g.zone.interact(player)
+	await create_timer(stats.swing_down * 0.5).timeout
+	await _look(player, Vector3(2.62, 0, -1.4), Vector3(2.32, 0.82, -2.05), "17_guilhotina_cortando")
+	await create_timer(swing).timeout
+	_check(g.rows_left == stats.rows_per_sheet - 1, "um corte, uma linha a menos")
+	var pile: Node = items.items.get(g._pile_id)
+	_check(pile != null and pile.kind == "bills" and pile.data["count"] == stats.bills_per_row,
+			"saíram %d notas no montinho" % stats.bills_per_row)
+	for i in stats.rows_per_sheet - 1:
+		g.zone.interact(player)
+		await create_timer(swing).timeout
+	var total: int = stats.rows_per_sheet * stats.bills_per_row
+	_check(g.rows_left == 0 and not g._strips.any(func(st): return st.visible), "folha toda cortada")
+	_check(pile.data["count"] == total and pile.data["smudged"] == total,
+			"montinho com %d notas, todas borradas (%d, %d)" % [total, pile.data["count"], pile.data["smudged"]])
+
+	# Folha seca: as notas somam no mesmo montinho, sem borrar.
+	items.give(1, "sheet", {"wet": false})
+	await create_timer(0.3).timeout
+	g.zone.interact(player)
+	await physics_frame
+	g.zone.interact(player)
+	await create_timer(swing).timeout
+	_check(pile.data["count"] == total + stats.bills_per_row and pile.data["smudged"] == total,
+			"a folha seca soma no montinho sem borrar")
+	await _look(player, Vector3(2.62, 0, -1.4), Vector3(2.25, 0.78, -1.85), "18_montinho")
+	# Cortar com a mão ocupada não dá; outra coisa que não folha também não entra.
+	items.give(1, "ream")
+	await create_timer(0.3).timeout
+	_check(g._prompt(player) == "Needs a printed sheet", "a resma não entra na guilhotina")
+	player._drop_held()
+	await create_timer(0.3).timeout
+
+	# Pegar o montinho e carregar.
+	player.global_position = stand
+	await physics_frame
+	items.request_pickup(pile.id)
+	await create_timer(0.4).timeout
+	_check(player.held_item() == pile, "pegou o montinho de notas")
+	_check(g._pile_id == 0, "a guilhotina sabe que o montinho saiu")
+	await _look(player, Vector3(2.4, 0, -1.2), Vector3(1.0, 1.0, -0.6), "19_notas_na_mao")
+	player._drop_held()
+	await create_timer(0.5).timeout
 
 
 ## Dá um item na mão do jogador em `at`, olhando para -X, solta com a força `charge` e devolve

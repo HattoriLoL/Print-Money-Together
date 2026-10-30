@@ -15,6 +15,7 @@ const Door := preload("res://scripts/door.gd")
 const ItemManager := preload("res://scripts/items/item_manager.gd")
 const Printer := preload("res://scripts/machines/printer.gd")
 const PaperSupply := preload("res://scripts/machines/paper_supply.gd")
+const Guillotine := preload("res://scripts/machines/guillotine.gd")
 
 ## Portas que os jogadores não abrem (vizinhos e a escada, por onde o fiscal vai chegar).
 const LOCKED_DOORS := ["302", "303", "Stairs"]
@@ -52,6 +53,7 @@ var items: Node
 ## Estações da produção.
 var printer: Node3D
 var paper_supply: Node3D
+var guillotine: Node3D
 
 var _players_root: Node3D
 
@@ -189,6 +191,8 @@ func _add_stations() -> void:
 	model.find_child("MACHINE_Printer", true, false).add_child(printer)
 	paper_supply = PaperSupply.new()
 	model.find_child("SUPPLY_Paper", true, false).add_child(paper_supply)
+	guillotine = Guillotine.new()
+	model.find_child("MACHINE_Guillotine", true, false).add_child(guillotine)
 
 
 func _setup_light(light: Light3D) -> void:

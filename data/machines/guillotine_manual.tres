@@ -1,0 +1,13 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/machines/guillotine_stats.gd" id="1_stats"]
+
+[resource]
+script = ExtResource("1_stats")
+display_name = "Lever guillotine"
+rows_per_sheet = 3
+bills_per_row = 2
+swing_down = 0.16
+swing_up = 0.4
+pile_max = 60
+noise = 0.3

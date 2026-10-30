@@ -294,7 +294,7 @@ def table_and_chairs(coll):
         for ly in (-hy + 0.06, hy - 0.06):
             p.cyl((lx, ly, 0.36), 0.72, 0.022, "M_Wood", seg=12, radius2=0.03)
     # Maços de notas já cortadas, com a cinta amarela.
-    for i, (bx, by) in enumerate(((-0.45, 0.2), (-0.32, 0.22), (-0.45, 0.28), (0.1, -0.28))):
+    for i, (bx, by) in enumerate(((-0.52, 0.31), (-0.39, 0.33), (-0.52, 0.31), (0.4, -0.3))):
         z = 0.76 + (0.02 if i == 2 else 0)
         p.box(bx - 0.06, by - 0.03, z, bx + 0.06, by + 0.03, z + 0.02, "M_Money", bevel=0.002)
         p.box(bx - 0.012, by - 0.031, z - 0.001, bx + 0.012, by + 0.031, z + 0.021, "M_MoneyBand", bevel=0)

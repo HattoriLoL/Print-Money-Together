@@ -281,11 +281,78 @@ def ream_wrapper():
     return img
 
 
+def smudged(bill):
+    """A mesma nota cortada com a tinta ainda molhada: faixas da tinta arrastadas para o lado (com
+    a borda suave), manchas escuras e o desenho lavado."""
+    w, h = bill.size
+    r = random.Random(77)
+    arr = np.asarray(bill).astype(np.float32)
+    drag = sum(np.roll(arr, s, axis=1) for s in range(0, 120, 4)) / 30.0
+    smear = Image.fromarray(np.clip(drag, 0, 255).astype(np.uint8), "RGB")
+    mask = Image.new("L", (w, h), 0)
+    md = ImageDraw.Draw(mask)
+    for _ in range(13):
+        x, y = r.randint(0, w), r.randint(30, h - 30)
+        rx, ry = r.randint(150, 380), r.randint(10, 32)
+        md.ellipse((x - rx, y - ry, x + rx, y + ry), fill=r.randint(190, 255))
+    img = Image.composite(smear, bill, mask.filter(ImageFilter.GaussianBlur(9)))
+    stains = Image.new("L", (w, h), 0)
+    sd = ImageDraw.Draw(stains)
+    for _ in range(10):
+        x, y = r.randint(0, w), r.randint(0, h)
+        rx, ry = r.randint(40, 140), r.randint(14, 42)
+        sd.ellipse((x - rx, y - ry, x + rx, y + ry), fill=r.randint(120, 200))
+    img = Image.composite(Image.new("RGB", (w, h), (40, 70, 45)), img, stains.filter(ImageFilter.GaussianBlur(14)))
+    return Image.blend(img, Image.new("RGB", (w, h), (120, 150, 115)), 0.15)
+
+
+def cutting_mat():
+    """Tampo da guilhotina (50 x 40 cm, 1250 x 1000 px): quadriculado de 1 cm, linhas grossas a cada
+    5 cm, régua numerada na frente e no lado e as marcas dos formatos A4 e A5."""
+    w, h = 1250, 1000
+    px = w / 50.0
+    img = Image.new("RGB", (w, h), (214, 218, 210))
+    d = ImageDraw.Draw(img)
+    for i in range(51):
+        x = int(i * px)
+        d.line((x, 0, x, h), fill=(120, 150, 170) if i % 5 == 0 else (178, 194, 200), width=3 if i % 5 == 0 else 1)
+    for j in range(41):
+        y = int(j * px)
+        d.line((0, y, w, y), fill=(120, 150, 170) if j % 5 == 0 else (178, 194, 200), width=3 if j % 5 == 0 else 1)
+    # Régua: risquinhos de milímetro na borda da frente (embaixo) e da esquerda, com os números.
+    small = font("arialbd.ttf", 22)
+    for mm in range(0, 501):
+        x = int(mm * px / 10)
+        length = 26 if mm % 10 == 0 else (16 if mm % 5 == 0 else 9)
+        d.line((x, h - length, x, h), fill=(30, 30, 30), width=2 if mm % 10 == 0 else 1)
+        if mm % 50 == 0 and 0 < mm < 500:
+            d.text((x, h - 32), str(mm // 10), font=small, fill=(30, 30, 30), anchor="mb")
+    for mm in range(0, 401):
+        y = h - int(mm * px / 10)
+        length = 26 if mm % 10 == 0 else (16 if mm % 5 == 0 else 9)
+        d.line((0, y, length, y), fill=(30, 30, 30), width=2 if mm % 10 == 0 else 1)
+        if mm % 50 == 0 and 0 < mm < 400:
+            d.text((32, y), str(mm // 10), font=small, fill=(30, 30, 30), anchor="lm")
+    # Contorno do A4 deitado e do A5 encostados no esquadro (à esquerda) e na linha de corte.
+    for (fw, fh, label) in ((29.7, 21.0, "A4"), (21.0, 14.8, "A5")):
+        x1, y0 = int(fw * px), h - int((fh + 2) * px)
+        d.rectangle((0, y0, x1, h - int(2 * px)), outline=(200, 60, 50), width=3)
+        d.text((x1 - 10, y0 + 8), label, font=font("arialbd.ttf", 30), fill=(200, 60, 50), anchor="ra")
+    # Linha da lâmina, a 9 cm da frente (a guilhotina corta ali).
+    cut_y = h - int(9 * px)
+    for x in range(0, w, 30):
+        d.line((x, cut_y, x + 18, cut_y), fill=(190, 40, 35), width=4)
+    d.text((w - 30, cut_y - 8), "CUT LINE", font=font("arialbd.ttf", 26), fill=(160, 40, 35), anchor="rb")
+    return img
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     front, back = bill_front(), bill_back()
     front.save(os.path.join(OUT, "bill_front.png"))
     back.save(os.path.join(OUT, "bill_back.png"))
+    smudged(front).save(os.path.join(OUT, "bill_front_smudged.png"))
+    cutting_mat().save(os.path.join(OUT, "cutting_mat.png"))
     sheet(front).save(os.path.join(OUT, "sheet_front.png"))
     sheet(back, back=True).save(os.path.join(OUT, "sheet_back.png"))
     paper_normal().save(os.path.join(OUT, "paper_normal.png"))

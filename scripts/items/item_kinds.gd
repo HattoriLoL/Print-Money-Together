@@ -3,6 +3,8 @@ extends RefCounted
 ##
 ##   "ream"   resma de papel embrulhada (vira folhas na impressora)
 ##   "sheet"  folha A4 impressa com 2 x 3 notas; data.wet = tinta ainda fresca
+##   "bills"  montinho de notas cortadas; data.count = quantas, data.smudged = quantas
+##            borradas (cortadas molhadas), data.top_smudged = se a de cima está borrada
 ##
 ## As texturas saem do art_source/paper_textures.py (assets/textures/).
 
@@ -11,17 +13,24 @@ const SHEET_FRONT := preload("res://assets/textures/sheet_front.png")
 const SHEET_BACK := preload("res://assets/textures/sheet_back.png")
 const PAPER_NORMAL := preload("res://assets/textures/paper_normal.png")
 const REAM_WRAPPER := preload("res://assets/textures/ream_wrapper.png")
+const BILL_FRONT := preload("res://assets/textures/bill_front.png")
+const BILL_FRONT_SMUDGED := preload("res://assets/textures/bill_front_smudged.png")
+const BILL_BACK := preload("res://assets/textures/bill_back.png")
 
 const SIZES := {
 	"ream": Vector3(0.3, 0.052, 0.21),
 	"sheet": Vector3(0.297, 0.003, 0.21),
+	"bills": Vector3(0.139, 0.002, 0.063),
 }
+## Espessura de cada nota no montinho (bem mais que o papel de verdade, para o monte aparecer).
+const BILL_THICKNESS := 0.0004
 ## Uma resma de 500 folhas pesa uns 2,5 kg; uma folha A4 de 75 g/m², 5 g.
-const MASS := {"ream": 2.5, "sheet": 0.005}
+const MASS := {"ream": 2.5, "sheet": 0.005, "bills": 0.001}
 ## Atrito, quique e amortecimento do giro de cada tipo.
 const PHYSICS := {
 	"ream": {"friction": 0.8, "bounce": 0.12, "angular_damp": 0.6},
 	"sheet": {"friction": 0.9, "bounce": 0.0, "angular_damp": 1.0},
+	"bills": {"friction": 0.85, "bounce": 0.02, "angular_damp": 0.8},
 }
 ## Ar na folha (ver item.gd, _paper_air). Arrasto da face: 0,5 · ρ · Cd · área (1,2 · 1,2 · 0,062 / 2),
 ## o que dá ~1 m/s de velocidade final caindo deitada. O de lado (pela borda) é bem menor.
@@ -43,6 +52,13 @@ static func label(item: Node) -> String:
 			return "paper ream"
 		"sheet":
 			return "wet sheet" if item.data.get("wet", false) else "printed sheet"
+		"bills":
+			var count: int = item.data.get("count", 0)
+			var smudged: int = item.data.get("smudged", 0)
+			var text := "%d bill%s" % [count, "" if count == 1 else "s"]
+			if smudged >= count and count > 0:
+				return text + " (smudged)"
+			return text + (" (%d smudged)" % smudged if smudged > 0 else "")
 	return item.kind
 
 
@@ -54,6 +70,8 @@ static func hold_offset(kind: String) -> Transform3D:
 			return Transform3D(Basis(Vector3.RIGHT, 0.95), Vector3(0.0, 0.06, 0.0))
 		"ream":
 			return Transform3D(Basis(Vector3.RIGHT, 0.25), Vector3(0.0, -0.05, -0.06))
+		"bills":
+			return Transform3D(Basis(Vector3.RIGHT, 0.95), Vector3(0.0, 0.05, 0.0))
 	return Transform3D.IDENTITY
 
 
@@ -67,6 +85,8 @@ static func hand_offset(kind: String, side: int) -> Transform3D:
 			return Transform3D(basis, Vector3(side * 0.135, -0.03, 0.17))
 		"ream":
 			return Transform3D(basis, Vector3(side * 0.176, -0.02, 0.11))
+		"bills":
+			return Transform3D(basis, Vector3(side * 0.112, -0.025, 0.075))
 	return Transform3D(basis, Vector3(side * 0.15, 0.0, 0.1))
 
 
@@ -89,6 +109,9 @@ static func build(item: RigidBody3D) -> void:
 	if item.kind == "sheet":
 		item.continuous_cd = true
 		mesh = sheet_mesh_instance(item.data.get("wet", false))
+	elif item.kind == "bills":
+		mesh = MeshInstance3D.new()
+		mesh.name = "Mesh"
 	else:
 		mesh = MeshInstance3D.new()
 		mesh.name = "Mesh"
@@ -99,13 +122,24 @@ static func build(item: RigidBody3D) -> void:
 			box.size = size
 			mesh.mesh = box
 	item.add_child(mesh)
+	if item.kind == "bills":
+		refresh(item)
 
 
-## Atualiza a aparência quando o estado muda (folha secou).
+## Atualiza a aparência quando o estado muda (folha secou, o montinho cresceu).
 static func refresh(item: RigidBody3D) -> void:
 	var mesh: MeshInstance3D = item.get_node_or_null("Mesh")
 	if item.kind == "sheet" and mesh:
 		mesh.set_instance_shader_parameter("wet", 1.0 if item.data.get("wet", false) else 0.0)
+	elif item.kind == "bills" and mesh:
+		# Uma malha de 1 de altura, esticada até a altura do monte; a colisão acompanha.
+		var count: int = maxi(item.data.get("count", 1), 1)
+		var height := maxf(count * BILL_THICKNESS, 0.0015)
+		mesh.mesh = _bills_mesh(item.data.get("top_smudged", false))
+		mesh.scale = Vector3(1.0, height, 1.0)
+		var col: CollisionShape3D = item.get_child(0)
+		(col.shape as BoxShape3D).size = Vector3(SIZES["bills"].x, height, SIZES["bills"].z)
+		item.mass = MASS["bills"] * count
 
 
 ## Uma folha (a do item e a que a impressora mostra saindo pela fenda).
@@ -157,6 +191,45 @@ static func _ream_mesh() -> Mesh:
 	st.set_material(mat)
 	var mesh := st.commit()
 	_cache["ream_mesh"] = mesh
+	return mesh
+
+
+## Montinho de notas: caixa de 1 de altura (o item estica), com a nota na tampa (borrada ou não),
+## o verso embaixo e as bordas de papel nos lados. Três superfícies, uma para cada material.
+static func _bills_mesh(top_smudged: bool) -> Mesh:
+	var key := "bills_mesh_smudged" if top_smudged else "bills_mesh"
+	if _cache.has(key):
+		return _cache[key]
+	var h: Vector3 = Vector3(SIZES["bills"].x, 1.0, SIZES["bills"].z) / 2.0
+	var full := Rect2(0, 0, 1, 1)
+	var mesh := ArrayMesh.new()
+	var faces := [
+		[BILL_FRONT_SMUDGED if top_smudged else BILL_FRONT, [[Vector3.UP, [Vector3(-h.x, h.y, -h.z), Vector3(h.x, h.y, -h.z), Vector3(h.x, h.y, h.z), Vector3(-h.x, h.y, h.z)]]]],
+		[BILL_BACK, [[Vector3.DOWN, [Vector3(h.x, -h.y, -h.z), Vector3(-h.x, -h.y, -h.z), Vector3(-h.x, -h.y, h.z), Vector3(h.x, -h.y, h.z)]]]],
+		[null, [
+			[Vector3.BACK, [Vector3(-h.x, h.y, h.z), Vector3(h.x, h.y, h.z), Vector3(h.x, -h.y, h.z), Vector3(-h.x, -h.y, h.z)]],
+			[Vector3.FORWARD, [Vector3(h.x, h.y, -h.z), Vector3(-h.x, h.y, -h.z), Vector3(-h.x, -h.y, -h.z), Vector3(h.x, -h.y, -h.z)]],
+			[Vector3.RIGHT, [Vector3(h.x, h.y, h.z), Vector3(h.x, h.y, -h.z), Vector3(h.x, -h.y, -h.z), Vector3(h.x, -h.y, h.z)]],
+			[Vector3.LEFT, [Vector3(-h.x, h.y, -h.z), Vector3(-h.x, h.y, h.z), Vector3(-h.x, -h.y, h.z), Vector3(-h.x, -h.y, -h.z)]],
+		]],
+	]
+	for surface in faces:
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for face in surface[1]:
+			_face(st, face[0], face[1], full)
+		var mat := StandardMaterial3D.new()
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		if surface[0] != null:
+			mat.albedo_texture = surface[0]
+			mat.roughness = 0.75
+		else:
+			# Bordas: papel claro com um tom de verde das notas empilhadas.
+			mat.albedo_color = Color(0.8, 0.86, 0.76)
+			mat.roughness = 0.9
+		st.set_material(mat)
+		st.commit(mesh)
+	_cache[key] = mesh
 	return mesh
 
 

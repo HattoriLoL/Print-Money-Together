@@ -1,8 +1,8 @@
 # Máquinas e objetos carregáveis
 
 A linha de produção planejada é: papel → tinta → impressora → varal → guilhotina → máquina de
-lavar → contadora → esconderijo. Até agora funcionam o **papel** e a **impressora**. As outras
-máquinas ainda são só o modelo.
+lavar → contadora → esconderijo. Até agora funcionam o **papel**, a **impressora** e a
+**guilhotina**. As outras máquinas ainda são só o modelo.
 
 ## Objetos carregáveis
 
@@ -13,6 +13,7 @@ frente do jogador, ou rente à parede se ela estiver no caminho).
 |---|---|
 | `ream` | Resma de papel embrulhada (marca fictícia OFFICE+). Na impressora, vira `sheets_per_ream` folhas. |
 | `sheet` | Folha A4 impressa com 2 x 3 notas, frente e verso. `data.wet` = tinta ainda fresca: mais escura e brilhando. |
+| `bills` | Montinho de notas cortadas. `data.count` = quantas, `data.smudged` = quantas saíram borradas, `data.top_smudged` = se a de cima está borrada (muda a textura). A altura e o peso crescem com o monte. |
 
 ### Na mão
 
@@ -42,7 +43,7 @@ frente do jogador, ou rente à parede se ela estiver no caminho).
 
 ### De onde vêm
 
-- **As texturas do papel**: o `art_source/paper_textures.py` desenha a nota (frente com a capivara, verso com o prédio da kitnet), a folha A4 (6 notas, marcas de corte e barra de cores), a fibra do papel e a embalagem da resma. Ele roda com o Python do sistema e o Pillow, não no Blender. As decorações do mapa (varal, guilhotina) usam a mesma folha.
+- **As texturas do papel**: o `art_source/paper_textures.py` desenha a nota (frente com a capivara, verso com o prédio da kitnet, e a frente borrada de quem cortou molhada), a folha A4 (6 notas, marcas de corte e barra de cores), a fibra do papel, a embalagem da resma e o tapete quadriculado da guilhotina. Ele roda com o Python do sistema e o Pillow, não no Blender. As decorações do mapa (varal, guilhotina) usam a mesma folha.
 
   ```
   python art_source/paper_textures.py
@@ -118,6 +119,30 @@ Peças do modelo que o Godot mexe, filhas de `MACHINE_Printer`:
 As folhas são A4 com 2 x 3 notas (`ItemKinds`). Na mão, a folha fica inclinada para quem segura
 ver as notas.
 
+## Guilhotina (`MACHINE_Guillotine`)
+
+Guilhotina de alavanca em cima da mesa do meio: tampo com tapete de corte quadriculado (régua,
+contornos do A4 e do A5 e a linha da lâmina), esquadro à esquerda, prensa do papel, protetor de
+acrílico e a alavanca com a lâmina e o pegador vermelho. O modelo fica em
+`art_source/blender/machines.py` (`guillotine`), com as medidas que o Godot também usa.
+
+O código é `scripts/machines/guillotine.gd`. Os números ficam em
+`data/machines/guillotine_manual.tres` (`guillotine_stats.gd`).
+
+| Na mão | [E] |
+|---|---|
+| Folha impressa | Põe a folha encostada no esquadro, com a primeira linha de notas passando da lâmina. Se ainda estiver molhada, o aviso diz que vai borrar. |
+| Nada | A alavanca desce (0,16 s) e volta (0,4 s). Com folha, corta uma linha: as 2 notas caem no montinho na frente da guilhotina e o resto da folha anda até a lâmina. São 3 cortes por folha. |
+| Outra coisa | Não entra. |
+
+- O montinho é um item `bills`: os cortes seguintes somam no mesmo enquanto ele estiver parado lá (até `pile_max` notas). Se alguém pegou, ou se ele encheu, nasce outro do lado.
+- Folha cortada molhada dá notas borradas (`smudged`). Por enquanto elas só ficam marcadas; depois vão valer menos ou ser recusadas.
+- `noise()` é o golpe da lâmina, por um instante.
+- Ainda não tem: som, nem cortar várias folhas de uma vez (upgrade).
+
+Peça do modelo que o Godot mexe: `MACHINE_Guillotine_Arm`, com a origem no pivô; a ponta sobe
+girando no Z do Godot (Y local no Blender).
+
 ## Teste
 
 `tools/tests/test_kitnet.gd` faz o caminho inteiro:
@@ -127,3 +152,4 @@ ver as notas.
 3. Confere que saíram 2 folhas molhadas, gastando papel e toner, e que desligada ela não imprime mais.
 4. Pega uma folha da bandeja e solta no chão.
 5. Confere o `PAPER OUT` sem papel.
+6. Põe uma folha molhada na guilhotina, corta as 3 linhas (6 notas borradas no montinho), corta uma linha de uma folha seca (soma no mesmo montinho sem borrar), confere que a resma não entra e pega o montinho.

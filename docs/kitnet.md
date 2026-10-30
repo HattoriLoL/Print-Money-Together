@@ -38,7 +38,7 @@ cômodo sem travar.
 | Tinta | `MACHINE_InkPot`, `SUPPLY_Ink` | panela fervendo no cooktop e galões na bancada (ainda decoração) |
 | Impressão | `MACHINE_Printer` | impressora de escritório velha na escrivaninha embaixo da janela |
 | Secagem | `MACHINE_ClothesLine`, `MACHINE_Fan` | varal de teto e ventilador no serviço |
-| Corte | `MACHINE_Guillotine` | guilhotina na mesa |
+| Corte | `MACHINE_Guillotine` | guilhotina de alavanca na mesa do meio |
 | Envelhecer | `MACHINE_Washer` | máquina de lavar no serviço |
 | Contar e cintar | `MACHINE_CashCounter` | contadora de cédulas na mesa |
 
@@ -49,7 +49,7 @@ A cortina da janela (`Curtain_Main`) fica meio aberta: dá para ver a impressora
 | No modelo | No jogo |
 |---|---|
 | `MACHINE_*` / `SUPPLY_*` | Estações da produção. A origem fica na base. |
-| `MACHINE_Guillotine_Arm` | Braço da guilhotina, gira no X local (filho da base). |
+| `MACHINE_Guillotine_Arm` | Alavanca da guilhotina, com a origem no pivô; gira no Y local (filha da base). |
 | `MACHINE_Washer_Lid` | Tampa da máquina de lavar, gira no X local na dobradiça de trás. |
 | `MACHINE_Fan_Blades` | Pás do ventilador, giram no Y local. |
 | `HIDE_*` | Esconderijos: `HIDE_SofaBed` (vão de 12 cm embaixo), `HIDE_Wardrobe` (e a mala em cima), `HIDE_Fridge`. |
