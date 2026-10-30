@@ -12,7 +12,12 @@ extends CharacterBody3D
 ## aparecem as luvas (hands.glb, manga na cor da vaga) segurando o item, para todos verem. No
 ## jogador local o ponto Hold balança atrasado quando a câmera vira e recua perto da parede.
 ##
-## Camadas de colisão: 1 = mundo, 2 = jogadores (um esbarra no outro), 3 = itens,
+## Empurra-empurra: os jogadores não travam um no outro como blocos (a colisão deles é só com o
+## mundo). Encostados, uma mola afasta os dois (cada dono calcula o próprio empurrão pela posição
+## dos outros, que já vem pela rede), e quem chega andando empurra junto (PUSH_*). O tronco de
+## quem leva o empurrão balança (character_rig.push), e todo mundo vê.
+##
+## Camadas de colisão: 1 = mundo, 2 = jogadores (os itens esbarram neles), 3 = itens,
 ## 4 = zonas de interação. A mira acerta mundo, itens e zonas.
 
 const Hud := preload("res://scripts/hud.gd")
@@ -35,6 +40,23 @@ const FOLLOW_SPEED := 15.0
 ## todo para baixo (metros), e a partir de que inclinação ele já recuou tudo (radianos).
 const FIRST_PERSON_BACK := Vector2(0.08, 0.3)
 const FIRST_PERSON_FULL_DOWN := 1.2
+## Empurra-empurra. Distância entre dois jogadores em que começam a se empurrar (metros, entre
+## os centros; um pouco menos que dois corpos, que são fofos), a mola que afasta quem está
+## encostado (m/s por metro encostado; é refeita a cada quadro, não acumula), quanto da
+## velocidade de quem chega passa para quem leva o empurrão, quão rápido esse empurrão some (por
+## segundo) e o máximo de tudo junto (m/s).
+const PUSH_DISTANCE := 0.62
+const PUSH_SPRING := 25.0
+const PUSH_TRANSFER := 0.95
+const PUSH_DAMPING := 6.0
+const PUSH_MAX := 4.0
+## Trombada: a partir de que velocidade de choque (m/s) os dois sentem o tranco (o boneco achata
+## e balança de uma vez, e a câmera de quem joga dá um tranco), e quanto a câmera gira por m/s.
+const IMPACT_MIN_SPEED := 0.6
+const CAMERA_KICK := 0.02
+## Balanço do tronco: quanto o boneco ganha de giro (rad/s, por segundo encostado) por unidade de
+## empurrão.
+const PUSH_WOBBLE := 10.0
 
 @export_group("Movimento")
 @export var walk_speed := 2.8
@@ -72,7 +94,19 @@ var _target_pitch := 0.0
 var _body: Node3D
 ## O boneco de desenho (character_rig.gd), dentro de _body.
 var character: Node3D
-var _last_body_pos := Vector3.ZERO
+## Velocidade do boneco no mundo (pelo quanto ele andou no passo de física): de todos, locais e
+## remotos.
+var body_velocity := Vector3.ZERO
+var _last_physics_pos := Vector3.ZERO
+## Empurrão que os outros jogadores estão dando neste (só no dono): a mola de quem está
+## encostado mais o que sobrou do empurrão de quem chegou andando (_shove).
+var push := Vector3.ZERO
+var _shove := Vector3.ZERO
+## Com quem este boneco está encostado agora (para a trombada valer só na hora do choque).
+var _touching := {}
+## Tranco da câmera de quem joga (rolar e inclinar, radianos) e a velocidade dele.
+var camera_kick := Vector2.ZERO
+var _camera_kick_vel := Vector2.ZERO
 var _tag: Label3D
 ## Zona em que o [E] está sendo segurado agora (só no jogador local).
 var _hold_zone: Node = null
@@ -143,6 +177,12 @@ func _process(delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	# Quanto andou no último passo de física (o quadro de desenho roda mais vezes que a física, e
+	# medido lá dava zero em metade dos quadros).
+	if delta > 0.0:
+		# Teleporte (nascer, voltar de fora do mapa) não vira uma corrida: no máximo 10 m/s.
+		body_velocity = ((global_position - _last_physics_pos) / delta).limit_length(10.0)
+	_last_physics_pos = global_position
 	if not is_local():
 		_follow_remote(delta)
 		return
@@ -170,13 +210,41 @@ func _physics_process(delta: float) -> void:
 	var control := 1.0 if is_on_floor() else air_control
 	var horizontal := Vector3(velocity.x, 0, velocity.z)
 	horizontal = horizontal.lerp(direction * target_speed, clampf(acceleration * control * delta, 0.0, 1.0))
-	velocity.x = horizontal.x
-	velocity.z = horizontal.z
+	# O empurrão entra só no movimento deste quadro: o passo do jogador continua o mesmo.
+	_update_push(delta)
+	velocity.x = horizontal.x + push.x
+	velocity.z = horizontal.z + push.z
 	move_and_slide()
+	velocity.x -= push.x
+	velocity.z -= push.z
 
 	_update_bob(delta, horizontal.length())
 	_update_interaction(delta)
 	_send_state(delta)
+
+
+## Mola entre os jogadores encostados e o empurrão de quem chega andando.
+func _update_push(delta: float) -> void:
+	_shove = _shove.lerp(Vector3.ZERO, clampf(PUSH_DAMPING * delta, 0.0, 1.0))
+	var spring := Vector3.ZERO
+	for other: Node3D in get_tree().get_nodes_in_group("player"):
+		if other == self or absf(other.global_position.y - global_position.y) > 1.2:
+			continue
+		var away := global_position - other.global_position
+		away.y = 0.0
+		var dist := away.length()
+		if dist >= PUSH_DISTANCE:
+			continue
+		# Bem no mesmo lugar (nasceram juntos), cada um vai para um lado.
+		var dir := away / dist if dist > 0.01 else Vector3(1, 0, 0).rotated(Vector3.UP, float(name.hash() % 628) / 100.0)
+		spring += dir * (PUSH_DISTANCE - dist) * PUSH_SPRING
+		# Quem vem para cima empurra junto, na velocidade dele (quase).
+		# `dir` vai do outro para este: quem vem para cima anda no sentido de `dir`.
+		var coming: float = (other.get("body_velocity") as Vector3).dot(dir)
+		var along := _shove.dot(dir)
+		if coming * PUSH_TRANSFER > along:
+			_shove += dir * (coming * PUSH_TRANSFER - along)
+	push = (_shove + spring).limit_length(PUSH_MAX)
 
 
 # --- Rede ---------------------------------------------------------------------
@@ -360,7 +428,7 @@ func _build_body() -> void:
 	character = CharacterRig.new()
 	character.setup(slot, Net.PLAYER_COLORS[slot])
 	_body.add_child(character)
-	_last_body_pos = global_position
+	_last_physics_pos = global_position
 	_tag = Label3D.new()
 	_tag.text = player_name
 	_tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -388,12 +456,56 @@ func _setup_first_person_body() -> void:
 		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
+## Balanço do tronco quando encosta em alguém: inclina para o lado do empurrão, mais forte se o
+## outro chegou correndo. Na hora do choque (os dois se aproximando rápido), uma trombada: o boneco
+## achata e balança de uma vez, e a câmera de quem joga dá um tranco. Só visual, calculado em cada
+## máquina para todos os bonecos.
+func _wobble_from_others(delta: float) -> void:
+	var touching := {}
+	for other: Node3D in get_tree().get_nodes_in_group("player"):
+		if other == self or absf(other.global_position.y - global_position.y) > 1.2:
+			continue
+		var away := global_position - other.global_position
+		away.y = 0.0
+		var dist := away.length()
+		if dist >= PUSH_DISTANCE or dist < 0.001:
+			continue
+		var dir := away / dist
+		var other_vel: Vector3 = other.get("body_velocity")
+		touching[other] = true
+		if not _touching.has(other):
+			var closing := (other_vel - body_velocity).dot(dir)
+			if closing > IMPACT_MIN_SPEED:
+				character.impact(dir, closing)
+				if is_local():
+					_kick_camera(dir, closing)
+		var coming := maxf(0.0, other_vel.dot(dir))
+		var strength := (PUSH_DISTANCE - dist) * 6.0 + coming * 1.5
+		character.push(dir, strength * PUSH_WOBBLE * delta)
+	_touching = touching
+	if is_local():
+		_update_camera_kick(delta)
+
+
+## Tranco da câmera na trombada: rola para o lado do empurrão e inclina para frente ou para trás.
+func _kick_camera(dir: Vector3, speed: float) -> void:
+	var side := dir.dot(global_basis.x)
+	var back := dir.dot(global_basis.z)
+	_camera_kick_vel += Vector2(-side, -back) * speed * CAMERA_KICK * 30.0
+
+
+func _update_camera_kick(delta: float) -> void:
+	_camera_kick_vel += (-160.0 * camera_kick - 12.0 * _camera_kick_vel) * delta
+	camera_kick = (camera_kick + _camera_kick_vel * delta).limit_length(0.12)
+	camera.rotation = Vector3(camera_kick.y, 0.0, camera_kick.x)
+
+
 ## Anima o boneco pelo quanto ele andou (serve para o dono e para os bonecos dos outros).
 func _animate_character(delta: float) -> void:
 	if character == null or not _body.visible or delta <= 0.0:
 		return
-	var moved := (global_position - _last_body_pos) / delta
-	_last_body_pos = global_position
+	var moved := body_velocity
+	_wobble_from_others(delta)
 	var airborne := absf(moved.y) > 0.6
 	var targets := []
 	if held_item() != null and _hands.size() == 2:

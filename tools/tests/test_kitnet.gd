@@ -18,6 +18,9 @@ extends SceneTree
 ## - bonecos: cada vaga com o acessório dela, andando (joelho dobrando), no ar e segurando (a mão chega
 ##   na luva pelo IK do braço), com print do elenco;
 ## - primeira pessoa: o próprio corpo aparece (sem a cabeça) e o braço chega na luva que segura;
+## - empurra-empurra: encostados se afastam, quem vem andando empurra junto e o tronco balança; na
+##   trombada o peito e a cabeça vêm atrasados, o corpo achata, a câmera dá um tranco e os passos
+##   vão para o lado do empurrão;
 ## - com --solo, entra sozinho sem rede (o botão "Play solo") em vez de hospedar;
 ## - com --client, abre uma segunda janela que entra na sala e confere que ela aparece e se mexe.
 ## Prints de alguns pontos de vista na pasta --out (rode com janela, sem --headless).
@@ -210,6 +213,7 @@ func _run() -> void:
 	await _test_guillotine(kitnet, player)
 	await _test_characters(kitnet, player)
 	await _test_first_person(kitnet, player)
+	await _test_push(kitnet, player)
 
 	if _with_client:
 		await _test_client(kitnet)
@@ -286,6 +290,71 @@ func _test_first_person(kitnet: Node3D, player: CharacterBody3D) -> void:
 	await _look(player, at, at + Vector3(0, -0.2, -0.8), "42_primeira_pessoa_resma_olhando_para_baixo")
 	player._drop_held()
 	await create_timer(0.3).timeout
+
+
+## Empurra-empurra: um boneco de outro jogador (sem rede, ele só segue a posição que "recebe")
+## encostado no jogador se afasta, e vindo andando empurra o jogador junto; o tronco balança.
+func _test_push(kitnet: Node3D, player: CharacterBody3D) -> void:
+	var other: CharacterBody3D = load("res://scenes/player.tscn").instantiate()
+	other.setup(4242, "Shover", 1, Transform3D(Basis(Vector3.UP, -PI / 2), Vector3(3.62, 0.05, -3.3)))
+	kitnet.get_node("Players").add_child(other)
+	player.global_position = Vector3(3.8, 0.05, -3.3)
+	player.velocity = Vector3.ZERO
+	for i in 40:
+		await physics_frame
+	var gap := Vector2(player.global_position.x - other.global_position.x, player.global_position.z - other.global_position.z).length()
+	_check(gap > 0.5 and gap < 0.8, "encostados, os bonecos se afastam até quase não encostar (%.2f m entre os dois)" % gap)
+	# O outro vem andando a 2,8 m/s para cima do jogador.
+	other.global_position = Vector3(3.0, 0.05, -3.3)
+	other._target_position = other.global_position
+	player.global_position = Vector3(3.9, 0.05, -3.3)
+	await physics_frame
+	var start_x := player.global_position.x
+	var min_gap := 9.0
+	var max_lean := 0.0
+	var max_squash := 0.0
+	var max_kick := 0.0
+	var lagged := false
+	var step_along := -1.0
+	var rig: Node3D = player.character
+	for i in 40:
+		other._target_position += Vector3(2.8 / Engine.physics_ticks_per_second, 0, 0)
+		await physics_frame
+		min_gap = minf(min_gap, absf(player.global_position.x - other.global_position.x))
+		max_lean = maxf(max_lean, rig.lean.length())
+		max_squash = maxf(max_squash, absf(rig.squash))
+		max_kick = maxf(max_kick, player.camera_kick.length())
+		lagged = lagged or (rig.lean.length() > 0.02 and rig.chest_lean.dot(rig.lean) < 0.0)
+		if i == 25:
+			step_along = (rig.skeleton.global_basis.orthonormalized() * rig._step_dir).dot(Vector3.RIGHT)
+		if i == 30:
+			await _shot("43_empurra_empurra_primeira_pessoa")
+	var moved := player.global_position.x - start_x
+	_check(moved > 0.3, "quem vem andando empurra o jogador junto (%.2f m)" % moved)
+	_check(min_gap > 0.4, "empurrando, um não entra no outro (%.2f m no mais perto)" % min_gap)
+	_check(max_lean > 0.05, "o tronco de quem leva o empurrão balança (%.2f rad)" % max_lean)
+	_check(lagged, "o peito vem atrasado em relação ao tronco (balanço em onda)")
+	_check(max_squash > 0.05, "na trombada o corpo achata (%.2f)" % max_squash)
+	_check(max_kick > 0.01, "na trombada a câmera de quem joga dá um tranco (%.3f rad)" % max_kick)
+	_check(step_along > 0.7, "empurrado, os passos vão para o lado do empurrão (%.2f)" % step_along)
+	# De fora: um boneco vem andando e tromba em outro parado (sem rede, o parado não sai do lugar,
+	# mas o balanço, o atraso do peito e da cabeça e o achatado aparecem nos dois).
+	var still: CharacterBody3D = load("res://scenes/player.tscn").instantiate()
+	still.setup(4343, "Still", 2, Transform3D(Basis(Vector3.UP, PI / 2), Vector3(4.25, 0.05, -3.4)))
+	kitnet.get_node("Players").add_child(still)
+	other.global_position = Vector3(3.2, 0.05, -3.4)
+	other._target_position = other.global_position
+	await _look(player, Vector3(3.7, 0, -1.9), Vector3(3.9, 0.9, -3.4), "44_trombada_antes")
+	var shots := {22: "45_trombada_choque", 28: "46_trombada_balanco", 40: "47_trombada_volta"}
+	for i in 48:
+		if i < 24:
+			other._target_position += Vector3(2.8 / Engine.physics_ticks_per_second, 0, 0)
+		await physics_frame
+		if shots.has(i):
+			await _shot(shots[i])
+	other.queue_free()
+	still.queue_free()
+	await physics_frame
 
 
 ## Segunda janela entrando na sala pelo menu (--join), como um amigo faria.
