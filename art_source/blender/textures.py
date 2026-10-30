@@ -384,6 +384,124 @@ def _gen_sticker_label():
     return rgb, None, np.full((h, w), 0.6)
 
 
+
+# --- Desenhos da etapa 3 (jornal, retrato, tampa de pizza) ----------------------------------------
+# Imagens soltas (UV de 0 a 1 num quad), com a linha 0 embaixo.
+
+def _canvas(w, h, color):
+    y, x = np.mgrid[0:h, 0:w]
+    return np.zeros((h, w, 3)) + np.array(color), x.astype(float), y.astype(float)
+
+
+def _fill(rgb, mask, color, outline=0, line=0.04):
+    """Pinta `mask` de `color`; `outline` px de traço preto em volta (por fora)."""
+    if outline:
+        rgb[_dilate(mask, outline) & ~mask] = line
+    rgb[mask] = color
+
+
+def _ell(x, y, cx, cy, rx, ry):
+    return ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1.0
+
+
+def _gen_newspaper():
+    """Folha de jornal: título grosso, manchete, foto riscada e colunas de texto."""
+    w = h = 256
+    rgb, x, y = _canvas(w, h, (0.88, 0.85, 0.74))
+    rgb[(x < 3) | (x >= w - 3) | (y < 3) | (y >= h - 3)] = 0.35
+    rgb[(y > 214) & (y < 242) & (x > 14) & (x < w - 14)] = 0.08  # título
+    for i in range(6):  # letrinhas claras no título
+        rgb[(y > 222) & (y < 234) & (x > 24 + i * 36) & (x < 42 + i * 36)] = 0.88
+    rgb[(y > 206) & (y < 209) & (x > 14) & (x < w - 14)] = 0.2
+    rgb[(y > 176) & (y < 196) & (x > 14) & (x < 200)] = 0.12  # manchete
+    rgb[(y > 160) & (y < 170) & (x > 14) & (x < 150)] = 0.12
+    photo = (y > 90) & (y < 150) & (x > 14) & (x < 112)  # foto: cinza com diagonais
+    rgb[photo] = 0.62
+    rgb[photo & (((x + y) // 6) % 2 == 0)] = 0.5
+    rgb[(y > 88) & (y < 152) & (x > 12) & (x < 114) & ~photo] = 0.1
+    for col, x0 in enumerate((124, 188)):  # colunas de texto
+        for row in range(9):
+            yy = 92 + row * 8 + col * 3
+            rgb[(y >= yy) & (y < yy + 3) & (x > x0) & (x < x0 + 56 - (row % 3) * 9)] = 0.3
+    for row in range(8):  # texto embaixo da foto
+        yy = 16 + row * 9
+        rgb[(y >= yy) & (y < yy + 3) & (x > 14) & (x < 230 - (row % 4) * 22)] = 0.3
+    rgb[(y > 70) & (y < 76) & (x > 14) & (x < 112)] = 0.2
+    return rgb, None, np.full((h, w), 0.9)
+
+
+def _gen_portrait():
+    """Retrato a óleo de um presidente inventado: cara redonda, bigodão, faixa e medalhas."""
+    w, h = 256, 320
+    rgb, x, y = _canvas(w, h, (0.5, 0.18, 0.15))
+    rgb[(y < 150) & (x > 20) & (x < w - 20) & (np.abs(x - 128) + (150 - y) * 0.2 < 118)] = (0.58, 0.24, 0.18)
+    cx = 128
+    # Terno azul, camisa, faixa verde e amarela cruzada e as medalhas.
+    suit = (_ell(x, y, cx, 90, 118, 100)) & (y < 190)
+    _fill(rgb, suit, (0.18, 0.28, 0.52), outline=4)
+    shirt = (y > 105) & (y < 188) & (np.abs(x - cx) < 20 + (y - 105) * 0.35)
+    _fill(rgb, shirt, (0.95, 0.94, 0.88), outline=3)
+    tie = (y > 70) & (y < 175) & (np.abs(x - cx) < 9 + (y > 150) * 8)
+    _fill(rgb, tie, (0.8, 0.12, 0.1), outline=3)
+    sash = (np.abs((y - 190) + (x - 40) * 0.85 - 0) < 18) & (x > 30) & (y > 8)
+    sash &= suit
+    _fill(rgb, sash, (0.2, 0.7, 0.28), outline=3)
+    rgb[sash & (np.abs((y - 190) + (x - 40) * 0.85) < 4)] = (0.98, 0.85, 0.15)
+    for i, (mx, my) in enumerate(((60, 62), (82, 54), (190, 70))):  # medalhas
+        _fill(rgb, _ell(x, y, mx, my, 12, 12), (0.95, 0.78, 0.2), outline=3)
+        _fill(rgb, _ell(x, y, mx, my, 5, 5), (0.85, 0.15, 0.1))
+    # Cabelo grisalho dos lados, orelhas, cabeça redonda e papada.
+    _fill(rgb, _ell(x, y, cx, 215, 92, 82), (0.78, 0.78, 0.8), outline=4)
+    _fill(rgb, _ell(x, y, 56, 190, 14, 20), (0.92, 0.66, 0.46), outline=3)
+    _fill(rgb, _ell(x, y, 200, 190, 14, 20), (0.92, 0.66, 0.46), outline=3)
+    _fill(rgb, _ell(x, y, cx, 175, 76, 84), (0.95, 0.7, 0.5), outline=4)
+    _fill(rgb, _ell(x, y, cx, 150, 70, 38), (0.95, 0.7, 0.5))
+    rgb[_ell(x, y, 80, 160, 18, 11) | _ell(x, y, 176, 160, 18, 11)] = (0.97, 0.52, 0.42)  # bochechas
+    # Testa lisa com brilho, sobrancelhas grossas, olhinhos e nariz de batata.
+    rgb[_ell(x, y, 104, 230, 14, 6)] = (1.0, 0.85, 0.7)
+    for sx in (-1, 1):
+        ex = cx + sx * 30
+        brow = (np.abs(y - (200 + (x - ex) * sx * 0.25)) < 5) & (np.abs(x - ex) < 22)
+        _fill(rgb, brow, (0.25, 0.25, 0.27))
+        _fill(rgb, _ell(x, y, ex, 184, 13, 9), (0.98, 0.98, 0.95), outline=2)
+        _fill(rgb, _ell(x, y, ex - sx * 2, 184, 4.5, 5.5), (0.05, 0.05, 0.05))
+    _fill(rgb, _ell(x, y, cx, 150, 17, 14), (0.93, 0.56, 0.42), outline=3)
+    # Bigodão preto, boca pequena embaixo e queixo duplo.
+    mus = _ell(x, y, cx - 27, 126, 30, 11) | _ell(x, y, cx + 27, 126, 30, 11)
+    mus &= (y < 132) | (np.abs(x - cx) > 14)
+    _fill(rgb, mus, (0.1, 0.1, 0.12), outline=3)
+    _fill(rgb, _ell(x, y, cx, 104, 17, 6), (0.55, 0.12, 0.12), outline=2)
+    rgb[(np.abs(y - (88 - ((x - cx) / 40) ** 2 * 10)) < 2.2) & (np.abs(x - cx) < 40)] = 0.12
+    # Plaquinha dourada embaixo do retrato.
+    rgb[(y > 6) & (y < 26) & (x > 70) & (x < 186)] = 0.04
+    rgb[(y > 9) & (y < 23) & (x > 73) & (x < 183)] = (0.9, 0.72, 0.2)
+    for i in range(5):
+        rgb[(y > 14) & (y < 18) & (x > 82 + i * 20) & (x < 96 + i * 20)] = 0.15
+    rgb[(x < 5) | (x >= w - 5) | (y < 3) | (y >= h - 5)] = 0.05
+    return rgb, None, np.full((h, w), 0.6)
+
+
+def _gen_pizza_lid():
+    """Tampa de caixa de pizza: papelão, faixa vermelha e uma fatia com queijo e pepperoni."""
+    w = h = 256
+    rgb, x, y = _canvas(w, h, (0.9, 0.78, 0.55))
+    rgb[(x < 5) | (x >= w - 5) | (y < 5) | (y >= h - 5)] = 0.45
+    band = (y > 178) & (y < 232)
+    _fill(rgb, band, (0.8, 0.14, 0.1), outline=3)
+    for i in range(7):  # letrões do nome
+        rgb[(y > 192) & (y < 218) & (x > 22 + i * 30) & (x < 40 + i * 30)] = 0.97
+    # Fatia: triângulo de borda (massa), queijo e pepperoni.
+    tri = (y > 22) & (y < 160) & (np.abs(x - 128) < (y - 22) * 0.62)
+    _fill(rgb, tri, (0.98, 0.78, 0.2), outline=4)
+    crust = (y > 138) & (y < 160) & (np.abs(x - 128) < (y - 22) * 0.62)
+    rgb[crust] = (0.8, 0.5, 0.2)
+    for (px, py, r) in ((128, 120, 13), (100, 98, 11), (156, 100, 11), (128, 70, 10)):
+        _fill(rgb, _ell(x, y, px, py, r, r), (0.78, 0.16, 0.12), outline=2)
+    # Gordura escorrendo e vapor.
+    for sx in (60, 196):
+        rgb[(np.abs(x - sx) < 3) & (y > 30) & (y < 110) & ~tri] = (0.95, 0.65, 0.2)
+    return rgb, None, np.full((h, w), 0.9)
+
 # material -> (gerador, metros que a textura cobre)
 GENERATED = {
     "M_Wall": (_paint_wallpaper, 0.6),
@@ -400,6 +518,9 @@ GENERATED = {
     "M_DeskMetal": (_gen_desk_metal, 0.5),
     "M_StickerWarning": (_gen_sticker_warning, 1.0),
     "M_StickerLabel": (_gen_sticker_label, 1.0),
+    "M_Newspaper": (_gen_newspaper, 1.0),
+    "M_Portrait": (_gen_portrait, 1.0),
+    "M_PizzaLid": (_gen_pizza_lid, 1.0),
     "M_Floor": (_gen_floor, 0.9),
     "M_FloorBath": (_gen_floor_bath, 0.6),
     "M_Tile": (_gen_wall_tile, 0.4),

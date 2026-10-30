@@ -11,6 +11,7 @@ extends SceneTree
 ##   que cai fora do mapa volta;
 ## - guilhotina: pôr a folha, cortar linha por linha (2 notas por corte no montinho da frente,
 ##   borradas se a folha estava molhada), somar no mesmo montinho e carregar o montinho;
+## - etapa 3 do visual: prints da fita na impressora, jornal, retrato, geladeira, TV, pizza, trancas e lâmpada;
 ## - com --solo, entra sozinho sem rede (o botão "Play solo") em vez de hospedar;
 ## - com --client, abre uma segunda janela que entra na sala e confere que ela aparece e se mexe.
 ## Prints de alguns pontos de vista na pasta --out (rode com janela, sem --headless).
@@ -131,6 +132,15 @@ func _run() -> void:
 	await _look(player, Vector3(5.4, 0, -0.4), Vector3(6.4, 0.8, -1.8), "08_banheiro")
 	await _look(player, Vector3(9.2, 0, 0.85), Vector3(-1.5, 1.3, 1.3), "09_corredor")
 	await _look(player, Vector3(2.5, 0, -3.6), Vector3(2.5, 0.2, -14.0), "10_janela")
+	# Etapa 3 do visual: objetos novos e proporções exageradas.
+	await _look(player, Vector3(2.2, 0, -3.65), Vector3(2.2, 0.92, -4.5), "20_fita_na_impressora")
+	await _look(player, Vector3(2.5, 0, -3.3), Vector3(2.5, 1.5, -5.1), "21_jornal_na_janela")
+	await _look(player, Vector3(2.0, 0, -3.4), Vector3(0.0, 1.7, -3.5), "22_retrato")
+	await _look(player, Vector3(1.3, 0, -1.3), Vector3(0.4, 1.1, -0.4), "23_geladeira_gorducha")
+	await _look(player, Vector3(3.5, 0, -3.3), Vector3(4.7, 0.9, -2.25), "24_tv_enorme")
+	await _look(player, Vector3(3.6, 0, -3.2), Vector3(4.55, 0.1, -4.5), "25_caixas_de_pizza")
+	await _look(player, Vector3(4.1, 0, -1.4), Vector3(4.1, 1.3, 0.1), "26_trancas_da_porta")
+	await _look(player, Vector3(2.6, 0, -2.0), Vector3(2.6, 2.1, -2.7), "27_lampada_pelada")
 
 	# --- Portas ---
 	var door: AnimatableBody3D = kitnet.doors["301"]

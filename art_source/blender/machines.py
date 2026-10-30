@@ -124,6 +124,22 @@ def printer(coll):
     for i in range(3):
         p.box_m((0.04 - i * 0.009, 0.0005, 0.003), note @ Matrix.Translation((-0.004, -0.0168, 0.015 - i * 0.013)),
                 "M_InkBlack", bevel=0)
+    # Silver tape: a impressora só fecha à base de fita. Uma tira larga em volta da tampa (em cima e
+    # descendo nos dois lados), duas em X na frente inclinada e uma remendando a bandeja.
+    t = 0.0016
+    p.box(-0.2315, -0.012, 0.2, 0.2315, 0.062, 0.2 + t, "M_SilverTape", bevel=0)
+    for sx in (-1, 1):
+        x0 = sx * 0.23
+        p.box(min(x0, x0 + sx * t), -0.012, 0.118, max(x0, x0 + sx * t), 0.062, 0.2 + t, "M_SilverTape", bevel=0)
+    for ang in (0.7, -0.7):
+        m = Matrix.Translation((0.0, -0.1532, 0.157)) @ Matrix.Rotation(-0.53, 4, "X") @ Matrix.Rotation(ang, 4, "Y")
+        p.box_m((0.2, 0.0035, 0.034), m @ Matrix.Translation((0, -0.0168, 0)), "M_SilverTape", bevel=0)
+    m = Matrix.Translation((0.0, -0.3, 0.0598)) @ Matrix.Rotation(0.5, 4, "Z")
+    p.box_m((0.22, 0.03, 0.0035), m, "M_SilverTape", bevel=0)
+    # Pontas soltas e dobradas da fita da tampa.
+    for sx in (-1, 1):
+        m = Matrix.Translation((sx * 0.165, -0.026, 0.2 + t)) @ Matrix.Rotation(sx * 0.35, 4, "Z")
+        p.box_m((0.05, 0.03, 0.0035), m, "M_SilverTape", bevel=0)
     decal(p, (0.175, 0.075, 0.2016), "+z", 0.08, 0.08, "M_DecalWater")
     base = p.finish("MACHINE_Printer", coll, loc=PRINTER_LOC, rot_z=facing("-y"))
 

@@ -9,8 +9,19 @@ primeira pessoa.
 1. **Feito:** cel shading, contorno e a paleta nova no mapa atual, sem mexer na geometria.
 2. **Feito:** texturas pintadas (cor chapada, traços simples, rachaduras e manchas de desenho),
    quinas mais gorduchas, tudo levemente torto e as notas em verde neon.
-3. Objetos novos (silver tape na impressora, jornal na janela, trancas na porta, caixas de pizza,
-   retrato de um presidente inventado, lâmpada pelada) e proporções exageradas.
+3. **Feito:** objetos novos e proporções exageradas:
+   - silver tape na impressora (`machines.printer`, `M_SilverTape`);
+   - jornal colado no vidro da janela principal, com tape nos cantos (`Newspaper_Window`, sem
+     colisão, em `props.newspaper_window`);
+   - trancas do lado de dentro da porta 301: dois ferrolhos, corrente, tranca de barra e chave
+     tetra (`structure._door_locks`);
+   - caixas de pizza: pilha de cinco perto da divisória e uma aberta, comida pela metade, no sofá
+     (`props._pizza_stack` e `_pizza_open`);
+   - retrato a óleo de um presidente inventado, na parede oeste (`Props_Portrait`, textura
+     `M_Portrait`, pintada em `textures._gen_portrait`);
+   - lâmpada pelada de bulbo gordo no fio (`structure._bare_bulb`, ainda `LAMP_main_0`);
+   - geladeira gorducha (0,72 x 0,84 m, quinas de 12 cm) e TV de tubo enorme (1,1 m de largura,
+     mais larga que o rack).
 
 ## Como funciona
 

@@ -75,6 +75,13 @@ MATERIALS = {
     "M_DeskWood": ((0.7, 0.48, 0.28), 0.5, 0.0, 0.0),
     "M_StickerWarning": ((0.95, 0.78, 0.1), 0.4, 0.0, 0.0),
     "M_StickerLabel": ((0.93, 0.92, 0.88), 0.6, 0.0, 0.0),
+    # Etapa 3: jornal na janela, retrato do presidente, tampa de pizza, silver tape.
+    "M_Newspaper": ((0.88, 0.85, 0.74), 0.9, 0.0, 0.0),
+    "M_Portrait": ((0.5, 0.2, 0.15), 0.6, 0.0, 0.0),
+    "M_PizzaLid": ((0.9, 0.78, 0.55), 0.9, 0.0, 0.0),
+    "M_SilverTape": ((0.78, 0.8, 0.82), 0.2, 0.9, 0.0),
+    "M_Cheese": ((0.98, 0.78, 0.2), 0.5, 0.0, 0.0),
+    "M_Pepperoni": ((0.78, 0.16, 0.12), 0.5, 0.0, 0.0),
     "M_Coffee": ((0.12, 0.06, 0.03), 0.1, 0.0, 0.0),
     "M_Cable": ((0.55, 0.55, 0.53), 0.6, 0.0, 0.0),
     # LEDs da impressora: o Godot acende e apaga.

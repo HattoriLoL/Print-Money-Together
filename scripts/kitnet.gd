@@ -22,7 +22,7 @@ const Toon := preload("res://scripts/toon.gd")
 const LOCKED_DOORS := ["302", "303", "Stairs"]
 ## Malhas sem colisão: luminárias, panos, o varal (acima da cabeça), as pás do ventilador,
 ## as manchas e tudo lá fora.
-const NO_COLLISION := ["LAMP_", "Curtain_", "MACHINE_ClothesLine", "MACHINE_Fan_Blades", "Decal_", "Outside_"]
+const NO_COLLISION := ["LAMP_", "Curtain_", "MACHINE_ClothesLine", "MACHINE_Fan_Blades", "Decal_", "Newspaper_", "Outside_"]
 ## Malhas que não fazem sombra (as manchas ficam a 3 mm da parede; lá fora é só fundo).
 const NO_SHADOW := ["LAMP_", "Decal_", "Outside_"]
 ## Luz de cada zona (LIGHT_<zona>_<n> do modelo): alcance (m), energia e sombra.

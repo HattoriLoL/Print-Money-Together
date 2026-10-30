@@ -14,6 +14,8 @@ def build(colls):
     c = colls["props"]
     kitchen(c)
     main_room(c)
+    newspaper_window(c)
+    portrait(c)
     conduit(c)
     bathroom(c)
     service(c)
@@ -127,7 +129,91 @@ def main_room(coll):
     # Tomadas: atrás da TV e perto do sofá.
     for (x, yy, z, axis) in ((P.PART_X - 0.005, 2.0, 0.3, "x"), (0.005, 2.7, 0.3, "x")):
         p.box(x - 0.005, yy - 0.04, z, x + 0.005, yy + 0.04, z + 0.1, "M_PlasticWhite")
+    # Caixas de pizza: pilha torta perto da divisória e uma aberta, comida pela metade, no sofá.
+    _pizza_stack(p, 4.5, 4.0, 0.0, 5, 0.22)
+    _pizza_open(p, 0.56, 4.35, 0.575, 1.3)
     p.finish("Props_Main", coll)
+
+
+def _pizza_stack(p, x, y, z, n, rot):
+    """Pilha de `n` caixas fechadas, cada uma girada um tantinho, com a tampa de cima ilustrada."""
+    h = 0.06
+    for i in range(n):
+        m = Matrix.Translation((x, y, z + h * i + h / 2)) @ Matrix.Rotation(rot + (i % 2 - 0.5) * 0.12 * (i + 1), 4, "Z")
+        p.box_m((0.36, 0.36, h), m, "M_PizzaBox", bevel=0.004)
+        p.box_m((0.368, 0.368, 0.004), m @ Matrix.Translation((0, 0, 0.016)), "M_Cardboard", bevel=0.001)
+    top = z + h * n
+    m = Matrix.Translation((x, y, top)) @ Matrix.Rotation(rot + (((n - 1) % 2) - 0.5) * 0.12 * n, 4, "Z")
+    c = [m @ Matrix.Translation((sx * 0.17, sy * 0.17, 0.0015)).translation for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+    p.quad(c, "M_PizzaLid", double=False)
+
+
+def _pizza_open(p, x, y, z, rot):
+    """Caixa aberta: fundo com a pizza (uma fatia a menos), tampa levantada atrás e uma fatia solta."""
+    base = Matrix.Translation((x, y, z)) @ Matrix.Rotation(rot, 4, "Z")
+    p.box_m((0.36, 0.36, 0.04), base @ Matrix.Translation((0, 0, 0.02)), "M_PizzaBox", bevel=0.004)
+    # Pizza: disco de massa, queijo e pepperoni; a fatia que falta fica como um recorte escuro.
+    p.cyl((0, 0, 0), 0.012, 0.16, "M_Cardboard", seg=20, matrix=base @ Matrix.Translation((0, 0, 0.045)))
+    p.cyl((0, 0, 0), 0.006, 0.145, "M_Cheese", seg=20, matrix=base @ Matrix.Translation((0, 0, 0.054)))
+    for (px, py) in ((-0.06, 0.04), (0.05, 0.07), (-0.03, -0.06), (0.08, -0.04), (0.0, 0.0)):
+        p.cyl((0, 0, 0), 0.004, 0.026, "M_Pepperoni", seg=10, matrix=base @ Matrix.Translation((px, py, 0.059)))
+    p.box_m((0.12, 0.12, 0.008), base @ Matrix.Translation((0.1, -0.1, 0.05)) @ Matrix.Rotation(0.785, 4, "Z"),
+            "M_PizzaBox", bevel=0)
+    # Tampa aberta para trás (dobradiça na borda de trás), com o desenho para dentro da sala.
+    hinge = base @ Matrix.Translation((0, 0.18, 0.04)) @ Matrix.Rotation(-1.9, 4, "X")
+    p.box_m((0.36, 0.36, 0.012), hinge @ Matrix.Translation((0, -0.18, 0.006)), "M_PizzaBox", bevel=0.003)
+    # O desenho vai na face de dentro da tampa (a que fica virada para a sala).
+    c = [hinge @ Matrix.Translation((sx * 0.17, -0.18 + sy * 0.17, -0.0015)).translation
+         for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+    p.quad(list(reversed(c)), "M_PizzaLid", uvs=((0, 1), (1, 1), (1, 0), (0, 0)), double=False)
+
+
+def newspaper_window(coll):
+    """Jornal colado no vidro da janela principal (por dentro, atrás da cortina) com silver tape nos
+    cantos, para ninguém de fora ver a impressora. Fica um vão no canto de cima. Sem colisão."""
+    gy = P.D + 0.1 - 0.012         # na frente do vidro (que fica no meio da parede)
+    p = Part()
+    sheets = ((1.86, 1.33, 0.44, 0.58, 0.05), (2.28, 1.34, 0.42, 0.56, -0.07),
+              (2.74, 1.31, 0.44, 0.6, -0.04), (3.16, 1.34, 0.42, 0.56, 0.1),
+              (1.84, 1.89, 0.44, 0.58, -0.09), (2.27, 1.87, 0.42, 0.56, 0.06),
+              (2.77, 1.9, 0.44, 0.58, 0.12))   # sem folha no canto de cima à direita
+    for k, (cx, cz, w, h, rot) in enumerate(sheets):
+        y = gy - 0.0015 * k
+        c, s = math.cos(rot), math.sin(rot)
+        corners = []
+        for (u, v) in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+            du, dv = u * w / 2, v * h / 2
+            corners.append((cx + du * c - dv * s, y, cz + du * s + dv * c))
+        # De dentro da sala (olhando para +Y) o U cresce para +X e a face aponta para -Y.
+        p.quad(corners, "M_Newspaper", double=True)
+        # Dois pedaços de silver tape nos cantos de cima, em X.
+        for sx in (-1, 1):
+            tx, tz = cx + sx * (w / 2 - 0.03), cz + h / 2 - 0.02
+            m = Matrix.Translation((tx, y - 0.0012, tz)) @ Matrix.Rotation(-sx * 0.8 + rot, 4, "Y")
+            p.box_m((0.1, 0.0015, 0.032), m, "M_SilverTape", bevel=0)
+    p.finish("Newspaper_Window", coll)
+
+
+def portrait(coll):
+    """Retrato a óleo do presidente (inventado) na parede do oeste, em cima do sofá-cama: moldura
+    dourada gorda e torta, plaquinha e um prego. Pendurado em x = 0, olhando para +X."""
+    y0, y1, z0, z1 = 2.7, 3.2, 1.36, 2.0
+    t = 0.05
+    fr = 0.06
+    p = Part(bevel=0.008)
+    p.box(0.0, y0 - fr, z0 - fr, t, y1 + fr, z0, "M_InkGold")
+    p.box(0.0, y0 - fr, z1, t, y1 + fr, z1 + fr, "M_InkGold")
+    p.box(0.0, y0 - fr, z0, t, y0, z1, "M_InkGold")
+    p.box(0.0, y1, z0, t, y1 + fr, z1, "M_InkGold")
+    p.box(0.0, y0, z0, 0.012, y1, z1, "M_Wood")
+    # Enfeites nos cantos da moldura.
+    for yy in (y0 - fr, y1 + fr):
+        for zz in (z0 - fr, z1 + fr):
+            p.cyl((t, yy, zz), 0.03, 0.04, "M_InkGold", axis="X", seg=14)
+    p.quad(((0.0125, y0, z0), (0.0125, y1, z0), (0.0125, y1, z1), (0.0125, y0, z1)), "M_Portrait", double=False)
+    # Fita de luto: laço vermelho no topo.
+    p.cyl((t + 0.01, (y0 + y1) / 2, z1 + fr + 0.015), 0.03, 0.035, "M_Red", axis="X", seg=10)
+    p.finish("Props_Portrait", coll, loc=(0.0, 0.0, 0.0))
 
 
 def conduit(coll):

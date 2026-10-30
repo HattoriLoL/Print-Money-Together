@@ -20,7 +20,7 @@ tamanho do jogador (raio 0,33 m, altura 1,75 m) nos pontos de spawn.
 Medidas em `art_source/blender/plan.py` (coordenadas do Blender; no Godot o +Y daqui vira -Z).
 
 - Cômodo principal (x 0 a 5, y 0 a 5): cozinha na parede da frente, guarda-roupa e sofá-cama na
-  parede oeste, mesa no meio, impressora e janela no fundo, TV de tubo na divisória.
+  parede oeste, mesa no meio, impressora e janela no fundo, TV de tubo enorme na divisória, retrato do presidente e caixas de pizza.
 - Banheiro (x 5,12 a 7, y 0 a 2,2) com forro de PVC rebaixado a 2,35 m e alçapão em cima do vaso.
 - Área de serviço (x 5,12 a 7, y 2,32 a 5), aberta para o cômodo por um vão sem porta: máquina de
   lavar, tanque e varal de teto.
@@ -64,6 +64,7 @@ A cortina da janela (`Curtain_Main`) fica meio aberta: dá para ver a impressora
 | `TV_Rack` | TV de tubo: pode virar o monitor de uma câmera do corredor. |
 
 | `Props_<cômodo>` | Objetos do dia a dia (botijão, roupas, latinhas, quadro de cortiça "do plano", eletroduto aparente...). Têm colisão. |
+| `Newspaper_Window` | Jornal e silver tape no vidro da janela principal. Sem colisão. |
 | `Decal_*` | Mofo, infiltração, encardido e rachaduras, a 3 mm da parede. Sem colisão nem sombra. |
 | `Outside_*` | Lá fora: rua, postes, o prédio da frente e o da lateral com janelas acesas, e prédios ao longe. Sem colisão nem sombra. |
 

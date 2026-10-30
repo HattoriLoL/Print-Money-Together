@@ -177,21 +177,23 @@ def kitchen(coll):
 
 
 def fridge(coll):
-    """Geladeira duplex de quinas redondas com o micro-ondas em cima."""
+    """Geladeira duplex gorducha (exagero de desenho): larga, funda e com quinas bem redondas, com
+    o micro-ondas em cima. Cabe entre a parede e a bancada (x 0,04 a 0,76)."""
     p = Part(bevel=0.004)
-    w, d = 0.33, 0.33
-    p.box(-w, -d + 0.04, 0.05, w, d, 1.75, "M_PlasticWhite", bevel=0.03)
-    p.box(-w + 0.004, -d, 1.262, w - 0.004, -d + 0.045, 1.748, "M_PlasticWhite", bevel=0.022)
-    p.box(-w + 0.004, -d, 0.06, w - 0.004, -d + 0.045, 1.248, "M_PlasticWhite", bevel=0.022)
-    p.box(-w + 0.02, -d + 0.01, 0.0, w - 0.02, d - 0.05, 0.06, "M_PlasticBlack", bevel=0.005)
+    w, d = 0.36, 0.42
+    p.box(-w, -d + 0.04, 0.05, w, d, 1.75, "M_PlasticWhite", bevel=0.12)
+    # Portas um pouco para dentro, para o miolo reto não furar a quina redonda.
+    p.box(-w + 0.1, -d, 1.29, w - 0.1, -d + 0.045, 1.68, "M_PlasticWhite", bevel=0.022)
+    p.box(-w + 0.1, -d, 0.12, w - 0.1, -d + 0.045, 1.268, "M_PlasticWhite", bevel=0.022)
+    p.box(-w + 0.06, -d + 0.02, 0.0, w - 0.06, d - 0.08, 0.06, "M_PlasticBlack", bevel=0.005)
     for i in range(6):
         x = -0.2 + i * 0.08
-        p.box(x - 0.025, -d + 0.008, 0.015, x + 0.025, -d + 0.012, 0.045, "M_Rubber", bevel=0)
+        p.box(x - 0.025, -d + 0.018, 0.015, x + 0.025, -d + 0.022, 0.045, "M_Rubber", bevel=0)
     # Puxadores verticais embutidos e o logotipo.
-    for z0, z1 in ((1.3, 1.52), (0.75, 1.15)):
-        p.box(0.24, -d - 0.025, z0, 0.27, -d + 0.01, z1, "M_PlasticWhite", bevel=0.012)
-        p.box(0.245, -d - 0.026, z0 + 0.02, 0.265, -d - 0.02, z1 - 0.02, "M_Metal", bevel=0.003)
-    p.box(-0.08, -d - 0.002, 1.66, 0.08, -d, 1.68, "M_Metal", bevel=0)
+    for z0, z1 in ((1.34, 1.56), (0.75, 1.15)):
+        p.box(0.2, -d - 0.025, z0, 0.23, -d + 0.01, z1, "M_PlasticWhite", bevel=0.012)
+        p.box(0.205, -d - 0.026, z0 + 0.02, 0.225, -d - 0.02, z1 - 0.02, "M_Metal", bevel=0.003)
+    p.box(-0.08, -d - 0.002, 1.62, 0.08, -d, 1.64, "M_Metal", bevel=0)
     # Ímãs, o cardápio da pizzaria e uma conta presa.
     for mx, mz, mat in ((-0.15, 1.4, "M_Red"), (-0.05, 1.47, "M_Yellow"), (-0.2, 0.95, "M_PlasticBlue")):
         p.cyl((mx, -d - 0.006, mz), 0.012, 0.022, mat, axis="Y", seg=12)
@@ -422,39 +424,41 @@ def pc(coll):
 
 
 def tv_rack(coll):
-    """Rack com TV de tubo encostado na divisória. A TV pode virar a câmera do corredor."""
+    """Rack com uma TV de tubo ENORME (exagero de desenho: 1,1 m de largura, mais larga que o rack)
+    encostada na divisória. A TV pode virar a câmera do corredor."""
     p = Part(bevel=0.004)
+    rw = 0.45
     # Rack oco: tampo, base, laterais, fundo e prateleira; porta de vidro só embaixo.
-    p.box(-0.4, -0.2, 0.47, 0.4, 0.2, 0.5, "M_Wood")
-    p.box(-0.4, -0.2, 0.05, 0.4, 0.2, 0.08, "M_Wood")
-    for x in (-0.4, 0.38):
+    p.box(-rw, -0.2, 0.47, rw, 0.2, 0.5, "M_Wood")
+    p.box(-rw, -0.2, 0.05, rw, 0.2, 0.08, "M_Wood")
+    for x in (-rw, rw - 0.02):
         p.box(x, -0.2, 0.08, x + 0.02, 0.2, 0.47, "M_Wood")
-    p.box(-0.38, 0.18, 0.08, 0.38, 0.2, 0.47, "M_Wood")
-    p.box(-0.38, -0.19, 0.26, 0.38, 0.18, 0.28, "M_Wood")
-    for x in (-0.36, 0.36):
+    p.box(-rw + 0.02, 0.18, 0.08, rw - 0.02, 0.2, 0.47, "M_Wood")
+    p.box(-rw + 0.02, -0.19, 0.26, rw - 0.02, 0.18, 0.28, "M_Wood")
+    for x in (-rw + 0.04, rw - 0.04):
         p.box(x - 0.03, -0.17, 0, x + 0.03, 0.17, 0.05, "M_MetalDark", bevel=0.002)
-    p.box(-0.38, -0.205, 0.085, 0.38, -0.198, 0.255, "M_Glass", bevel=0)
+    p.box(-rw + 0.02, -0.205, 0.085, rw - 0.02, -0.198, 0.255, "M_Glass", bevel=0)
     # Fitas e caixas de jogo na prateleira de cima.
     for i, mat in enumerate(("M_PlasticBlack", "M_ClothRed", "M_PlasticBlack", "M_PlasticBlue", "M_PlasticBlack")):
-        x = -0.34 + i * 0.03
+        x = -0.4 + i * 0.03
         p.box(x, -0.12, 0.28, x + 0.025, 0.08, 0.47 - 0.02 * (i % 2), mat, bevel=0.002)
     # CRT: moldura de quinas bem redondas, tela funda e a "corcunda" de trás.
-    p.box(-0.33, -0.13, 0.5, 0.33, 0.12, 0.94, "M_PlasticBlack", bevel=0.035)
-    p.box(-0.25, 0.08, 0.55, 0.25, 0.32, 0.88, "M_PlasticBlack", bevel=0.06)
-    p.box(-0.285, -0.135, 0.55, 0.205, -0.125, 0.89, "M_MetalDark", bevel=0.02)
-    p.box(-0.27, -0.14, 0.565, 0.19, -0.13, 0.875, "M_TVScreen", bevel=0.025)
-    for z in (0.82, 0.76, 0.7):
-        p.cyl((0.26, -0.135, z), 0.012, 0.014, "M_MetalDark", axis="Y", seg=12)
-    p.cyl((0.26, -0.136, 0.58), 0.01, 0.006, "M_LedRed", axis="Y", seg=8)
-    # Antena de "orelha de coelho".
-    p.cyl((0.0, 0.15, 0.95), 0.03, 0.04, "M_PlasticBlack", seg=12)
-    for a in (-0.5, 0.5):
-        m = Matrix.Translation((0.0, 0.15, 0.96)) @ Matrix.Rotation(a, 4, "Y") @ Matrix.Translation((0, 0, 0.2))
-        p.cyl((0, 0, 0), 0.4, 0.004, "M_Metal", seg=6, matrix=m)
+    p.box(-0.55, -0.13, 0.5, 0.55, 0.12, 1.3, "M_PlasticBlack", bevel=0.07)
+    p.box(-0.4, 0.08, 0.58, 0.4, 0.32, 1.22, "M_PlasticBlack", bevel=0.1)
+    p.box(-0.49, -0.135, 0.58, 0.34, -0.125, 1.24, "M_MetalDark", bevel=0.03)
+    p.box(-0.47, -0.14, 0.6, 0.32, -0.13, 1.22, "M_TVScreen", bevel=0.045)
+    for z in (1.18, 1.07, 0.96):
+        p.cyl((0.44, -0.135, z), 0.012, 0.022, "M_MetalDark", axis="Y", seg=12)
+    p.cyl((0.44, -0.136, 0.62), 0.01, 0.01, "M_LedRed", axis="Y", seg=8)
+    # Antena de "orelha de coelho", também maior.
+    p.cyl((0.0, 0.15, 1.31), 0.04, 0.06, "M_PlasticBlack", seg=12)
+    for a in (-0.55, 0.55):
+        m = Matrix.Translation((0.0, 0.15, 1.33)) @ Matrix.Rotation(a, 4, "Y") @ Matrix.Translation((0, 0, 0.3))
+        p.cyl((0, 0, 0), 0.6, 0.006, "M_Metal", seg=6, matrix=m)
     # DVD na prateleira de baixo.
-    p.box(-0.3, -0.17, 0.09, 0.1, 0.12, 0.155, "M_PlasticBlack", bevel=0.005)
-    p.box(-0.25, -0.172, 0.12, -0.05, -0.17, 0.13, "M_MetalDark", bevel=0)
-    p.cyl((0.06, -0.172, 0.12), 0.004, 0.004, "M_LedRed", axis="Y", seg=6)
+    p.box(-0.35, -0.17, 0.09, 0.15, 0.12, 0.155, "M_PlasticBlack", bevel=0.005)
+    p.box(-0.3, -0.172, 0.12, -0.1, -0.17, 0.13, "M_MetalDark", bevel=0)
+    p.cyl((0.11, -0.172, 0.12), 0.004, 0.004, "M_LedRed", axis="Y", seg=6)
     p.finish("TV_Rack", coll, loc=(4.68, 2.25, 0), rot_z=facing("-x"))
 
 

@@ -274,7 +274,43 @@ def _door_frame(p, axis, t0, t1, a0, a1, h, mat):
         bx(a0 - gw, a1 + gw, u0, u1, h, h + gw)
 
 
-def _leaf(name, coll, hinge, rot_z, width, mat, number=None, peephole=False, push_bar=False):
+def _door_locks(p, w, y0):
+    """Trancas do lado de dentro (+Y local) da porta de entrada, bem exageradas: dois ferrolhos que
+    entram no batente, corrente, tranca de barra num par de suportes e uma chave tetra gorda.
+    `y0` é a face da moldura das almofadas; tudo nasce dela."""
+    metal, dark = "M_Metal", "M_MetalDark"
+    # Ferrolhos grandões em cima e embaixo: a haste passa da borda da porta e vai para o batente.
+    for z in (1.82, 0.32):
+        p.box(w - 0.34, y0, z - 0.03, w - 0.04, y0 + 0.008, z + 0.03, dark, bevel=0.003)
+        for gx in (w - 0.3, w - 0.17, w - 0.07):
+            p.box(gx - 0.014, y0 + 0.008, z - 0.02, gx + 0.014, y0 + 0.03, z + 0.02, dark, bevel=0.003)
+        p.cyl(((w - 0.3 + w + 0.012) / 2, y0 + 0.02, z), 0.322 + (0.0), 0.011, metal, axis="X", seg=10)
+        p.box(w - 0.215, y0 + 0.03, z - 0.012, w - 0.185, y0 + 0.052, z + 0.012, "M_Red", bevel=0.005)
+    # Corrente: placa, elos alternados de lado e o pino na outra placa.
+    cz = 1.5
+    p.box(w - 0.07, y0, cz - 0.04, w - 0.02, y0 + 0.01, cz + 0.04, dark, bevel=0.003)
+    p.box(w - 0.3, y0, cz - 0.03, w - 0.24, y0 + 0.01, cz + 0.03, dark, bevel=0.003)
+    for i in range(7):
+        x = w - 0.065 - i * 0.032
+        z = cz - 0.012 * math.sin(i / 6 * math.pi)
+        if i % 2:
+            p.box(x - 0.014, y0 + 0.012, z - 0.006, x + 0.014, y0 + 0.02, z + 0.006, metal, bevel=0.002)
+        else:
+            p.box(x - 0.014, y0 + 0.014, z - 0.01, x + 0.014, y0 + 0.018, z + 0.01, metal, bevel=0.002)
+    p.cyl((w - 0.27, y0 + 0.02, cz), 0.02, 0.009, metal, axis="Y", seg=8)
+    # Tranca de barra: dois suportes em U e a barra grossa no meio da porta.
+    bz = 1.32
+    for bx in (0.1, w - 0.1):
+        p.box(bx - 0.035, y0, bz - 0.06, bx + 0.035, y0 + 0.05, bz + 0.06, dark, bevel=0.006)
+        p.box(bx - 0.035, y0 + 0.05, bz - 0.06, bx + 0.035, y0 + 0.062, bz - 0.03, dark, bevel=0.003)
+    p.box(0.04, y0 + 0.018, bz - 0.032, w - 0.04, y0 + 0.058, bz + 0.032, "M_Wood", bevel=0.01)
+    # Chave tetra: rosetão com a lingueta de girar.
+    p.cyl((w - 0.1, y0 + 0.012, 1.68), 0.024, 0.045, dark, axis="Y", seg=16)
+    p.cyl((w - 0.1, y0 + 0.032, 1.68), 0.02, 0.03, metal, axis="Y", seg=14)
+    p.box(w - 0.12, y0 + 0.042, 1.67, w - 0.08, y0 + 0.056, 1.75, metal, bevel=0.005)
+
+
+def _leaf(name, coll, hinge, rot_z, width, mat, number=None, peephole=False, push_bar=False, locks=False):
     """Folha de porta com a origem na dobradiça; vai para +X local e a face de fora é -Y local."""
     t = 0.04
     h = P.DOOR_H - 0.02
@@ -306,6 +342,8 @@ def _leaf(name, coll, hinge, rot_z, width, mat, number=None, peephole=False, pus
         p.cyl((w - 0.075, y + side * 0.009, 0.98), 0.004, 0.008, "M_PlasticBlack", axis="Y", seg=8)
     if peephole:
         p.cyl((w / 2, 0, 1.55), t + 0.02, 0.012, "M_Metal", axis="Y", seg=10)
+    if locks:
+        _door_locks(p, w, t / 2 + 0.006)
     if push_bar:
         p.box(0.1, t / 2, 0.98, w - 0.08, t / 2 + 0.05, 1.04, "M_Metal")
         p.box(0.04, -t / 2 - 0.003, 1.3, w - 0.04, -t / 2, 1.9, "M_PlasticWhite")
@@ -332,7 +370,7 @@ def doors(coll):
     mid = -P.EXT_T / 2
     half = P.INT_T / 2
     _leaf("KEEP_Door_301", coll, (P.ENTRANCE[0] + 0.02, mid), 0.0, P.ENTRANCE[1] - P.ENTRANCE[0],
-          "M_DoorWood", number="301", peephole=True)
+          "M_DoorWood", number="301", peephole=True, locks=True)
     _leaf("KEEP_Door_302", coll, (P.DOOR_302[0] + 0.02, mid), 0.0, P.DOOR_302[1] - P.DOOR_302[0],
           "M_DoorWood", number="302", peephole=True)
     _leaf("KEEP_Door_303", coll, (P.DOOR_303[1] - 0.02, HY0 - P.EXT_T / 2), math.pi,
@@ -343,19 +381,29 @@ def doors(coll):
           P.BATH_DOOR[1] - P.BATH_DOOR[0], "M_DoorWood")
 
 
-def lights(coll):
-    """Luminárias (malhas LAMP_<zona>_<n>) e as luzes de prévia do Blender (LIGHT_<zona>_<n>)."""
-    # Lâmpada pelada no fio, no meio do cômodo.
-    # Canopla no teto, fio, bocal e a lâmpada em bulbo (caixa quase toda arredondada).
+def _bare_bulb(coll, name, loc, cord, size, zone=None):
+    """Lâmpada pelada pendurada num fio torcido: canopla no teto, fio, bocal e um bulbo gordo (a
+    malha LAMP_<zona>_<n> brilha com M_Lamp_<zona>). `cord` é o comprimento do fio e `size` escala
+    o bulbo."""
+    zone = zone or name.split("_")[0]
+    lamp = f"M_Lamp_{zone}"
+    r = 0.055 * size
+    top = -cord - 0.05
     p = Part()
     p.cyl((0, 0, -0.012), 0.024, 0.045, "M_PlasticWhite", seg=20)
-    p.cyl((0, 0, -0.15), 0.26, 0.003, "M_PlasticBlack", seg=6)
-    p.cyl((0, 0, -0.305), 0.055, 0.019, "M_PlasticBlack", seg=14)
-    p.cyl((0, 0, -0.34), 0.018, 0.016, "M_Metal", seg=14, radius2=0.018)
-    p.cyl((0, 0, -0.355), 0.016, 0.02, "M_Lamp_main", seg=14, radius2=0.016)
-    p.rounded(-0.031, -0.031, -0.425, 0.031, 0.031, -0.362, "M_Lamp_main", 0.03)
-    p.finish("LAMP_main_0", coll, loc=(2.6, 2.7, H))
-    point_light("LIGHT_main_0", coll, (2.6, 2.7, H - 0.42), 120, radius=0.04)
+    p.cyl((0, 0, -cord / 2), cord, 0.004, "M_PlasticBlack", seg=6)
+    p.cyl((0, 0, top + 0.012), 0.07, 0.022, "M_PlasticBlack", seg=14)
+    p.cyl((0, 0, top - 0.035), 0.03, 0.02, "M_Metal", seg=14, radius2=0.026)
+    p.cyl((0, 0, top - 0.058), 0.02, 0.026, lamp, seg=14, radius2=r * 0.7)
+    p.rounded(-r, -r, top - 0.07 - 2 * r, r, r, top - 0.07, lamp, r * 0.95)
+    p.finish(f"LAMP_{name}", coll, loc=loc)
+
+
+def lights(coll):
+    """Luminárias (malhas LAMP_<zona>_<n>) e as luzes de prévia do Blender (LIGHT_<zona>_<n>)."""
+    # Lâmpada pelada no fio, no meio do cômodo (bulbo grande de desenho).
+    _bare_bulb(coll, "main_0", (2.6, 2.7, H), cord=0.3, size=1.0)
+    point_light("LIGHT_main_0", coll, (2.6, 2.7, H - 0.5), 120, radius=0.04)
 
     # Calha fluorescente embaixo do armário: corpo branco e o tubo.
     p = Part(bevel=0.003)
