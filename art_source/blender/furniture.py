@@ -371,20 +371,19 @@ def printer_desk(coll):
     _cable(p, (1.05, 4.985, 0.006), (1.05, 4.985, 0.33))
     p.finish("Props_DeskCables", coll)
 
-    # Em cima da mesa: caneca de café, porta-lápis, bloquinho e a caixa do toner reserva.
+    # Em cima da mesa: caneca de café, porta-lápis e a caixa do cartucho reserva, no canto da
+    # direita (a esquerda é do PC: monitor, teclado e mouse, ver machines.computer).
     p = Part(bevel=0.003)
-    mx, my = 1.82, 4.56
+    mx, my = 2.63, 4.52
     p.cyl((mx, my, top + 0.048), 0.095, 0.04, "M_PlasticWhite", seg=24)
     p.cyl((mx, my, top + 0.08), 0.004, 0.036, "M_Coffee", seg=24)
     p.box(mx + 0.036, my - 0.007, top + 0.02, mx + 0.062, my + 0.007, top + 0.075, "M_PlasticWhite", bevel=0.006)
-    px, py = 1.7, 4.86
+    px, py = 2.74, 4.66
     p.cyl((px, py, top + 0.05), 0.1, 0.035, "M_PlasticBlack", seg=16)
     for dx, dy, tilt, mat in ((-0.01, 0.0, 0.15, "M_PlasticBlue"), (0.012, 0.005, -0.12, "M_Red"),
                               (0.0, -0.012, 0.05, "M_InkBlack")):
         m = Matrix.Translation((px + dx, py + dy, top + 0.12)) @ Matrix.Rotation(tilt, 4, "Y")
         p.cyl((0, 0, 0), 0.14, 0.004, mat, seg=6, matrix=m)
-    m = Matrix.Translation((1.92, 4.78, top + 0.01)) @ Matrix.Rotation(0.25, 4, "Z")
-    p.box_m((0.076, 0.076, 0.02), m, "M_Yellow", bevel=0.001)
     p.box(2.58, 4.78, top, 2.78, 4.92, top + 0.1, "M_Cardboard", bevel=0.003)
     p.quad(((2.62, 4.7795, top + 0.03), (2.72, 4.7795, top + 0.03), (2.72, 4.7795, top + 0.08),
             (2.62, 4.7795, top + 0.08)), "M_StickerLabel", double=False)

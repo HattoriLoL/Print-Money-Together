@@ -20,11 +20,12 @@ extends CharacterBody3D
 ## Quem leva uma trombada de alguém correndo cai (ragdoll parcial, RAGDOLL_*): solta o que
 ## segura, tomba e rola com o tranco, e depois levanta onde caiu. O dono decide e avisa os outros.
 ##
-## Operando uma máquina de perto (`operating`, a guilhotina): o boneco fica parado na frente dela,
+## Operando uma máquina de perto (`operating`: a guilhotina, o PC): o boneco fica parado na frente dela,
 ## as luvas vão para onde a máquina manda (todos veem), e no jogador local a câmera vai para a
 ## vista da máquina (outra câmera, que sai da de primeira pessoa e volta para ela), o mouse e o
 ## clique vão para a máquina e [E] sai. Com o botão direito segurado, o mouse mexe só as mãos
-## (na guilhotina, elas andam livres pela mesa, sem levar a folha).
+## (na guilhotina, elas andam livres pela mesa, sem levar a folha). Uma estação com
+## `station_input(event)` (o PC) recebe o mouse e o clique do jeito dela, e `station_hint()` dá a dica.
 ##
 ## Mãos machucadas (`injury`, a guilhotina decide no host): cada mão pode perder dedos ou ela
 ## inteira, e as luvas mostram o curativo no lugar. Vale até sair da partida. Com dedo faltando o
@@ -207,6 +208,10 @@ func _input(event: InputEvent) -> void:
 	if not is_local():
 		return
 	if operating != null and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not hud.is_blocking():
+		# Estação com o próprio jeito de usar o mouse (o PC): ela recebe tudo.
+		if operating.has_method("station_input"):
+			operating.station_input(event)
+			return
 		var fine := Input.is_action_pressed("sprint")
 		if event is InputEventMouseMotion:
 			if _regripping:
@@ -725,7 +730,10 @@ func _start_operating() -> void:
 	hud.set_prompt("")
 	hud.set_carry("")
 	_regripping = false
-	hud.show_hint("Mouse: push the sheet (hands on it) · Right mouse: move only your hands · Shift: fine · Click: cut · E: leave", 6.0)
+	var hint := "Mouse: push the sheet (hands on it) · Right mouse: move only your hands · Shift: fine · Click: cut · E: leave"
+	if operating.has_method("station_hint"):
+		hint = operating.station_hint()
+	hud.show_hint(hint, 6.0)
 
 
 ## A câmera da vista vai até a máquina operada e volta para a de primeira pessoa quando sai.

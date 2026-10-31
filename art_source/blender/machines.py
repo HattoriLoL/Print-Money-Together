@@ -18,6 +18,7 @@ from lib import Part, decal, digits, facing
 def build(colls):
     c = colls["machines"]
     printer(c)
+    computer(c)
     paper_supply(c)
     ink(c)
     guillotine(c)
@@ -159,6 +160,89 @@ def printer(coll):
     s = Part(bevel=0.002)
     s.box_m((0.21, 0.02, 0.24), Matrix.Rotation(FEEDER_TILT, 4, "X") @ Matrix.Translation((0, -0.009, 0.135)), "M_Paper")
     s.finish("MACHINE_Printer_Paper", coll, loc=FEEDER_BASE, parent=base)
+
+
+# PC velho na ponta esquerda da escrivaninha da impressora (o gabinete fica embaixo, ver
+# furniture.pc): monitor CRT bege de 14", teclado e mouse. É por ele que o grupo compra papel e
+# tinta pela internet (scripts/machines/computer.gd).
+PC_LOC = (1.8, 4.78, 0.75)
+# Tela do monitor (quadrilátero com UV 0-1, onde o Godot desenha o navegador), no referencial do
+# PC: x de um lado a outro, z de baixo a cima, na face da frente (y).
+PC_SCREEN = (-0.135, 0.135, 0.112, 0.3145, -0.1875)
+# Mouse em cima do mouse pad (o Godot anda com ele junto com o cursor).
+PC_MOUSE = (0.23, -0.29, 0.004)
+
+
+def computer(coll):
+    """Monitor CRT bege amarelado com base giratória, moldura funda e a "corcunda" atrás, um
+    bilhete amarelo na moldura, teclado com as teclas em relevo, mouse pad e o cabo do mouse.
+
+    Peças que o Godot usa, filhas do MACHINE_PC (a origem fica no tampo, embaixo do monitor):
+    MACHINE_PC_Screen (a tela, com UV 0-1, material M_PCScreen) e MACHINE_PC_Mouse (o mouse,
+    com a origem embaixo dele)."""
+    beige, dark = "M_OldPlastic", "M_OldPlasticDark"
+    p = Part(bevel=0.004)
+    # Base giratória e o pescoço.
+    p.box(-0.12, -0.13, 0.0, 0.12, 0.09, 0.02, beige, bevel=0.012)
+    p.box(-0.07, -0.08, 0.018, 0.07, 0.05, 0.05, beige, bevel=0.015)
+    # Caixa da frente (bem arredondada, de desenho) e a corcunda do tubo atrás.
+    p.box(-0.18, -0.18, 0.045, 0.18, -0.01, 0.385, beige, bevel=0.03)
+    p.box(-0.145, -0.03, 0.075, 0.145, 0.17, 0.35, beige, bevel=0.05)
+    p.box(-0.09, 0.15, 0.12, 0.09, 0.19, 0.3, beige, bevel=0.03)
+    # Moldura funda em volta da tela e a borda escura do vidro.
+    x0, x1, z0, z1, sy = PC_SCREEN
+    p.box(x0 - 0.02, -0.186, z0 - 0.02, x1 + 0.02, -0.17, z1 + 0.02, dark, bevel=0.012)
+    # Grade de ventilação em cima e nos lados da corcunda.
+    for i in range(8):
+        x = -0.11 + i * 0.03
+        p.box(x, 0.0, 0.3495, x + 0.014, 0.12, 0.3515, dark, bevel=0)
+    for sx in (-1, 1):
+        for i in range(5):
+            z = 0.15 + i * 0.03
+            p.box(sx * 0.146 - 0.001, 0.02, z, sx * 0.146 + 0.001, 0.13, z + 0.012, dark, bevel=0)
+    # Botão de força com o LED e os botõezinhos de ajuste embaixo da tela, e a plaquinha da marca.
+    p.cyl((0.135, -0.186, 0.072), 0.01, 0.012, dark, axis="Y", seg=20)
+    p.cyl((0.105, -0.186, 0.072), 0.008, 0.004, "M_LedGreen", axis="Y", seg=10)
+    for i in range(4):
+        p.box(0.02 + i * 0.018, -0.187, 0.066, 0.032 + i * 0.018, -0.18, 0.078, dark, bevel=0.002)
+    p.box(-0.06, -0.1865, 0.064, -0.0, -0.18, 0.08, dark, bevel=0.002)
+    # Bilhete amarelo colado no canto da moldura, meio torto (a senha do Wi-Fi, claro).
+    note = Matrix.Translation((-0.15, -0.1885, 0.352)) @ Matrix.Rotation(0.2, 4, "Y")
+    p.box_m((0.06, 0.0015, 0.06), note, "M_Yellow", bevel=0)
+    for i in range(3):
+        p.box_m((0.042 - i * 0.01, 0.0005, 0.003), note @ Matrix.Translation((-0.003, -0.001, 0.014 - i * 0.012)),
+                "M_InkBlack", bevel=0)
+
+    # Teclado: corpo inclinado (mais alto atrás), as teclas em relevo e a barra de espaço.
+    kx, ky = -0.02, -0.265
+    kb = Matrix.Translation((kx, ky, 0.0)) @ Matrix.Rotation(0.06, 4, "X")
+    p.box_m((0.33, 0.14, 0.022), kb @ Matrix.Translation((0, 0, 0.016)), beige, bevel=0.006)
+    for row in range(4):
+        y = -0.045 + row * 0.026
+        for col in range(12):
+            x = -0.143 + col * 0.026
+            p.box_m((0.021, 0.021, 0.008), kb @ Matrix.Translation((x, -y, 0.03)), beige, bevel=0.003)
+    p.box_m((0.13, 0.021, 0.008), kb @ Matrix.Translation((-0.01, -0.058, 0.03)), beige, bevel=0.003)
+    # Fio do teclado até atrás do monitor.
+    p.box(kx - 0.003, -0.195, 0.0, kx + 0.003, -0.13, 0.005, "M_Cable", bevel=0.002)
+    # Mouse pad e o fio do mouse até atrás do monitor, passando do lado dele.
+    mx, my, _mz = PC_MOUSE
+    p.box(mx - 0.075, my - 0.065, 0.0, mx + 0.075, my + 0.065, 0.004, "M_PlasticBlue", bevel=0.003)
+    p.box(mx - 0.003, my + 0.05, 0.004, mx + 0.003, my + 0.065, 0.008, "M_Cable", bevel=0.002)
+    p.box(mx - 0.003, my + 0.065, 0.0, mx + 0.003, 0.15, 0.005, "M_Cable", bevel=0.002)
+    base = p.finish("MACHINE_PC", coll, loc=PC_LOC, rot_z=facing("-y"))
+
+    # A tela: um quadrilátero só, de frente (-Y), com o UV inteiro (o Godot desenha nele).
+    s = Part()
+    s.quad(((x0, sy, z0), (x1, sy, z0), (x1, sy, z1), (x0, sy, z1)), "M_PCScreen", double=False)
+    s.finish("MACHINE_PC_Screen", coll, parent=base)
+
+    # Mouse de bolinha: corpo arredondado, os dois botões e a emenda.
+    m = Part(bevel=0.004)
+    m.box(-0.03, -0.05, 0.0, 0.03, 0.05, 0.03, beige, bevel=0.014)
+    m.box(-0.0015, -0.051, 0.018, 0.0015, -0.01, 0.0305, dark, bevel=0)
+    m.box(-0.029, -0.012, 0.024, 0.029, -0.009, 0.0302, dark, bevel=0)
+    m.finish("MACHINE_PC_Mouse", coll, loc=PC_MOUSE, parent=base)
 
 
 def _ream(p, x, y, z, rot=0.0):

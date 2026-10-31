@@ -7,7 +7,13 @@ extends Node3D
 ##                          imprime sozinha: uma folha A4 molhada a cada `seconds_per_sheet`,
 ##                          que sai pela fenda da frente e cai na bandeja de saída.
 ##   Alimentador de trás    [E] com uma resma na mão: carrega `sheets_per_ream` folhas.
-## Para (e acende o LED âmbar) quando falta papel ou toner, ou quando a bandeja de saída enche.
+##   Tampa (em cima)        [E] com um cartucho na mão: troca o cartucho (o velho vem para a
+##                          mão); de mão vazia, tira o cartucho.
+## Para (e acende o LED âmbar) quando falta papel ou tinta, ou quando a bandeja de saída enche.
+##
+## A tinta é de jato de tinta: por isso a folha sai molhada. O cartucho original imprime a cor
+## certa; o genérico (compatível, mais barato) imprime com a cor errada (`offcolor` na folha), e as
+## notas dele valem menos. Cartuchos novos vêm pela internet (scripts/machines/computer.gd).
 ##
 ## O host manda no estado e repassa para todos (10 vezes por segundo enquanto muda, e na hora
 ## nos eventos). Quem entra depois recebe tudo em send_state_to.
@@ -24,19 +30,25 @@ const OUTPUT_STEP := 0.0035
 const FEED_FROM := Vector3(0.0, 0.117, 0.17)
 const FEED_PART := 0.4
 const SYNC_RATE := 10.0
+## O cartucho que já vem na impressora velha: o original, pela metade.
+const START_INK := 0.5
 
 var stats: Resource = DEFAULT_STATS
 var powered := false
 ## Segundos ligada (esquentando até warmup_seconds).
 var warm := 0.0
 var paper := 0
-var ink := 1.0
+## Cartucho instalado: se tem, quanto de tinta ainda tem (0 a 1) e a marca.
+var has_cartridge := true
+var ink := START_INK
+var brand := "original"
 var progress := 0.0
 ## Ids das folhas paradas na bandeja de saída, por posição (0 = vaga livre).
 var output_slots: Array[int] = []
 
 var feeder_zone: Area3D
 var power_zone: Area3D
+var cartridge_zone: Area3D
 
 var _kitnet: Node
 var _button: Node3D
@@ -78,6 +90,10 @@ func _ready() -> void:
 	power_zone.setup(self, "Zone_Power", Vector3(0.19, 0.212, 0.072), Vector3(0.06, 0.04, 0.06))
 	power_zone.prompt_fn = _power_prompt
 	power_zone.press_fn = _toggle_power
+	cartridge_zone = InteractZone.new()
+	cartridge_zone.setup(self, "Zone_Cartridge", Vector3(-0.1, 0.21, 0.05), Vector3(0.22, 0.06, 0.16))
+	cartridge_zone.prompt_fn = _cartridge_prompt
+	cartridge_zone.press_fn = _swap_cartridge
 
 	# Texto do visor, deitado em cima dele e lido de quem está na frente.
 	_screen = Label3D.new()
@@ -105,7 +121,11 @@ func is_ready() -> bool:
 
 
 func can_print() -> bool:
-	return paper > 0 and ink >= stats.ink_per_sheet - 0.0001 and output_slots.has(0)
+	return paper > 0 and has_ink() and output_slots.has(0)
+
+
+func has_ink() -> bool:
+	return has_cartridge and ink >= stats.ink_per_sheet - 0.0001
 
 
 func printing() -> bool:
@@ -161,7 +181,10 @@ func _finish_sheet() -> void:
 	progress = 0.0
 	var slot := output_slots.find(0)
 	var local := Transform3D(Basis(Vector3.UP, PI / 2), OUTPUT_BASE + Vector3.UP * OUTPUT_STEP * slot)
-	var sheet: Node = _kitnet.items.spawn("sheet", global_transform * local, {"wet": true, "resting": true})
+	var data := {"wet": true, "resting": true}
+	if brand == "generic":
+		data["offcolor"] = true
+	var sheet: Node = _kitnet.items.spawn("sheet", global_transform * local, data)
 	output_slots[slot] = sheet.id
 	_send_now()
 
@@ -175,6 +198,29 @@ func _load_paper(peer: int) -> void:
 	_send_now()
 
 
+## Host: [E] na tampa. Com um cartucho na mão, ele entra e o que estava na impressora vai para a
+## mão; de mão vazia, o cartucho sai.
+func _swap_cartridge(peer: int) -> void:
+	var held: Node = _kitnet.items.held_by(peer)
+	if held != null and held.kind != "cartridge":
+		return
+	if held == null and not has_cartridge:
+		return
+	var old := {"ink": ink, "brand": brand}
+	var had := has_cartridge
+	if held != null:
+		ink = held.data.get("ink", 0.0)
+		brand = held.data.get("brand", "generic")
+		has_cartridge = true
+		_kitnet.items.consume(held)
+	else:
+		has_cartridge = false
+	if had:
+		_kitnet.items.give(peer, "cartridge", old)
+	progress = 0.0  # a folha pela metade volta para o alimentador
+	_send_now()
+
+
 func _on_item_picked(item: Node) -> void:
 	var slot := output_slots.find(item.id)
 	if slot >= 0:
@@ -183,13 +229,13 @@ func _on_item_picked(item: Node) -> void:
 
 
 func _send_now(pressed := false) -> void:
-	_kitnet.rpc_roster(self, &"_sync_full", [powered, warm, paper, ink, progress, output_slots, pressed])
+	_kitnet.rpc_roster(self, &"_sync_full", [powered, warm, paper, ink, progress, output_slots, pressed, has_cartridge, brand])
 	if pressed:
 		_press_time = Time.get_ticks_msec() / 1000.0
 
 
 func send_state_to(peer: int) -> void:
-	_sync_full.rpc_id(peer, powered, warm, paper, ink, progress, output_slots, false)
+	_sync_full.rpc_id(peer, powered, warm, paper, ink, progress, output_slots, false, has_cartridge, brand)
 
 
 @rpc("authority", "call_remote", "unreliable_ordered")
@@ -202,8 +248,11 @@ func _sync(on: bool, w: float, p: int, i: float, pr: float) -> void:
 
 
 @rpc("authority", "call_remote", "reliable")
-func _sync_full(on: bool, w: float, p: int, i: float, pr: float, slots: Array, pressed: bool) -> void:
+func _sync_full(on: bool, w: float, p: int, i: float, pr: float, slots: Array, pressed: bool,
+		cartridge: bool, cartridge_brand: String) -> void:
 	_sync(on, w, p, i, pr)
+	has_cartridge = cartridge
+	brand = cartridge_brand
 	output_slots.assign(slots)
 	if pressed:
 		_press_time = Time.get_ticks_msec() / 1000.0
@@ -218,6 +267,16 @@ func _feeder_prompt(player: Node) -> String:
 			return "Paper feeder is full (%d/%d)" % [paper, stats.paper_capacity]
 		return "[E] Load paper (+%d sheets)" % stats.sheets_per_ream
 	return "Paper: %d/%d" % [paper, stats.paper_capacity]
+
+
+func _cartridge_prompt(player: Node) -> String:
+	var held: Node = player.held_item()
+	var current := "%s (%s)" % [ItemKinds.cartridge_name(brand), ItemKinds.ink_text(ink)] if has_cartridge else "no cartridge"
+	if held != null and held.kind == "cartridge":
+		return "[E] Swap ink cartridge (now: %s)" % current if has_cartridge else "[E] Put in the ink cartridge"
+	if held == null and has_cartridge:
+		return "[E] Take out the %s" % current
+	return "Ink: %s" % current
 
 
 func _power_prompt(_player: Node) -> String:
@@ -240,6 +299,7 @@ func _update_visuals() -> void:
 	var t := (progress - (1.0 - FEED_PART)) / FEED_PART
 	_feeding.visible = printing() and t > 0.0
 	if _feeding.visible:
+		_feeding.get_child(0).set_instance_shader_parameter("offcolor", 1.0 if brand == "generic" else 0.0)
 		var slot := maxi(output_slots.find(0), 0)
 		var to := OUTPUT_BASE + Vector3.UP * (OUTPUT_STEP * slot + 0.002)
 		_feeding.position = FEED_FROM.lerp(to, clampf(t, 0.0, 1.0))
@@ -257,8 +317,10 @@ func _screen_text() -> String:
 		return "WARMING UP" + ".".repeat(int(warm * 2.0) % 4)
 	if paper <= 0:
 		return "PAPER OUT"
-	if ink < stats.ink_per_sheet - 0.0001:
-		return "TONER EMPTY"
+	if not has_cartridge:
+		return "NO CARTRIDGE"
+	if not has_ink():
+		return "INK EMPTY"
 	if not output_slots.has(0):
 		return "TRAY FULL"
 	return "PRINTING %d%%" % int(progress * 100.0) if printing() else "READY"

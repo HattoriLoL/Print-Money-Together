@@ -13,6 +13,10 @@ extends SceneTree
 ##   desliza a folha, o clique corta: na marca as notas saem perfeitas, fora dela tortas (valem
 ##   menos e a de cima mostra o corte), no meio da linha estraga; [E] sai; somar no mesmo montinho
 ##   e carregar o montinho;
+## - loja: o PC mostra o navegador, usar põe a câmera na tela e as luvas no teclado e no mouse,
+##   comprar papel e cartucho (sem dinheiro não paga), a caixa de cada loja chega na porta com a
+##   campainha, abrir solta o que veio, a resma volta para o estoque e o cartucho genérico entra na
+##   impressora (folha e notas com a cor errada); sem cartucho o visor avisa;
 ## - etapa 3 do visual: prints da fita na impressora, jornal, retrato, geladeira, TV, pizza, trancas e lâmpada;
 ## - vida no cenário: ventilador girando, vento no varal e na cortina, chuvisco na TV, vapor na panela,
 ##   lâmpada piscando e balançando quando alguém passa perto;
@@ -32,6 +36,8 @@ extends SceneTree
 ##   godot --path . --resolution 1280x720 --script res://tools/tests/test_kitnet.gd -- --out=<pasta> [--solo | --client]
 ##
 ## Termina com "TESTE OK" ou com a lista do que falhou.
+
+const ItemKinds := preload("res://scripts/items/item_kinds.gd")
 
 var _out := ""
 var _with_client := false
@@ -215,6 +221,7 @@ func _run() -> void:
 	await _test_printer(kitnet, player)
 	await _test_drop_physics(kitnet, player)
 	await _test_guillotine(kitnet, player)
+	await _test_shop(kitnet, player)
 	await _test_characters(kitnet, player)
 	await _test_first_person(kitnet, player)
 	await _test_push(kitnet, player)
@@ -549,7 +556,7 @@ func _test_printer(kitnet: Node3D, player: CharacterBody3D) -> void:
 	var sheets: Array = items.items.values().filter(func(i): return i.kind == "sheet")
 	_check(sheets.size() == 2, "saíram 2 folhas (%d)" % sheets.size())
 	_check(printer.paper == stats.sheets_per_ream - 2, "gastou 2 folhas de papel")
-	_check(printer.ink < ink_before, "gastou toner")
+	_check(printer.ink < ink_before, "gastou tinta do cartucho")
 	_check(sheets.all(func(i): return i.data.get("wet", false)), "as folhas saem molhadas")
 	await create_timer(stats.seconds_per_sheet * 0.5).timeout
 	var after: int = items.items.values().filter(func(i): return i.kind == "sheet").size()
@@ -932,6 +939,208 @@ func _test_guillotine(kitnet: Node3D, player: CharacterBody3D) -> void:
 	_check(player.fingers_missing() == 0 and glove.get_node("Hand_R_Thumb").visible and glove.get_node("Hand_R_Glove").visible
 			and not glove.get_node("Hand_R_StumpThumb").visible, "mãos de volta (partida nova)")
 	await create_timer(0.3).timeout
+
+
+## Loja: o PC mostra o navegador; usando, a câmera vai para a tela, as luvas vão para o teclado e o
+## mouse, e o mouse anda com o cursor. Comprar papel e um cartucho genérico (o pedido caro demais
+## não passa), a caixa de cada loja chega na porta com a campainha, abrir a caixa solta o que
+## veio, a resma volta para o estoque e o cartucho genérico entra na impressora: a folha sai com a
+## cor errada e as notas dela valem menos.
+func _test_shop(kitnet: Node3D, player: CharacterBody3D) -> void:
+	var pc: Node3D = kitnet.computer
+	var items: Node = kitnet.items
+	var printer: Node3D = kitnet.printer
+	var supply: Node3D = kitnet.paper_supply
+	var wallet: Node = kitnet.wallet
+	_check(pc != null and wallet != null and kitnet.deliveries != null, "PC, dinheiro e entregas montados")
+	_check(wallet.cash == wallet.START_CASH, "o grupo começa com as economias ($%d)" % wallet.cash)
+	_check(supply.START_STOCK == 3, "começa com só 3 resmas em casa")
+	_check(printer.has_cartridge and printer.brand == "original", "a impressora vem com o cartucho original")
+	var screen: MeshInstance3D = kitnet.model.find_child("MACHINE_PC_Screen", true, false)
+	_check(screen != null and screen.material_override is ShaderMaterial, "a tela do monitor mostra o navegador")
+	await _look(player, Vector3(1.9, 0, -3.7), Vector3(1.8, 0.95, -4.7), "40_pc")
+
+	# Sentar no PC: câmera na tela, luva direita no mouse e esquerda no teclado.
+	player.global_position = Vector3(1.8, 0.05, -3.9)
+	await physics_frame
+	_check(pc._prompt(player) == "[E] Use the computer", "o PC oferece usar")
+	pc.zone.interact(player)
+	await physics_frame
+	_check(player.operating == pc, "usando o PC")
+	await create_timer(player.STATION_CAMERA_TIME + 0.15).timeout
+	_check(root.get_camera_3d() == player._station_cam, "a câmera foi para a frente da tela")
+	var right: MeshInstance3D = player._press_hands[0]
+	var mouse: Node3D = pc._mouse
+	_check(right.visible and right.global_position.distance_to(mouse.global_position) < 0.15,
+			"a luva direita está no mouse (%.2f m)" % right.global_position.distance_to(mouse.global_position))
+	var mouse_before := mouse.position
+	await _pc_click(player, pc, "go:ink")
+	_check(pc.page == "ink", "clicar no favorito abre a loja de tinta")
+	_check(mouse.position.distance_to(mouse_before) > 0.005, "o mouse anda na mesa com o cursor")
+	await _shot("41_pc_loja_de_tinta")
+
+	# Comprar: um cartucho genérico e duas resmas.
+	await _pc_click(player, pc, "add:ink_generic")
+	await _pc_click(player, pc, "go:office")
+	await _pc_click(player, pc, "add:ream")
+	await _pc_click(player, pc, "add:ream")
+	_check(pc.cart.get("ream", 0) == 2 and pc.cart.get("ink_generic", 0) == 1, "2 resmas e 1 cartucho no carrinho")
+	await _shot("42_pc_loja_de_papel")
+	await _pc_click(player, pc, "go:cart")
+	var total: int = pc.Catalog.total(pc.cart)
+	_check(total == 2 * 9 + 19 + 2 * 5, "total com o frete das duas lojas ($%d)" % total)
+	await _shot("43_pc_carrinho")
+	# Caro demais: três originais não cabem no dinheiro, o botão de pagar fica apagado.
+	await _pc_click(player, pc, "go:ink")
+	for i in 3:
+		await _pc_click(player, pc, "add:ink_original")
+	await _pc_click(player, pc, "go:cart")
+	_check(pc.browser.action_at(_button_center(pc, "checkout")) == "", "sem dinheiro, o botão de pagar não funciona")
+	for i in 3:
+		await _pc_click(player, pc, "dec:ink_original")
+	_check(not pc.cart.has("ink_original"), "o menos tira do carrinho")
+	await _pc_click(player, pc, "checkout")
+	_check(wallet.cash == wallet.START_CASH - total, "pagou o pedido (sobrou $%d)" % wallet.cash)
+	_check(pc.page == "done" and pc.cart.is_empty(), "pedido confirmado e carrinho vazio")
+	_check(kitnet.deliveries.on_the_way.size() == 2, "duas caixas a caminho, uma por loja")
+	await _shot("44_pc_pedido_feito")
+	pc.request_leave()
+	await physics_frame
+	_check(player.operating == null, "[E] sai do PC")
+	await create_timer(player.STATION_CAMERA_TIME + 0.1).timeout
+
+	# A entrega: as caixas aparecem na porta e a campainha toca.
+	for entry in kitnet.deliveries._pending:
+		entry["left"] = 0.3
+	await create_timer(0.6).timeout
+	var parcels: Array = items.items.values().filter(func(i): return i.kind == "parcel")
+	_check(parcels.size() == 2, "chegaram 2 caixas (%d)" % parcels.size())
+	_check(kitnet.deliveries._bell.playing, "a campainha tocou")
+	_check(kitnet.deliveries.on_the_way.is_empty(), "nada mais a caminho")
+	var knock: Vector3 = kitnet.model.find_child("POINT_Knock", true, false).global_position
+	_check(parcels.all(func(p): return Vector2(p.global_position.x - knock.x, p.global_position.z - knock.z).length() < 1.2),
+			"as caixas ficam no corredor, na frente da porta")
+	await create_timer(1.0).timeout
+	await _look(player, knock + Vector3(1.4, 0, 0.3), knock, "45_caixas_na_porta")
+
+	# Abrir a caixa do papel: saem as duas resmas.
+	var office: Node = parcels.filter(func(p): return p.data["from"] == "OFFICE+")[0]
+	var ink_box: Node = parcels.filter(func(p): return p.data["from"] == "INK-O-RAMA")[0]
+	player.global_position = office.global_position + Vector3(0.8, 0, 0)
+	await physics_frame
+	_check(office.get_prompt(player).begins_with("[E] Open parcel from OFFICE+"), "a caixa oferece abrir")
+	items.request_pickup(office.id)
+	await physics_frame
+	_check(player.held_item() == null, "a caixa não vai para a mão")
+	var reams_before: int = items.items.values().filter(func(i): return i.kind == "ream").size()
+	var office_id: int = office.id
+	office.interact(player)
+	await create_timer(1.0).timeout
+	var reams: Array = items.items.values().filter(func(i): return i.kind == "ream")
+	_check(reams.size() == reams_before + 2 and not items.items.has(office_id), "abriu a caixa e saíram 2 resmas")
+	ink_box.interact(player)
+	await create_timer(1.0).timeout
+	var carts: Array = items.items.values().filter(func(i): return i.kind == "cartridge")
+	_check(carts.size() == 1 and carts[0].data["brand"] == "generic", "da outra caixa saiu o cartucho genérico")
+	await _look(player, knock + Vector3(1.4, 0, 0.3), knock, "46_caixas_abertas")
+
+	# A resma volta para o estoque.
+	var ream: Node = reams[reams.size() - 1]
+	player.global_position = ream.global_position + Vector3(0.5, 0, 0)
+	await physics_frame
+	items.request_pickup(ream.id)
+	await physics_frame
+	player.global_position = Vector3(3.3, 0.05, -4.0)
+	await physics_frame
+	var stock: int = supply.stock
+	_check(supply._prompt(player).begins_with("[E] Put the ream back"), "com a resma na mão, o estoque oferece guardar")
+	supply.zone.interact(player)
+	await physics_frame
+	_check(supply.stock == stock + 1 and player.held_item() == null, "a resma voltou para o estoque")
+
+	# O cartucho genérico entra na impressora; o original vem para a mão.
+	var cart: Node = carts[0]
+	player.global_position = cart.global_position + Vector3(0.5, 0, 0)
+	await physics_frame
+	items.request_pickup(cart.id)
+	await physics_frame
+	_check(player.held_item() == cart, "pegou o cartucho")
+	player.global_position = Vector3(2.3, 0.05, -3.9)
+	await physics_frame
+	var old_ink: float = printer.ink
+	_check(printer._cartridge_prompt(player).begins_with("[E] Swap ink cartridge"), "a tampa oferece trocar o cartucho")
+	printer.cartridge_zone.interact(player)
+	await physics_frame
+	var old: Node = player.held_item()
+	_check(printer.brand == "generic" and is_equal_approx(printer.ink, 1.0), "o genérico entrou cheio")
+	_check(old != null and old.kind == "cartridge" and old.data["brand"] == "original" and is_equal_approx(old.data["ink"], old_ink),
+			"o original velho veio para a mão")
+	await _look(player, Vector3(2.62, 0, -3.75), Vector3(2.3, 0.85, -4.6), "47_cartucho_na_mao")
+	# Imprimir com ele: a folha sai com a cor errada.
+	printer.paper = 1
+	printer.powered = true
+	printer.warm = printer.stats.warmup_seconds
+	await create_timer(printer.stats.seconds_per_sheet + 0.3).timeout
+	printer.powered = false
+	var off_sheets: Array = items.items.values().filter(func(i): return i.kind == "sheet" and i.data.get("offcolor", false))
+	_check(off_sheets.size() == 1, "com o genérico a folha sai com a cor errada")
+	await _look(player, Vector3(2.3, 0, -3.75), Vector3(2.3, 0.8, -4.45), "48_folha_cor_errada")
+	if not off_sheets.is_empty():
+		_check(ItemKinds.label(off_sheets[0]).contains("off-color"), "o nome da folha avisa a cor errada")
+		items.consume(off_sheets[0])
+	# As notas dela valem menos (o montinho da guilhotina).
+	var g: Node3D = kitnet.guillotine
+	g.sheet_offcolor = true
+	g.sheet_wet = false
+	g._add_to_pile(6, 0, 6.0, Rect2())
+	var pile: Node = items.items.get(g._pile_id)
+	_check(pile != null and pile.data.get("offcolor", 0) >= 6 and pile.data.get("top_offcolor", false),
+			"as notas do genérico saem marcadas com a cor errada")
+	_check(pile != null and pile.data.get("worth", 0.0) <= pile.data.get("count", 0) - 6 * (1.0 - ItemKinds.OFFCOLOR_WORTH) + 0.01,
+			"as notas com a cor errada valem menos")
+	g.sheet_offcolor = false
+	if pile != null:
+		await _look(player, Vector3(2.35, 0, -1.6), pile.global_position, "49_notas_cor_errada")
+		items.consume(pile)
+	# De volta o original; sem cartucho nenhum a impressora avisa.
+	printer.cartridge_zone.interact(player)
+	await physics_frame
+	_check(printer.brand == "original" and player.held_item() != null and player.held_item().data["brand"] == "generic",
+			"trocou de volta para o original")
+	items.consume(player.held_item())
+	await physics_frame
+	printer.cartridge_zone.interact(player)
+	await physics_frame
+	printer.powered = true
+	printer.warm = printer.stats.warmup_seconds
+	printer.paper = 1
+	await physics_frame
+	_check(not printer.has_cartridge and printer._screen_text() == "NO CARTRIDGE", "sem cartucho o visor mostra NO CARTRIDGE")
+	printer.cartridge_zone.interact(player)
+	await physics_frame
+	_check(printer.has_cartridge and player.held_item() == null, "o cartucho voltou para a impressora")
+	printer.powered = false
+	printer.paper = 0
+
+
+## Clica no botão `action` do navegador com o mouse de verdade (o cursor anda até o meio dele).
+func _pc_click(player: CharacterBody3D, pc: Node3D, action: String) -> void:
+	var target := _button_center(pc, action)
+	if target.x < 0.0:
+		_check(false, "o navegador tem o botão %s" % action)
+		return
+	player._input(_mouse_motion((target - pc._cursor) / pc.CURSOR_SPEED))
+	await process_frame
+	player._input(_left_click())
+	await physics_frame
+	await process_frame
+
+
+func _button_center(pc: Node3D, action: String) -> Vector2:
+	for b in pc.browser._buttons:
+		if is_instance_valid(b) and b.get_meta("action") == action:
+			return b.get_global_rect().get_center()
+	return Vector2(-1, -1)
 
 
 ## Clique de quem opera (desce a alavanca) e espera ela voltar.

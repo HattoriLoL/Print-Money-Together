@@ -87,6 +87,20 @@ func request_drop(xform: Transform3D, velocity: Vector3, spin := Vector3.ZERO) -
 		_rpc_drop.rpc_id(1, xform, velocity, spin)
 
 
+## Abre a caixa da entrega: o que veio dentro sai pulando e a caixa some.
+func request_open(id: int) -> void:
+	if multiplayer.is_server():
+		_open(multiplayer.get_unique_id(), id)
+	else:
+		_rpc_open.rpc_id(1, id)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_open(id: int) -> void:
+	if multiplayer.is_server():
+		_open(multiplayer.get_remote_sender_id(), id)
+
+
 @rpc("any_peer", "call_remote", "reliable")
 func _rpc_pickup(id: int) -> void:
 	if multiplayer.is_server():
@@ -104,12 +118,32 @@ func _pickup(peer: int, id: int) -> void:
 	var player: Node3D = _kitnet.players.get(peer)
 	if item == null or player == null or item.holder != 0 or held_by(peer) != null:
 		return
+	if item.kind in ItemKinds.NOT_CARRIED:
+		return
 	if item.kind in ItemKinds.TWO_HANDED and player.hands_left() < 2:
 		return
 	if player.global_position.distance_to(item.global_position) > REACH:
 		return
 	_set_holder(id, peer, item.global_transform, Vector3.ZERO, Vector3.ZERO)
 	_kitnet.rpc_roster(self, &"_set_holder", [id, peer, item.global_transform, Vector3.ZERO, Vector3.ZERO])
+
+
+func _open(peer: int, id: int) -> void:
+	var item: Node = items.get(id)
+	var player: Node3D = _kitnet.players.get(peer)
+	if item == null or player == null or item.kind != "parcel" or item.holder != 0:
+		return
+	if player.global_position.distance_to(item.global_position) > REACH:
+		return
+	var at: Vector3 = item.global_position
+	var contents: Array = item.data.get("contents", [])
+	consume(item)
+	for i in contents.size():
+		var entry: Array = contents[i]
+		var xform := Transform3D(Basis(Vector3.UP, randf() * TAU), at + Vector3(randf_range(-0.08, 0.08), 0.05 + i * 0.07, randf_range(-0.08, 0.08)))
+		var spawned := spawn(entry[0], xform, entry[1])
+		spawned.linear_velocity = Vector3(randf_range(-0.6, 0.6), randf_range(1.2, 2.0), randf_range(-0.6, 0.6))
+		spawned.angular_velocity = Vector3(randf_range(-3.0, 3.0), randf_range(-3.0, 3.0), randf_range(-3.0, 3.0))
 
 
 func _drop(peer: int, xform: Transform3D, velocity: Vector3, spin: Vector3) -> void:

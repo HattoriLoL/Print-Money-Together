@@ -1,5 +1,6 @@
 """Texturas do papel: a nota (frente e verso), a folha A4 impressa com 2 x 3 notas (frente e
-verso), a fibra do papel e a embalagem da resma. Saem em assets/textures/.
+verso), a fibra do papel e a embalagem da resma, e as versões com a cor errada do cartucho
+genérico (*_offcolor). Saem em assets/textures/.
 
 Roda com o Python do sistema e o Pillow (não dentro do Blender, que não tem Pillow):
 
@@ -351,6 +352,28 @@ def neon(bill):
     return ImageEnhance.Brightness(ImageEnhance.Color(bill).enhance(2.6)).enhance(1.06)
 
 
+def offcolor(img):
+    """A mesma imagem impressa com o cartucho genérico (compatível): o que tem cor puxa para o
+    azul-petróleo e o papel branco continua branco. O shaders/paper.gdshader faz a mesma conta."""
+    arr = np.asarray(img.convert("RGB")).astype(np.float32) / 255.0
+    r, g, b = arr[..., 0], arr[..., 1], arr[..., 2]
+    off = np.stack([r * 0.7, g * 0.75, np.maximum(b, g * 0.9)], axis=-1)
+    sat = arr.max(axis=-1) - arr.min(axis=-1)
+    t = np.clip((sat - 0.05) / 0.2, 0.0, 1.0)
+    mask = (t * t * (3.0 - 2.0 * t))[..., None]
+    out = arr + (off - arr) * mask
+    return Image.fromarray(np.clip(out * 255.0 + 0.5, 0, 255).astype(np.uint8), "RGB")
+
+
+OFFCOLOR = ("bill_front", "bill_back", "sheet_front")
+
+
+def save_offcolor():
+    """As versões com a cor errada, a partir das que já estão em assets/textures/."""
+    for name in OFFCOLOR:
+        offcolor(Image.open(os.path.join(OUT, name + ".png"))).save(os.path.join(OUT, name + "_offcolor.png"))
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     front, back = neon(bill_front()), neon(bill_back())
@@ -362,6 +385,7 @@ def main():
     sheet(back, back=True).save(os.path.join(OUT, "sheet_back.png"))
     paper_normal().save(os.path.join(OUT, "paper_normal.png"))
     ream_wrapper().save(os.path.join(OUT, "ream_wrapper.png"))
+    save_offcolor()
     print("texturas do papel em", OUT)
 
 

@@ -16,6 +16,9 @@ const ItemManager := preload("res://scripts/items/item_manager.gd")
 const Printer := preload("res://scripts/machines/printer.gd")
 const PaperSupply := preload("res://scripts/machines/paper_supply.gd")
 const Guillotine := preload("res://scripts/machines/guillotine.gd")
+const Computer := preload("res://scripts/machines/computer.gd")
+const Wallet := preload("res://scripts/wallet.gd")
+const Deliveries := preload("res://scripts/shop/deliveries.gd")
 const Toon := preload("res://scripts/toon.gd")
 const Ambience := preload("res://scripts/ambience.gd")
 
@@ -50,6 +53,11 @@ var items: Node
 var printer: Node3D
 var paper_supply: Node3D
 var guillotine: Node3D
+## O PC da escrivaninha (as compras pela internet).
+var computer: Node3D
+## Dinheiro do grupo e as entregas a caminho.
+var wallet: Node
+var deliveries: Node
 ## Animações do cenário (ventilador, lâmpada, TV, vapor, vento).
 var ambience: Node
 
@@ -64,6 +72,10 @@ func _ready() -> void:
 	items = ItemManager.new()
 	items.name = "Items"
 	add_child(items)
+	wallet = Wallet.new()
+	add_child(wallet)
+	deliveries = Deliveries.new()
+	add_child(deliveries)
 	model = KITNET.instantiate()
 	model.name = "Model"
 	add_child(model)
@@ -212,6 +224,8 @@ func _add_stations() -> void:
 	model.find_child("SUPPLY_Paper", true, false).add_child(paper_supply)
 	guillotine = Guillotine.new()
 	model.find_child("MACHINE_Guillotine", true, false).add_child(guillotine)
+	computer = Computer.new()
+	model.find_child("MACHINE_PC", true, false).add_child(computer)
 
 
 func _setup_light(light: Light3D) -> void:

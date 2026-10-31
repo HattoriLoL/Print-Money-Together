@@ -2,16 +2,24 @@ extends RefCounted
 ## Tipos de objeto carregável: aparência, colisão, peso, nome na tela e como fica na mão.
 ##
 ##   "ream"   resma de papel embrulhada (vira folhas na impressora)
-##   "sheet"  folha A4 impressa com 2 x 3 notas; data.wet = tinta ainda fresca
+##   "sheet"  folha A4 impressa com 2 x 3 notas; data.wet = tinta ainda fresca, data.offcolor =
+##            impressa com cartucho genérico (as cores saem erradas e as notas valem menos)
 ##   "bills"  montinho de notas cortadas; data.count = quantas, data.smudged = quantas
 ##            borradas (cortadas molhadas), data.top_smudged = se a de cima está borrada,
-##            data.crooked = quantas saíram tortas da guilhotina, data.worth = quanto o monte
+##            data.crooked = quantas saíram tortas da guilhotina, data.offcolor = quantas saíram
+##            com a cor errada (cartucho genérico), data.top_offcolor = se a de cima saiu com a
+##            cor errada (muda a textura), data.worth = quanto o monte
 ##            vale em notas perfeitas (sem a chave: count), data.top_cut = o pedaço da folha que
 ##            virou a nota de cima, se ela saiu torta (Rect2 na textura da folha; vazio = reta)
 ##   "finger" um dedo que a guilhotina levou (a peça da luva do hands.glb); data.owner = de quem,
 ##            data.side = 0 direita / 1 esquerda, data.digit = qual (player.DIGITS)
 ##   "hand"   a mão inteira que a guilhotina levou: a luva com os dedos que ainda tinha;
 ##            data.owner, data.side e data.lost = os dedos que já tinham ido antes (bits)
+##   "cartridge" cartucho de tinta da impressora; data.ink = quanto ainda tem (0 a 1),
+##            data.brand = "original" ou "generic" (compatível: imprime com a cor errada)
+##   "parcel" caixa de papelão da entrega (scripts/shop/deliveries.gd); não dá para carregar,
+##            [E] abre ali mesmo; data.from = a loja, data.order = o número do pedido,
+##            data.contents = [[kind, data], ...] o que vem dentro
 ##
 ## As texturas saem do art_source/paper_textures.py (assets/textures/).
 
@@ -24,22 +32,35 @@ const REAM_WRAPPER := preload("res://assets/textures/ream_wrapper.png")
 const BILL_FRONT := preload("res://assets/textures/bill_front.png")
 const BILL_FRONT_SMUDGED := preload("res://assets/textures/bill_front_smudged.png")
 const BILL_BACK := preload("res://assets/textures/bill_back.png")
+## As mesmas com a cor errada do cartucho genérico (art_source/paper_textures.py, offcolor).
+const BILL_FRONT_OFFCOLOR := preload("res://assets/textures/bill_front_offcolor.png")
+const BILL_BACK_OFFCOLOR := preload("res://assets/textures/bill_back_offcolor.png")
+const SHEET_FRONT_OFFCOLOR := preload("res://assets/textures/sheet_front_offcolor.png")
 const HANDS_MODEL := preload("res://assets/models/hands.glb")
 const DIGITS := ["Thumb", "Index", "Middle", "Ring", "Pinky"]
 ## Pedaços de luva: o tamanho sai da malha.
 const GLOVE_PIECES := ["finger", "hand"]
 ## Só dá para carregar com as duas mãos.
 const TWO_HANDED := ["ream"]
+## Não dá para pegar: [E] usa (a caixa da entrega abre).
+const NOT_CARRIED := ["parcel"]
+## Quanto vale uma nota com a cor errada (cartucho genérico), perto de uma certa.
+const OFFCOLOR_WORTH := 0.6
+## Faixa do rótulo do cartucho de cada marca.
+const CARTRIDGE_COLORS := {"original": Color(0.15, 0.7, 0.3), "generic": Color(0.85, 0.25, 0.65)}
 
 const SIZES := {
 	"ream": Vector3(0.3, 0.052, 0.21),
 	"sheet": Vector3(0.297, 0.003, 0.21),
 	"bills": Vector3(0.139, 0.002, 0.063),
+	"cartridge": Vector3(0.11, 0.075, 0.05),
+	"parcel": Vector3(0.44, 0.26, 0.34),
 }
 ## Espessura de cada nota no montinho (bem mais que o papel de verdade, para o monte aparecer).
 const BILL_THICKNESS := 0.0004
 ## Uma resma de 500 folhas pesa uns 2,5 kg; uma folha A4 de 75 g/m², 5 g.
-const MASS := {"ream": 2.5, "sheet": 0.005, "bills": 0.001, "finger": 0.02, "hand": 0.35}
+const MASS := {"ream": 2.5, "sheet": 0.005, "bills": 0.001, "finger": 0.02, "hand": 0.35, "cartridge": 0.08,
+		"parcel": 3.0}
 ## Atrito, quique e amortecimento do giro de cada tipo.
 const PHYSICS := {
 	"ream": {"friction": 0.8, "bounce": 0.12, "angular_damp": 0.6},
@@ -47,6 +68,8 @@ const PHYSICS := {
 	"bills": {"friction": 0.85, "bounce": 0.02, "angular_damp": 0.8},
 	"finger": {"friction": 0.7, "bounce": 0.3, "angular_damp": 0.3},
 	"hand": {"friction": 0.75, "bounce": 0.25, "angular_damp": 0.4},
+	"cartridge": {"friction": 0.6, "bounce": 0.2, "angular_damp": 0.4},
+	"parcel": {"friction": 0.9, "bounce": 0.05, "angular_damp": 0.8},
 }
 ## Ar na folha (ver item.gd, _paper_air). Arrasto da face: 0,5 · ρ · Cd · área (1,2 · 1,2 · 0,062 / 2),
 ## o que dá ~1 m/s de velocidade final caindo deitada. O de lado (pela borda) é bem menor.
@@ -67,7 +90,8 @@ static func label(item: Node) -> String:
 		"ream":
 			return "paper ream"
 		"sheet":
-			return "wet sheet" if item.data.get("wet", false) else "printed sheet"
+			var sheet := "wet sheet" if item.data.get("wet", false) else "printed sheet"
+			return sheet + (" (off-color)" if item.data.get("offcolor", false) else "")
 		"bills":
 			var count: int = item.data.get("count", 0)
 			var smudged: int = item.data.get("smudged", 0)
@@ -82,12 +106,29 @@ static func label(item: Node) -> String:
 				notes.append("crooked")
 			elif crooked > 0:
 				notes.append("%d crooked" % crooked)
+			var offcolor: int = item.data.get("offcolor", 0)
+			if offcolor >= count and count > 0:
+				notes.append("off-color")
+			elif offcolor > 0:
+				notes.append("%d off-color" % offcolor)
 			return text + (" (%s)" % ", ".join(notes) if not notes.is_empty() else "")
 		"finger":
 			return "%s's %s" % [item.data.get("owner", "Someone"), String(item.data.get("digit", "finger")).to_lower()]
 		"hand":
 			return "%s's %s hand" % [item.data.get("owner", "Someone"), "right" if item.data.get("side", 0) == 0 else "left"]
+		"cartridge":
+			return "%s (%s)" % [cartridge_name(item.data.get("brand", "generic")), ink_text(item.data.get("ink", 0.0))]
+		"parcel":
+			return "parcel from %s" % item.data.get("from", "somewhere")
 	return item.kind
+
+
+static func cartridge_name(brand: String) -> String:
+	return "original ink cartridge" if brand == "original" else "compatible ink cartridge"
+
+
+static func ink_text(ink: float) -> String:
+	return "empty" if ink < 0.01 else "%d%% ink" % roundi(ink * 100.0)
 
 
 ## Como o item fica na mão, em relação ao ponto Hold: a folha inclinada para quem segura ver as
@@ -100,6 +141,8 @@ static func hold_offset(kind: String) -> Transform3D:
 			return Transform3D(Basis(Vector3.RIGHT, 0.25), Vector3(0.0, -0.05, -0.06))
 		"bills":
 			return Transform3D(Basis(Vector3.RIGHT, 0.95), Vector3(0.0, 0.05, 0.0))
+		"cartridge":
+			return Transform3D(Basis(Vector3.RIGHT, 0.6), Vector3(0.0, 0.1, -0.06))
 	return Transform3D.IDENTITY
 
 
@@ -115,6 +158,8 @@ static func hand_offset(kind: String, side: int) -> Transform3D:
 			return Transform3D(basis, Vector3(side * 0.176, -0.02, 0.11))
 		"bills":
 			return Transform3D(basis, Vector3(side * 0.112, -0.025, 0.075))
+		"cartridge":
+			return Transform3D(basis, Vector3(side * 0.07, -0.01, 0.03))
 	return Transform3D(basis, Vector3(side * 0.15, 0.0, 0.1))
 
 
@@ -144,7 +189,7 @@ static func build(item: RigidBody3D) -> void:
 	var mesh: MeshInstance3D
 	if item.kind == "sheet":
 		item.continuous_cd = true
-		mesh = sheet_mesh_instance(item.data.get("wet", false))
+		mesh = sheet_mesh_instance(item.data.get("wet", false), item.data.get("offcolor", false))
 	elif item.kind == "bills":
 		mesh = MeshInstance3D.new()
 		mesh.name = "Mesh"
@@ -153,6 +198,10 @@ static func build(item: RigidBody3D) -> void:
 		mesh.name = "Mesh"
 		if item.kind == "ream":
 			mesh.mesh = _ream_mesh()
+		elif item.kind == "cartridge":
+			_cartridge(mesh, item.data.get("brand", "generic"))
+		elif item.kind == "parcel":
+			_parcel(mesh, item.data.get("from", ""))
 		else:
 			var box := BoxMesh.new()
 			box.size = size
@@ -197,11 +246,13 @@ static func refresh(item: RigidBody3D) -> void:
 	var mesh: MeshInstance3D = item.get_node_or_null("Mesh")
 	if item.kind == "sheet" and mesh:
 		mesh.set_instance_shader_parameter("wet", 1.0 if item.data.get("wet", false) else 0.0)
+		mesh.set_instance_shader_parameter("offcolor", 1.0 if item.data.get("offcolor", false) else 0.0)
 	elif item.kind == "bills" and mesh:
 		# Uma malha de 1 de altura, esticada até a altura do monte; a colisão acompanha.
 		var count: int = maxi(item.data.get("count", 1), 1)
 		var height := maxf(count * BILL_THICKNESS, 0.0015)
-		mesh.mesh = _bills_mesh(item.data.get("top_smudged", false), item.data.get("top_cut", Rect2()))
+		mesh.mesh = _bills_mesh(item.data.get("top_smudged", false), item.data.get("top_cut", Rect2()),
+				item.data.get("top_offcolor", false))
 		Toon.apply_one(mesh)
 		mesh.scale = Vector3(1.0, height, 1.0)
 		var col: CollisionShape3D = item.get_child(0)
@@ -210,7 +261,7 @@ static func refresh(item: RigidBody3D) -> void:
 
 
 ## Uma folha (a do item e a que a impressora mostra saindo pela fenda).
-static func sheet_mesh_instance(wet: bool) -> MeshInstance3D:
+static func sheet_mesh_instance(wet: bool, offcolor := false) -> MeshInstance3D:
 	if not _cache.has("sheet_mesh"):
 		var plane := PlaneMesh.new()
 		plane.size = Vector2(SIZES["sheet"].x, SIZES["sheet"].z)
@@ -228,7 +279,66 @@ static func sheet_mesh_instance(wet: bool) -> MeshInstance3D:
 	mesh.name = "Mesh"
 	mesh.mesh = _cache["sheet_mesh"]
 	mesh.set_instance_shader_parameter("wet", 1.0 if wet else 0.0)
+	mesh.set_instance_shader_parameter("offcolor", 1.0 if offcolor else 0.0)
 	return mesh
+
+
+## Cartucho de tinta: plástico preto com a faixa do rótulo na cor da marca e o bico embaixo.
+static func _cartridge(mesh: MeshInstance3D, brand: String) -> void:
+	var size: Vector3 = SIZES["cartridge"]
+	var body := BoxMesh.new()
+	body.size = size
+	body.material = _flat_material(Color(0.07, 0.07, 0.08), 0.35)
+	mesh.mesh = body
+	var band := MeshInstance3D.new()
+	var band_box := BoxMesh.new()
+	band_box.size = Vector3(size.x + 0.002, size.y * 0.4, size.z + 0.002)
+	band_box.material = _flat_material(CARTRIDGE_COLORS.get(brand, CARTRIDGE_COLORS["generic"]), 0.5)
+	band.mesh = band_box
+	band.position.y = size.y * 0.08
+	mesh.add_child(band)
+	var nozzle := MeshInstance3D.new()
+	var nozzle_box := BoxMesh.new()
+	nozzle_box.size = Vector3(size.x * 0.4, 0.008, size.z * 0.5)
+	nozzle_box.material = _flat_material(Color(0.6, 0.55, 0.3), 0.3)
+	nozzle.mesh = nozzle_box
+	nozzle.position.y = -size.y / 2.0 - 0.004
+	mesh.add_child(nozzle)
+
+
+## Caixa de papelão da entrega: a fita em cima e o nome da loja escrito dos dois lados.
+static func _parcel(mesh: MeshInstance3D, store: String) -> void:
+	var size: Vector3 = SIZES["parcel"]
+	var box := BoxMesh.new()
+	box.size = size
+	box.material = _flat_material(Color(0.72, 0.52, 0.3), 0.9)
+	mesh.mesh = box
+	var tape := MeshInstance3D.new()
+	var tape_box := BoxMesh.new()
+	tape_box.size = Vector3(size.x + 0.004, size.y + 0.004, 0.06)
+	tape_box.material = _flat_material(Color(0.82, 0.72, 0.5), 0.4)
+	tape.mesh = tape_box
+	mesh.add_child(tape)
+	for side in [-1.0, 1.0]:
+		var label := Label3D.new()
+		label.text = store
+		label.font_size = 64
+		label.pixel_size = 0.0012
+		label.outline_size = 0
+		label.modulate = Color(0.15, 0.1, 0.08)
+		label.position = Vector3(0.0, 0.03, side * (size.z / 2.0 + 0.002))
+		label.rotation.y = 0.0 if side > 0 else PI
+		mesh.add_child(label)
+
+
+static func _flat_material(color: Color, roughness: float) -> StandardMaterial3D:
+	var key := "flat_%s_%s" % [color, roughness]
+	if not _cache.has(key):
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = color
+		mat.roughness = roughness
+		_cache[key] = mat
+	return _cache[key]
 
 
 ## Resma embrulhada: caixa com a embalagem (ream_wrapper.png) mapeada face a face. O atlas está
@@ -265,18 +375,22 @@ static func _ream_mesh() -> Mesh:
 ## o verso embaixo e as bordas de papel nos lados. Três superfícies, uma para cada material. Se a
 ## nota de cima saiu torta da guilhotina (`top_cut` não vazio), a tampa mostra o pedaço da folha
 ## que ela é de verdade: sobra de margem ou da nota vizinha, ou a nota comida pelo corte.
-static func _bills_mesh(top_smudged: bool, top_cut := Rect2()) -> Mesh:
+static func _bills_mesh(top_smudged: bool, top_cut := Rect2(), offcolor := false) -> Mesh:
 	var cut := top_cut.has_area()
 	var key := "bills_mesh_cut_%s" % top_cut if cut else ("bills_mesh_smudged" if top_smudged else "bills_mesh")
+	if offcolor:
+		key += "_offcolor"
 	if _cache.has(key):
 		return _cache[key]
 	var h: Vector3 = Vector3(SIZES["bills"].x, 1.0, SIZES["bills"].z) / 2.0
 	var full := Rect2(0, 0, 1, 1)
 	var mesh := ArrayMesh.new()
 	var top_tex: Texture2D = SHEET_FRONT if cut else (BILL_FRONT_SMUDGED if top_smudged else BILL_FRONT)
+	if offcolor:
+		top_tex = SHEET_FRONT_OFFCOLOR if cut else (BILL_FRONT_SMUDGED if top_smudged else BILL_FRONT_OFFCOLOR)
 	var faces := [
 		[top_tex, [[Vector3.UP, [Vector3(-h.x, h.y, -h.z), Vector3(h.x, h.y, -h.z), Vector3(h.x, h.y, h.z), Vector3(-h.x, h.y, h.z)]]]],
-		[BILL_BACK, [[Vector3.DOWN, [Vector3(h.x, -h.y, -h.z), Vector3(-h.x, -h.y, -h.z), Vector3(-h.x, -h.y, h.z), Vector3(h.x, -h.y, h.z)]]]],
+		[BILL_BACK_OFFCOLOR if offcolor else BILL_BACK, [[Vector3.DOWN, [Vector3(h.x, -h.y, -h.z), Vector3(-h.x, -h.y, -h.z), Vector3(-h.x, -h.y, h.z), Vector3(h.x, -h.y, h.z)]]]],
 		[null, [
 			[Vector3.BACK, [Vector3(-h.x, h.y, h.z), Vector3(h.x, h.y, h.z), Vector3(h.x, -h.y, h.z), Vector3(-h.x, -h.y, h.z)]],
 			[Vector3.FORWARD, [Vector3(h.x, h.y, -h.z), Vector3(-h.x, h.y, -h.z), Vector3(-h.x, -h.y, -h.z), Vector3(h.x, -h.y, -h.z)]],

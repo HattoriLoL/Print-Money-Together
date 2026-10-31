@@ -35,7 +35,8 @@ cômodo sem travar.
 | Etapa | Objeto | Onde |
 |---|---|---|
 | Papel | `SUPPLY_Paper` | caixas de resma ao lado da impressora |
-| Tinta | `MACHINE_InkPot`, `SUPPLY_Ink` | panela fervendo no cooktop e galões na bancada (ainda decoração) |
+| Tinta | `MACHINE_InkPot`, `SUPPLY_Ink` | panela fervendo no cooktop e galões na bancada (ainda decoração; por enquanto a tinta é o cartucho da impressora, comprado no PC) |
+| Compras | `MACHINE_PC` | PC velho na ponta esquerda da escrivaninha da impressora: papel e cartucho pela internet (`docs/loja.md`) |
 | Impressão | `MACHINE_Printer` | impressora de escritório velha na escrivaninha embaixo da janela |
 | Secagem | `MACHINE_ClothesLine`, `MACHINE_Fan` | varal de teto e ventilador no serviço |
 | Corte | `MACHINE_Guillotine` | guilhotina de alavanca na mesa do meio |
@@ -51,6 +52,7 @@ A cortina da janela (`Curtain_Main`) fica meio aberta: dá para ver a impressora
 | `MACHINE_*` / `SUPPLY_*` | Estações da produção. A origem fica na base. |
 | `MACHINE_Guillotine_Arm` | Alavanca da guilhotina, com a origem no pivô; gira no Y local (filha da base). |
 | `MACHINE_Washer_Lid` | Tampa da máquina de lavar, gira no X local na dobradiça de trás. |
+| `MACHINE_PC_Screen`, `MACHINE_PC_Mouse` | Tela do monitor (UV de 0 a 1, o Godot desenha o navegador) e o mouse (anda com o cursor). |
 | `MACHINE_Fan_Blades` | Pás do ventilador, giram no Y local (o `ambience.gd` gira sempre). |
 | `HIDE_*` | Esconderijos: `HIDE_SofaBed` (vão de 12 cm embaixo), `HIDE_Wardrobe` (e a mala em cima), `HIDE_Fridge`. |
 | `KEEP_BathHatch` | Tampa do alçapão do forro do banheiro (o pacote vai entre o forro e a laje). |
@@ -60,7 +62,7 @@ A cortina da janela (`Curtain_Main`) fica meio aberta: dá para ver a impressora
 | `Cord_Lamp_<zona>_<n>` | Canopla, fio e bocal da lâmpada pelada: sem colisão, mas fazem sombra (a rodela escura no teto). |
 | `LIGHT_<zona>_<n>` | Luz pontual de prévia (vai no .glb e pode servir de base). |
 | `SPAWN_1` a `SPAWN_4` | Onde os jogadores nascem. |
-| `POINT_Knock` | Onde o fiscal para para bater na porta. |
+| `POINT_Knock` | Onde o fiscal para para bater na porta, e onde o entregador deixa as caixas. |
 | `Glass_*`, `Curtain_*` | Vidro e pano. |
 | `TV_Rack` | TV de tubo: a tela (`M_TVScreen`) mostra chuvisco (`ambience.gd`); pode virar o monitor de uma câmera do corredor. |
 
@@ -117,8 +119,8 @@ A kitnet fica no 3º andar. A rua passa 8,6 m abaixo, entre o nosso prédio e o 
 - `LIGHT_<zona>_<n>` ganham alcance, energia e sombra por zona (`ZONE_LIGHT`).
 - Os jogadores nascem nos `SPAWN_<vaga + 1>`.
 
-As resmas e a impressora já funcionam (ver `docs/maquinas.md`). As outras máquinas, os
-esconderijos e o fiscal ainda não.
+As resmas, a impressora e a guilhotina já funcionam (ver `docs/maquinas.md`), e o PC compra
+papel e tinta (ver `docs/loja.md`). As outras máquinas, os esconderijos e o fiscal ainda não.
 
 ## Rede
 

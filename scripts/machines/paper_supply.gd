@@ -1,10 +1,12 @@
 extends Node3D
-## Caixas de resma (filha do SUPPLY_Paper do kitnet.glb): [E] de mão vazia pega uma resma.
-## O estoque da noite é limitado; o host conta e repassa.
+## Caixas de resma (filha do SUPPLY_Paper do kitnet.glb): [E] de mão vazia pega uma resma; com uma
+## resma na mão, guarda ela de volta.
+## O grupo começa com poucas; mais resmas se compram no PC (scripts/machines/computer.gd) e
+## chegam numa caixa na porta. O host conta e repassa.
 
 const InteractZone := preload("res://scripts/interact_zone.gd")
-## Resmas por noite (depois vem do catálogo do fornecedor).
-const START_STOCK := 12
+## Resmas que já estão em casa no começo.
+const START_STOCK := 3
 
 var stock := START_STOCK
 var zone: Area3D
@@ -22,8 +24,11 @@ func _ready() -> void:
 
 
 func _prompt(player: Node) -> String:
+	var held: Node = player.held_item()
+	if held != null and held.kind == "ream":
+		return "[E] Put the ream back (%d here)" % stock
 	if stock <= 0:
-		return "No paper left"
+		return "No paper left (order more on the computer)"
 	if player.held_item() != null:
 		return "Paper reams: %d left" % stock
 	if player.hands_left() < 2:
@@ -32,6 +37,12 @@ func _prompt(player: Node) -> String:
 
 
 func _take(peer: int) -> void:
+	var held: Node = _kitnet.items.held_by(peer)
+	if held != null and held.kind == "ream":
+		_kitnet.items.consume(held)
+		stock += 1
+		_kitnet.rpc_roster(self, &"_set_stock", [stock])
+		return
 	var player: Node = _kitnet.players.get(peer)
 	if stock <= 0 or _kitnet.items.held_by(peer) != null or player == null or player.hands_left() < 2:
 		return

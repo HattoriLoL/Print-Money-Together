@@ -147,6 +147,8 @@ var stats: Resource = DEFAULT_STATS
 var pieces_left := 0
 var phase := Phase.ROWS
 var sheet_wet := false
+## A folha foi impressa com cartucho genérico: as notas saem com a cor errada e valem menos.
+var sheet_offcolor := false
 ## Quanto já foi cortado na fase de agora, medido da frente (m): a frente do que sobrou.
 var cut_pos := 0.0
 ## Quanto a frente do que sobrou passou da lâmina (m). Quem opera mexe; os outros seguem.
@@ -347,6 +349,7 @@ func _press(peer: int) -> void:
 	if held != null:
 		if held.kind == "sheet" and not has_sheet():
 			sheet_wet = held.data.get("wet", false)
+			sheet_offcolor = held.data.get("offcolor", false)
 			phase = Phase.ROWS
 			pieces_left = stats.rows_per_sheet
 			cut_pos = 0.0
@@ -587,6 +590,9 @@ func _bill_region(row: Vector2, column: Vector2) -> Rect2:
 ## Soma as notas no montinho parado na frente (ou começa outro) e devolve onde fica o alto dele.
 func _add_to_pile(bills: int, crooked: int, worth: float, top_cut: Rect2) -> Vector3:
 	var smudged := bills if sheet_wet else 0
+	var offcolor := bills if sheet_offcolor else 0
+	if sheet_offcolor:
+		worth *= ItemKinds.OFFCOLOR_WORTH
 	var pile: Node = _kitnet.items.items.get(_pile_id)
 	var pile_ok: bool = pile != null and pile.holder == 0 and pile.data.get("resting", false) \
 			and pile.data.get("count", 0) + bills <= stats.pile_max
@@ -596,12 +602,14 @@ func _add_to_pile(bills: int, crooked: int, worth: float, top_cut: Rect2) -> Vec
 		_kitnet.items.set_data(pile, "crooked", pile.data.get("crooked", 0) + crooked)
 		_kitnet.items.set_data(pile, "smudged", pile.data.get("smudged", 0) + smudged)
 		_kitnet.items.set_data(pile, "top_smudged", sheet_wet)
+		_kitnet.items.set_data(pile, "offcolor", pile.data.get("offcolor", 0) + offcolor)
+		_kitnet.items.set_data(pile, "top_offcolor", sheet_offcolor)
 		_kitnet.items.set_data(pile, "top_cut", top_cut)
 		_kitnet.items.set_data(pile, "count", count + bills)
 	else:
 		var spot := _free_pile_spot()
 		var data := {"count": bills, "smudged": smudged, "top_smudged": sheet_wet, "crooked": crooked,
-				"worth": worth, "top_cut": top_cut, "resting": true}
+				"offcolor": offcolor, "top_offcolor": sheet_offcolor, "worth": worth, "top_cut": top_cut, "resting": true}
 		var height: float = maxf(bills * ItemKinds.BILL_THICKNESS, 0.0015)
 		pile = _kitnet.items.spawn("bills", global_transform * Transform3D(Basis.IDENTITY, spot + Vector3.UP * height / 2.0), data)
 		_pile_id = pile.id
@@ -670,11 +678,11 @@ func _chop_hands(lost: int) -> String:
 
 
 func send_state_to(peer: int) -> void:
-	_sync.rpc_id(peer, pieces_left, phase, cut_pos, sheet_wet, operator, stack_count, top_strip)
+	_sync.rpc_id(peer, pieces_left, phase, cut_pos, sheet_wet, operator, stack_count, top_strip, sheet_offcolor)
 
 
 func _send_state() -> void:
-	var args := [pieces_left, phase, cut_pos, sheet_wet, operator, stack_count, top_strip]
+	var args := [pieces_left, phase, cut_pos, sheet_wet, operator, stack_count, top_strip, sheet_offcolor]
 	_kitnet.rpc_roster(self, &"_sync", args)
 	_sync.callv(args)
 
@@ -895,13 +903,14 @@ func _leave(peer: int) -> void:
 # --- Aplicado em todas as máquinas ------------------------------------------------------------
 
 @rpc("authority", "call_remote", "reliable")
-func _sync(pieces: int, new_phase: Phase, cut: float, wet: bool, op: int, stack: int, top: Vector2) -> void:
+func _sync(pieces: int, new_phase: Phase, cut: float, wet: bool, op: int, stack: int, top: Vector2, off := false) -> void:
 	var to_columns := new_phase == Phase.COLUMNS and phase != Phase.COLUMNS
 	var regrab := op != operator or new_phase != phase
 	pieces_left = pieces
 	phase = new_phase
 	cut_pos = cut
 	sheet_wet = wet
+	sheet_offcolor = off
 	operator = op
 	stack_count = stack
 	top_strip = top
@@ -1157,12 +1166,15 @@ func _pose_paper(mesh: MeshInstance3D, columns: bool, from: float, to: float, fr
 		Toon.sync(mat)
 
 
-## Cor e brilho do papel (molhado: escuro e brilhando). Devolve se mudou.
+## Cor e brilho do papel (molhado: escuro e brilhando) e a textura (cartucho genérico: a cor errada).
+## Devolve se mudou.
 func _paint_paper(mat: StandardMaterial3D) -> bool:
 	var wet_color := Color(0.75, 0.84, 0.76) if sheet_wet else Color.WHITE
-	if mat.albedo_color == wet_color:
+	var tex: Texture2D = ItemKinds.SHEET_FRONT_OFFCOLOR if sheet_offcolor else SHEET_FRONT
+	if mat.albedo_color == wet_color and mat.albedo_texture == tex:
 		return false
 	mat.albedo_color = wet_color
+	mat.albedo_texture = tex
 	mat.roughness = 0.15 if sheet_wet else 0.8
 	return true
 

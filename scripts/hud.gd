@@ -9,6 +9,7 @@ var _roster: VBoxContainer
 var _pause: Control
 var _capture_hint: Label
 var _carry: Label
+var _money: Label
 var _throw_back: ColorRect
 var _throw_bar: ColorRect
 var _message_tween: Tween
@@ -55,6 +56,12 @@ func _ready() -> void:
 	_hint.modulate.a = 0.0
 	_place(_hint, Vector2(0.5, 1.0), Rect2(-500, -40, 1000, 24))
 
+	# Dinheiro do grupo, no canto de cima à direita.
+	_money = _label(22)
+	_money.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_money.add_theme_color_override("font_color", Color(0.55, 1.0, 0.55))
+	_place(_money, Vector2(1.0, 0.0), Rect2(-220, 14, 200, 30))
+
 	_roster = VBoxContainer.new()
 	_roster.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_place(_roster, Vector2(0.0, 0.0), Rect2(16, 14, 260, 120))
@@ -68,6 +75,9 @@ func _process(delta: float) -> void:
 	if _poll <= 0.0:
 		_poll = 0.5
 		_update_roster()
+	var kitnet := get_tree().get_first_node_in_group("kitnet")
+	if kitnet != null and kitnet.wallet != null:
+		_money.text = "$%d" % kitnet.wallet.cash
 
 
 func _unhandled_input(event: InputEvent) -> void:

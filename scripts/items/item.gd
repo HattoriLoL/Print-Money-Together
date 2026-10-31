@@ -82,6 +82,8 @@ func apply_mode() -> void:
 
 
 func get_prompt(player: Node) -> String:
+	if kind == "parcel":
+		return "" if holder != 0 else "[E] Open " + ItemKinds.label(self)
 	if holder != 0 or player.held_item() != null:
 		return ""
 	if kind in ItemKinds.TWO_HANDED and player.hands_left() < 2:
@@ -90,7 +92,10 @@ func get_prompt(player: Node) -> String:
 
 
 func interact(_player: Node) -> void:
-	_kitnet.items.request_pickup(id)
+	if kind in ItemKinds.NOT_CARRIED:
+		_kitnet.items.request_open(id)
+	else:
+		_kitnet.items.request_pickup(id)
 
 
 ## Na mão: segue o ponto Hold a cada quadro de tela (suave mesmo acima de 60 fps).

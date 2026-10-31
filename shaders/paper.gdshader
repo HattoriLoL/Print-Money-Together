@@ -22,6 +22,9 @@ instance uniform float curl = 0.002;
 instance uniform float flutter = 0.0;
 // 0 = seca, 1 = tinta fresca.
 instance uniform float wet = 0.0;
+// 1 = impressa com cartucho genérico: o que tem cor puxa para o azul-petróleo (o papel continua
+// branco). A mesma conta do offcolor() do art_source/paper_textures.py.
+instance uniform float offcolor = 0.0;
 
 float far_edge(vec2 uv) {
 	return 1.0 - uv.y;
@@ -48,6 +51,9 @@ void vertex() {
 
 void fragment() {
 	vec3 col = FRONT_FACING ? texture(front_tex, UV).rgb : texture(back_tex, vec2(1.0 - UV.x, UV.y)).rgb;
+	float sat = max(col.r, max(col.g, col.b)) - min(col.r, min(col.g, col.b));
+	vec3 off = vec3(col.r * 0.7, col.g * 0.75, max(col.b, col.g * 0.9));
+	col = mix(col, off, offcolor * smoothstep(0.05, 0.25, sat));
 	ALBEDO = mix(col, col * vec3(0.78, 0.84, 0.78), wet);
 	ROUGHNESS = mix(0.82, 0.16, wet);
 	SPECULAR = mix(0.25, 0.75, wet);

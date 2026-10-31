@@ -1,8 +1,10 @@
 # Máquinas e objetos carregáveis
 
 A linha de produção planejada é: papel → tinta → impressora → varal → guilhotina → máquina de
-lavar → contadora → esconderijo. Até agora funcionam o **papel**, a **impressora** e a
-**guilhotina**. As outras máquinas ainda são só o modelo.
+lavar → contadora → esconderijo. Até agora funcionam o **papel**, a **impressora** (com o
+**cartucho de tinta**) e a **guilhotina**. As outras máquinas ainda são só o modelo.
+
+Papel e cartucho se compram no PC e chegam numa caixa na porta: ver `docs/loja.md`.
 
 ## Objetos carregáveis
 
@@ -12,10 +14,12 @@ frente do jogador, ou rente à parede se ela estiver no caminho).
 | Tipo | O que é |
 |---|---|
 | `ream` | Resma de papel embrulhada (marca fictícia OFFICE+). Na impressora, vira `sheets_per_ream` folhas. |
-| `sheet` | Folha A4 impressa com 2 x 3 notas, frente e verso. `data.wet` = tinta ainda fresca: mais escura e brilhando. |
-| `bills` | Montinho de notas cortadas. `data.count` = quantas, `data.smudged` = quantas saíram borradas, `data.top_smudged` = se a de cima está borrada (muda a textura). A altura e o peso crescem com o monte. |
+| `sheet` | Folha A4 impressa com 2 x 3 notas, frente e verso. `data.wet` = tinta ainda fresca: mais escura e brilhando. `data.offcolor` = impressa com cartucho genérico: o que tem cor sai azul-petróleo. |
+| `bills` | Montinho de notas cortadas. `data.count` = quantas, `data.smudged` = quantas saíram borradas, `data.top_smudged` = se a de cima está borrada (muda a textura), `data.offcolor` e `data.top_offcolor` = o mesmo para a cor errada do cartucho genérico. A altura e o peso crescem com o monte. |
 | `finger` | Um dedo que a guilhotina levou: a peça da luva do `hands.glb`. `data.owner` = de quem ("Tester's thumb"), `data.side` = 0 direita / 1 esquerda, `data.digit` = qual. |
 | `hand` | A mão inteira que a guilhotina levou: a luva com os dedos que ela ainda tinha. `data.owner`, `data.side` e `data.lost` = os dedos que já tinham ido antes. |
+| `cartridge` | Cartucho de tinta da impressora: plástico preto com a faixa da marca (verde o original, rosa o genérico). `data.ink` = quanto ainda tem (0 a 1), `data.brand` = `original` ou `generic`. |
+| `parcel` | Caixa de papelão da entrega, com o nome da loja. Não vai para a mão: [E] abre e o que veio dentro sai pulando (`data.contents`). Ver `docs/loja.md`. |
 
 A resma precisa das duas mãos (`ItemKinds.TWO_HANDED`): quem perdeu uma não pega ("Needs both hands to carry"), nem do chão nem do estoque.
 
@@ -86,8 +90,9 @@ jogador avisa ao começar e ao parar de segurar, e o host confere a distância.
 
 ## Resmas (`SUPPLY_Paper`)
 
-`scripts/machines/paper_supply.gd`. De mão vazia, [E] pega uma resma. São 12 por noite
-(`START_STOCK`); depois isso vai vir do catálogo do fornecedor.
+`scripts/machines/paper_supply.gd`. De mão vazia, [E] pega uma resma; com uma resma na mão,
+[E] guarda ela de volta. Em casa só tem 3 no começo (`START_STOCK`). Mais resmas se compram no PC
+(`docs/loja.md`).
 
 ## Impressora (`MACHINE_Printer`)
 
@@ -103,16 +108,30 @@ O código é `scripts/machines/printer.gd`. Os números ficam em `data/machines/
 |---|---|
 | Botão de liga/desliga (em cima, à direita) | [E] liga ou desliga. Ligada, esquenta 3 s e depois imprime sozinha: uma folha A4 molhada a cada 5 s. |
 | Alimentador de trás | [E] com uma resma na mão carrega 5 folhas (cabem 15). |
-| Bandeja de saída (frente) | As folhas saem deslizando pela fenda e ficam empilhadas aqui (cabem 8). Cada folha gasta 2% de toner. |
-| Visor | Apagado quando desligada. Senão mostra `WARMING UP`, `PRINTING n%`, `READY`, `PAPER OUT`, `TRAY FULL` ou `TONER EMPTY`. |
-| LEDs | Verde: ligada (pisca enquanto esquenta ou imprime). Âmbar: parada por falta de papel, de toner ou de espaço na bandeja. |
+| Tampa (em cima, à esquerda) | [E] com um cartucho na mão troca o cartucho: o novo entra e o velho vem para a mão. De mão vazia, tira o cartucho. |
+| Bandeja de saída (frente) | As folhas saem deslizando pela fenda e ficam empilhadas aqui (cabem 8). Cada folha gasta 4% do cartucho (25 folhas num cartucho cheio). |
+| Visor | Apagado quando desligada. Senão mostra `WARMING UP`, `PRINTING n%`, `READY`, `PAPER OUT`, `TRAY FULL`, `NO CARTRIDGE` ou `INK EMPTY`. |
+| LEDs | Verde: ligada (pisca enquanto esquenta ou imprime). Âmbar: parada por falta de papel, de tinta ou de espaço na bandeja. |
 
 Desligar no meio de uma folha devolve o papel dela para o alimentador.
 
 `noise()` devolve o barulho: forte imprimindo, um zumbido baixo ligada à toa. `power_watts` é
 o consumo de energia, para o disjuntor usar depois.
 
-Ainda não tem: recarga de toner (o cartucho começa cheio e dá 50 folhas) e som.
+### Cartucho
+
+A impressora é de jato de tinta: por isso a folha sai molhada.
+
+- Ela já vem com o cartucho original pela metade (`START_INK`).
+- Cartuchos novos se compram no PC.
+- O **original** imprime a cor certa.
+- O **genérico** (compatível, $30 mais barato) imprime com a cor errada: a folha sai com
+  `offcolor`, e as notas dela saem azul-petróleo e valem `ItemKinds.OFFCOLOR_WORTH` (60%) de uma
+  certa.
+- As texturas com a cor errada (`*_offcolor.png`) saem do `art_source/paper_textures.py`
+  (`offcolor`). O `shaders/paper.gdshader` faz a mesma conta na folha inteira.
+
+Ainda não tem: som.
 
 Peças do modelo que o Godot mexe, filhas de `MACHINE_Printer`:
 
@@ -212,6 +231,7 @@ O host guarda o estado (a fase, `cut_pos`, quantas peças faltam, a pilha e quem
 
 - O montinho é um item `bills`: os cortes seguintes somam no mesmo enquanto ele estiver parado lá (até `pile_max` notas). Se alguém pegou, ou se ele encheu, nasce outro do lado.
 - Folha cortada molhada dá notas borradas (`smudged`). Por enquanto elas só ficam marcadas; depois vão valer menos ou ser recusadas.
+- Folha do cartucho genérico dá notas com a cor errada (`offcolor`): valem `ItemKinds.OFFCOLOR_WORTH` no `worth`, e os pedaços de papel na mesa usam a textura com a cor errada.
 - `data.crooked` conta as tortas e `data.worth` guarda quanto o monte vale em notas perfeitas (ainda não tem economia; é para quando tiver). O nome mostra as duas marcas: "10 bills (6 smudged, 6 crooked)".
 - `noise()` é o golpe da lâmina, por um instante.
 - Ainda não tem: cortar várias folhas de uma vez (upgrade).
