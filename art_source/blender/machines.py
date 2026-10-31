@@ -5,7 +5,7 @@
     (contar e cintar) -> esconderijos HIDE_*
 
 Peças que mexem no jogo são objetos filhos com a origem no eixo: MACHINE_Guillotine_Arm,
-MACHINE_Washer_Lid e MACHINE_Fan_Blades."""
+MACHINE_Washer_Lid (mais o _Knob e o _Led) e MACHINE_Fan_Blades."""
 
 import math
 
@@ -375,29 +375,69 @@ def cash_counter(coll):
     p.finish("MACHINE_CashCounter", coll, loc=(2.95, 2.15, 0.76), rot_z=facing("+y") - 0.3)
 
 
+# Máquina de lavar: onde fica no serviço (encostada na parede do fundo, de frente para o
+# cômodo) e o cesto no referencial dela: centro (x, y), raio e altura do fundo. O Godot usa as
+# mesmas medidas (scripts/machines/washer.gd, DRUM_*).
+WASHER_LOC = (P.W - 0.33, 3.88)
+WASHER_DRUM = (0.0, -0.05, 0.2, 0.5)
+
+
 def washer(coll):
-    """Máquina de lavar de abertura em cima: as notas saem 'usadas'. A tampa gira no X local."""
+    """Máquina de lavar de abertura em cima: as notas saem 'usadas'. Por dentro é oca: o cesto
+    de inox com o agitador no meio. Peças que mexem no jogo: a tampa (gira no X local, na
+    dobradiça de trás), o botão do timer (gira no Y local) e o LED."""
     p = Part(bevel=0.004)
     hw, hd, h = 0.31, 0.31, 0.88
-    p.box(-hw, -hd, 0.03, hw, hd, h, "M_PlasticWhite", bevel=0.025)
+    cx, cy, cr, cz = WASHER_DRUM
+    t = 0.03
+    # Gabinete oco: a base maciça até o fundo do cesto, as quatro paredes e o tampo com o furo.
+    p.box(-hw, -hd, 0.03, hw, hd, cz, "M_PlasticWhite", bevel=0.012)
+    p.box(-hw, -hd, cz - 0.01, -hw + t, hd, h - 0.002, "M_PlasticWhite", bevel=0.006)
+    p.box(hw - t, -hd, cz - 0.01, hw, hd, h - 0.002, "M_PlasticWhite", bevel=0.006)
+    p.box(-hw + t - 0.002, -hd, cz - 0.01, hw - t + 0.002, -hd + t, h - 0.002, "M_PlasticWhite", bevel=0.006)
+    p.box(-hw + t - 0.002, hd - t, cz - 0.01, hw - t + 0.002, hd, h - 0.002, "M_PlasticWhite", bevel=0.006)
+    p.plate_with_hole((-hw, -hd, hw, hd - 0.12), h, (cx, cy), cr + 0.012, "M_PlasticWhite")
     p.box(-hw + 0.02, -hd + 0.02, 0, hw - 0.02, hd - 0.02, 0.03, "M_Rubber")
     p.box(-hw, -hd - 0.003, 0.05, hw, -hd, 0.1, "M_MetalDark")
-    # Painel de trás com botão, visor e LED.
+    # Cesto: a parede em gomos de inox, o fundo e o agitador no meio.
+    n = 24
+    chord = 2 * math.pi * cr / n + 0.004
+    wall_h = h - 0.012 - cz
+    for i in range(n):
+        a = i * 2 * math.pi / n
+        m = Matrix.Translation((cx + cr * math.cos(a), cy + cr * math.sin(a), cz + wall_h / 2)) @ \
+            Matrix.Rotation(a, 4, "Z")
+        p.box_m((0.008, chord, wall_h), m, "M_Metal", bevel=0)
+    p.cyl((cx, cy, cz + 0.005), 0.01, cr, "M_MetalDark", seg=n)
+    p.cyl((cx, cy, cz + 0.09), 0.17, 0.04, "M_PlasticWhite", seg=14, radius2=0.028)
+    for i in range(4):
+        a = i * math.pi / 2
+        m = Matrix.Translation((cx + 0.05 * math.cos(a), cy + 0.05 * math.sin(a), cz + 0.06)) @ \
+            Matrix.Rotation(a, 4, "Z")
+        p.box_m((0.05, 0.012, 0.1), m, "M_PlasticWhite", bevel=0.003)
+    # Painel de trás com o visor (o botão e o LED são peças à parte).
     p.box(-hw, hd - 0.12, h, hw, hd, h + 0.16, "M_PlasticWhite", bevel=0.015)
     p.box(-hw + 0.02, hd - 0.125, h + 0.03, hw - 0.02, hd - 0.12, h + 0.13, "M_PlasticBlue")
-    p.cyl((0.16, hd - 0.14, h + 0.08), 0.04, 0.035, "M_PlasticWhite", axis="Y", seg=14)
     p.box(-0.2, hd - 0.13, h + 0.06, -0.06, hd - 0.125, h + 0.11, "M_Screen")
-    p.cyl((0.02, hd - 0.13, h + 0.08), 0.01, 0.008, "M_LedRed", axis="Y", seg=8)
-    p.box(-hw + 0.03, -hd + 0.03, h - 0.002, hw - 0.03, hd - 0.15, h, "M_MetalDark")
     # Mangueira para o tanque.
     p.cyl((-0.2, hd + 0.03, 0.5), 0.8, 0.015, "M_PlasticBlack", seg=8)
-    base = p.finish("MACHINE_Washer", coll, loc=(P.W - 0.33, 3.88, 0), rot_z=facing("-x"))
+    base = p.finish("MACHINE_Washer", coll, loc=(*WASHER_LOC, 0), rot_z=facing("-x"))
 
     lid = Part(bevel=0.006)
     lid.box(-hw + 0.01, -(2 * hd - 0.14), 0, hw - 0.01, 0, 0.025, "M_PlasticWhite")
     lid.box(-0.18, -0.38, 0.02, 0.18, -0.08, 0.027, "M_Glass")
     lid.box(-0.06, -(2 * hd - 0.14) - 0.02, 0.005, 0.06, -(2 * hd - 0.14), 0.02, "M_PlasticWhite")
     lid.finish("MACHINE_Washer_Lid", coll, loc=(0, hd - 0.12, h), parent=base)
+
+    # Botão do timer: gira enquanto lava, com o risco azul mostrando quanto falta.
+    knob = Part(bevel=0.003)
+    knob.cyl((0, 0, 0), 0.035, 0.04, "M_PlasticWhite", axis="Y", seg=18)
+    knob.box(-0.004, -0.0195, 0.008, 0.004, -0.017, 0.036, "M_PlasticBlue", bevel=0)
+    knob.finish("MACHINE_Washer_Knob", coll, loc=(0.16, hd - 0.14, h + 0.08), parent=base)
+
+    led = Part()
+    led.cyl((0, 0, 0), 0.008, 0.01, "M_LedRed", axis="Y", seg=8)
+    led.finish("MACHINE_Washer_Led", coll, loc=(0.02, hd - 0.13, h + 0.08), parent=base)
 
 
 # Varal de teto do serviço: os dois tubos (de y0 a y1), as 5 cordas (de x0 a x1) e a altura delas.

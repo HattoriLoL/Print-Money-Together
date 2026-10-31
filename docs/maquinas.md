@@ -2,8 +2,8 @@
 
 A linha de produção planejada é: papel → tinta → impressora → varal → guilhotina → máquina de
 lavar → contadora → esconderijo. Até agora funcionam o **papel**, a **impressora** (com o
-**cartucho de tinta**), o **varal** (com o **ventilador**) e a **guilhotina**. As outras máquinas
-ainda são só o modelo.
+**cartucho de tinta**), o **varal** (com o **ventilador**), a **guilhotina** e a **máquina de
+lavar**. As outras máquinas ainda são só o modelo.
 
 Papel e cartucho se compram no PC e chegam numa caixa na porta: ver `docs/loja.md`.
 
@@ -264,12 +264,51 @@ O host guarda o estado (a fase, `cut_pos`, quantas peças faltam, a pilha e quem
 - O montinho é um item `bills`: os cortes seguintes somam no mesmo enquanto ele estiver parado lá (até `pile_max` notas). Se alguém pegou, ou se ele encheu, nasce outro do lado.
 - Folha cortada molhada dá notas borradas (`smudged`). Por enquanto elas só ficam marcadas; depois vão valer menos ou ser recusadas.
 - Folha do cartucho genérico dá notas com a cor errada (`offcolor`): valem `ItemKinds.OFFCOLOR_WORTH` no `worth`, e os pedaços de papel na mesa usam a textura com a cor errada.
-- `data.crooked` conta as tortas e `data.worth` guarda quanto o monte vale em notas perfeitas (ainda não tem economia; é para quando tiver). O nome mostra as duas marcas: "10 bills (6 smudged, 6 crooked)".
+- `data.crooked` conta as tortas e `data.worth` guarda quanto o monte vale em notas perfeitas. O nome mostra as duas marcas: "10 bills (6 smudged, 6 crooked)". O valor de verdade, contando se já foram lavadas, é `ItemKinds.value()` (ver a máquina de lavar).
 - `noise()` é o golpe da lâmina, por um instante.
 - Ainda não tem: cortar várias folhas de uma vez (upgrade).
 
 Peça do modelo que o Godot mexe: `MACHINE_Guillotine_Arm`, com a origem no pivô; a ponta sobe
 girando no Z do Godot (Y local no Blender).
+
+## Máquina de lavar (`MACHINE_Washer`)
+
+Nota recém-impressa é lisinha demais e denuncia. Lavada, ela sai desbotada e vincada, com cara de
+nota que já passou por muitos bolsos. É mecânica de jogo: na máquina vão os montinhos inteiros,
+sem nada além deles.
+
+O código é `scripts/machines/washer.gd`. O cesto fica nas mesmas medidas do Blender
+(`WASHER_DRUM` em `art_source/blender/machines.py`, `DRUM_*` no Godot).
+
+| Onde | [E] |
+|---|---|
+| Tampa | Abre ou fecha. Trava enquanto lava. |
+| Cesto, com a tampa aberta | Com um montinho na mão, põe dentro (até `LOAD_MAX`, 6). De mão vazia, tira o último que entrou. Os montinhos aparecem deitados em roda no fundo. |
+| Botão do timer (no painel) | Com a tampa fechada e notas dentro, lava (`WASH_SECONDS`, 15 s) e centrifuga (`SPIN_SECONDS`, 10 s). O botão volta para o zero, o LED acende e o visor conta o tempo. No fim apita e mostra `END`. |
+| Gabinete | Segurar [E]: centrifugando, segura a máquina parada; parada fora do lugar, empurra de volta (`PUSH_SPEED`). |
+
+- **Notas usadas:** no fim, cada montinho ganha `data.worn` (quantas foram lavadas) e
+  `data.top_worn`. O nome mostra "(worn)", e o monte usa as texturas `*_worn` (a nota de cima
+  torta só ganha o tom `WORN_TINT`).
+- **Valor:** `ItemKinds.value(data)` é quanto o monte vale de verdade, em notas perfeitas: o
+  `worth` da guilhotina, com as notas nunca lavadas valendo `CRISP_WORTH` (70%). É o número que a
+  venda vai usar.
+- **Andando:** centrifugando, a máquina treme e, se ninguém segura, sai andando para a frente
+  (para longe da parede), costurando para os lados, até onde a mangueira deixa (`HOSE_LENGTH`,
+  45 cm). Com número ímpar de montinhos a carga fica desequilibrada e ela anda bem mais rápido
+  (`WALK_SPEED`; equilibrada, `BALANCED_WALK` disso). A colisão vai junto, então ela pode
+  atrapalhar a passagem.
+- **Barulho** (`noise()`): lavando `NOISE_WASH`, centrifugando solta `NOISE_SPIN` (batendo no
+  chão) e segurada `NOISE_HELD`.
+- **Sons**, feitos no próprio código: o motor e a água lavando, o zumbido da centrifugação (que
+  acelera no começo), a pancada no chão andando, o clique da tampa e do botão e os três bipes do
+  fim.
+- **Rede:** o host guarda a fase, o tempo, a tampa, a carga, o quanto ela andou e se alguém
+  segura, e repassa 10 vezes por segundo enquanto muda (e na hora nos eventos). Quem entra no meio
+  recebe tudo.
+
+Peças do modelo que o Godot mexe: `MACHINE_Washer_Lid` (gira no X local, na dobradiça de trás; a
+zona da tampa vai junto), `MACHINE_Washer_Knob` (gira no Z do Godot) e `MACHINE_Washer_Led`.
 
 ## Teste
 

@@ -285,6 +285,35 @@ class Part:
             radius1=radius, radius2=radius if radius2 is None else radius2, depth=length, matrix=m)
         self._tag(res["verts"], mat, smooth=True)
 
+    def plate_with_hole(self, rect, z, center, radius, mat, seg=32):
+        """Tampo plano (virado para cima) no retângulo `rect` (x0, y0, x1, y1), na altura `z`, com
+        um furo redondo de `radius` em `center` (x, y). Cada fatia vai do círculo até a borda do
+        retângulo; os ângulos dos cantos entram na lista para nenhum canto ficar de fora."""
+        x0, y0, x1, y1 = rect
+        cx, cy = center
+        angles = {i * 2 * math.pi / seg for i in range(seg)}
+        for px, py in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
+            angles.add(math.atan2(py - cy, px - cx) % (2 * math.pi))
+        angles = sorted(angles)
+
+        def edge(a):
+            dx, dy = math.cos(a), math.sin(a)
+            ts = []
+            if abs(dx) > 1e-9:
+                ts += [(x0 - cx) / dx, (x1 - cx) / dx]
+            if abs(dy) > 1e-9:
+                ts += [(y0 - cy) / dy, (y1 - cy) / dy]
+            t = min(t for t in ts if t > 0)
+            return (cx + dx * t, cy + dy * t, z)
+
+        inner = [self.bm.verts.new((cx + radius * math.cos(a), cy + radius * math.sin(a), z)) for a in angles]
+        outer = [self.bm.verts.new(edge(a)) for a in angles]
+        n = len(angles)
+        for i in range(n):
+            j = (i + 1) % n
+            self.bm.faces.new([inner[i], outer[i], outer[j], inner[j]])
+        self._tag(inner + outer, mat)
+
     def quad(self, corners, mat, uvs=((0, 0), (1, 0), (1, 1), (0, 1)), double=True):
         """Quadrilátero (folha, cortina, cédula) com UV próprio; `double` faz as duas faces."""
         verts = [self.bm.verts.new(c) for c in corners]

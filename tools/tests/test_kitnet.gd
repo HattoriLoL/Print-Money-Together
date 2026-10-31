@@ -19,6 +19,8 @@ extends SceneTree
 ##   impressora (folha e notas com a cor errada); sem cartucho o visor avisa;
 ## - varal: a folha molhada pendura e seca (mais rápido com o ventilador ligado, tremulando), tirar
 ##   no meio leva ela úmida, seca não borra na guilhotina, varal cheio não aceita mais;
+## - máquina de lavar: os montinhos entram e saem do cesto, lava e centrifuga com a tampa travada,
+##   solta ela anda e segurada fica parada, as notas saem usadas (valem mais), empurra de volta;
 ## - etapa 3 do visual: prints da fita na impressora, jornal, retrato, geladeira, TV, pizza, trancas e lâmpada;
 ## - vida no cenário: ventilador girando, vento no varal e na cortina, chuvisco na TV, vapor na panela,
 ##   lâmpada piscando e balançando quando alguém passa perto;
@@ -231,6 +233,7 @@ func _run() -> void:
 	await _test_guillotine(kitnet, player)
 	await _test_shop(kitnet, player)
 	await _test_clothesline(kitnet, player)
+	await _test_washer(kitnet, player)
 	await _test_characters(kitnet, player)
 	await _test_first_person(kitnet, player)
 	await _test_push(kitnet, player)
@@ -1260,6 +1263,108 @@ func _test_clothesline(kitnet: Node3D, player: CharacterBody3D) -> void:
 	fan.zone.interact(player)
 	await physics_frame
 	_check(not fan.powered, "o ventilador desligou")
+
+
+## Máquina de lavar: a tampa abre e fecha, os montinhos entram e saem do cesto, o botão lava e
+## centrifuga com a tampa travada; centrifugando com carga ímpar ela anda, segurada fica parada e
+## faz menos barulho; no fim as notas saem usadas (valem mais); parada fora do lugar, empurra de volta.
+func _test_washer(kitnet: Node3D, player: CharacterBody3D) -> void:
+	var w: Node3D = kitnet.washer
+	var items: Node = kitnet.items
+	_check(w != null and w.phase == w.Phase.IDLE and not w.lid_open, "máquina de lavar montada, parada e fechada")
+	if w == null:
+		return
+	var body: Node3D = w.get_parent()
+	var home: Vector3 = body.global_position
+	var front := Vector3(5.95, 0.05, -3.88)
+	player.global_position = front
+	await physics_frame
+	_check(w._lid_prompt(player) == "[E] Open the lid", "a tampa oferece abrir")
+	_check(w._panel_prompt(player) == "Put bills in to wash them", "vazia, o botão pede notas")
+	w.lid_zone.interact(player)
+	await create_timer(0.6).timeout
+	_check(w.lid_open and absf(w._lid.rotation.x + w.LID_OPEN) < 0.01, "a tampa abriu (quase em pé)")
+	var pile: Node = items.give(1, "bills", {"count": 12, "worth": 12.0, "crooked": 0})
+	await physics_frame
+	_check(w._drum_prompt(player).begins_with("[E] Put the bills in"), "o cesto aceita o montinho")
+	var crisp := ItemKinds.value(pile.data)
+	_check(is_equal_approx(crisp, 12.0 * ItemKinds.CRISP_WORTH), "nota sem lavar vale menos (%.1f de 12)" % crisp)
+	w.drum_zone.interact(player)
+	await physics_frame
+	_check(player.held_item() == null and w.contents.size() == 1 and not w.contents[0].has("resting"),
+			"o montinho foi para o cesto")
+	_check(w._piles.get_child_count() == 1, "dá para ver o montinho lá dentro")
+	_check(w._drum_prompt(player).begins_with("[E] Take out the 12 bills"), "de mão vazia, oferece tirar")
+	w.drum_zone.interact(player)
+	await physics_frame
+	var back: Node = player.held_item()
+	_check(back != null and back.kind == "bills" and back.data.get("count", 0) == 12 and w.contents.is_empty(),
+			"tirou o montinho de volta")
+	w.drum_zone.interact(player)
+	await physics_frame
+	await _look(player, front, w.global_transform * w.DRUM_CENTER, "53_cesto_com_notas")
+	_check(w._panel_prompt(player) == "Close the lid to start", "de tampa aberta não liga")
+	w._start(1)
+	_check(w.phase == w.Phase.IDLE, "nem forçando")
+	# Lavar.
+	w.lid_zone.interact(player)
+	await create_timer(0.4).timeout
+	_check(not w.lid_open and w._panel_prompt(player).begins_with("[E] Start the wash"), "fechada, o botão liga")
+	w.panel_zone.interact(player)
+	await create_timer(0.5).timeout
+	_check(w.phase == w.Phase.WASH and w.noise() == w.NOISE_WASH, "lavando, com barulho")
+	_check(w._screen.text.begins_with("WASH "), "o visor conta o tempo (%s)" % w._screen.text)
+	w.lid_zone.interact(player)
+	await physics_frame
+	_check(not w.lid_open and w._lid_prompt(player).begins_with("The lid is locked"), "a tampa trava lavando")
+	_check(w._hum.playing, "o motor faz barulho")
+	# Centrifugar: uma carga só (desequilibrada), ninguém segurando, a máquina anda.
+	w.time_left = 0.05
+	await create_timer(0.2).timeout
+	_check(w.phase == w.Phase.SPIN and w.unbalanced(), "centrifugando, desequilibrada")
+	await create_timer(1.5).timeout
+	var walked := body.global_position.distance_to(home)
+	_check(w.offset.length() > 0.03 and walked > 0.03, "solta, a máquina sai andando (%.2f m)" % walked)
+	_check((body.global_position - home).x < 0.0, "anda para a frente, longe da parede")
+	_check(w.noise() == w.NOISE_SPIN and w._body_prompt(player) == "Hold [E] to hold the washer still",
+			"bate e faz barulho, pedindo para segurar")
+	await _look(player, Vector3(5.75, 0, -3.3), body.global_position + Vector3.UP * 0.6, "54_maquina_andando")
+	w.body_zone.begin_hold(player)
+	await create_timer(0.3).timeout
+	var held_at: Vector3 = w.offset
+	await create_timer(1.0).timeout
+	_check(w.steadied and w.offset.distance_to(held_at) < 0.002, "segurada, fica parada")
+	_check(w.noise() == w.NOISE_HELD, "segurada, faz menos barulho")
+	w.body_zone.end_hold(player)
+	# Fim: as notas saem usadas.
+	w.time_left = 0.05
+	await create_timer(0.3).timeout
+	_check(w.phase == w.Phase.IDLE and w.contents.size() == 1 and w.contents[0].get("worn", 0) == 12 \
+			and w.contents[0].get("top_worn", false), "acabou: as notas saíram usadas")
+	_check(w._screen.text == "END", "o visor diz que acabou")
+	w.lid_zone.interact(player)
+	await create_timer(0.4).timeout
+	w.drum_zone.interact(player)
+	await physics_frame
+	var worn: Node = player.held_item()
+	_check(worn != null and ItemKinds.label(worn) == "12 bills (worn)", "o montinho diz que está usado (%s)" % (ItemKinds.label(worn) if worn else "nada"))
+	if worn != null:
+		_check(is_equal_approx(ItemKinds.value(worn.data), 12.0), "lavado, vale tudo (%.1f)" % ItemKinds.value(worn.data))
+		var mesh: MeshInstance3D = worn.get_node("Mesh")
+		var top_mat: Material = mesh.mesh.surface_get_material(0)
+		_check(top_mat is BaseMaterial3D and top_mat.albedo_texture == ItemKinds.BILL_FRONT_WORN, "com a textura desbotada e vincada")
+	await _look(player, front, body.global_position + Vector3.UP * 0.9, "55_notas_usadas")
+	# Parada fora do lugar: empurrar de volta.
+	_check(w._body_prompt(player) == "Hold [E] to push the washer back", "fora do lugar, oferece empurrar de volta")
+	w.body_zone.begin_hold(player)
+	await create_timer(w.HOSE_LENGTH / w.PUSH_SPEED + 0.5).timeout
+	w.body_zone.end_hold(player)
+	await create_timer(0.3).timeout
+	_check(w.offset.length() < 0.001 and body.global_position.distance_to(home) < 0.003, "empurrada de volta para o lugar")
+	if worn != null:
+		items.consume(worn)
+	w.lid_zone.interact(player)
+	await physics_frame
 
 
 ## Clique de quem opera (desce a alavanca) e espera ela voltar.

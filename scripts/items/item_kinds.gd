@@ -11,7 +11,9 @@ extends RefCounted
 ##            com a cor errada (cartucho genérico), data.top_offcolor = se a de cima saiu com a
 ##            cor errada (muda a textura), data.worth = quanto o monte
 ##            vale em notas perfeitas (sem a chave: count), data.top_cut = o pedaço da folha que
-##            virou a nota de cima, se ela saiu torta (Rect2 na textura da folha; vazio = reta)
+##            virou a nota de cima, se ela saiu torta (Rect2 na textura da folha; vazio = reta),
+##            data.worn = quantas já passaram na máquina de lavar (parecem usadas),
+##            data.top_worn = se a de cima passou (muda a textura); ver value()
 ##   "finger" um dedo que a guilhotina levou (a peça da luva do hands.glb); data.owner = de quem,
 ##            data.side = 0 direita / 1 esquerda, data.digit = qual (player.DIGITS)
 ##   "hand"   a mão inteira que a guilhotina levou: a luva com os dedos que ainda tinha;
@@ -37,6 +39,14 @@ const BILL_BACK := preload("res://assets/textures/bill_back.png")
 const BILL_FRONT_OFFCOLOR := preload("res://assets/textures/bill_front_offcolor.png")
 const BILL_BACK_OFFCOLOR := preload("res://assets/textures/bill_back_offcolor.png")
 const SHEET_FRONT_OFFCOLOR := preload("res://assets/textures/sheet_front_offcolor.png")
+## As notas depois da máquina de lavar: desbotadas e vincadas (art_source/paper_textures.py, worn).
+const BILL_FRONT_WORN := preload("res://assets/textures/bill_front_worn.png")
+const BILL_BACK_WORN := preload("res://assets/textures/bill_back_worn.png")
+const BILL_FRONT_SMUDGED_WORN := preload("res://assets/textures/bill_front_smudged_worn.png")
+const BILL_FRONT_OFFCOLOR_WORN := preload("res://assets/textures/bill_front_offcolor_worn.png")
+const BILL_BACK_OFFCOLOR_WORN := preload("res://assets/textures/bill_back_offcolor_worn.png")
+## A nota de cima torta mostra um pedaço da folha: lavada, ela só fica com este tom.
+const WORN_TINT := Color(0.86, 0.84, 0.72)
 const HANDS_MODEL := preload("res://assets/models/hands.glb")
 const DIGITS := ["Thumb", "Index", "Middle", "Ring", "Pinky"]
 ## Pedaços de luva: o tamanho sai da malha.
@@ -47,6 +57,8 @@ const TWO_HANDED := ["ream"]
 const NOT_CARRIED := ["parcel"]
 ## Quanto vale uma nota com a cor errada (cartucho genérico), perto de uma certa.
 const OFFCOLOR_WORTH := 0.6
+## Nota que nunca foi lavada é nova demais (lisinha, sem dobra): vale isso perto de uma usada.
+const CRISP_WORTH := 0.7
 ## Faixa do rótulo do cartucho de cada marca.
 const CARTRIDGE_COLORS := {"original": Color(0.15, 0.7, 0.3), "generic": Color(0.85, 0.25, 0.65)}
 
@@ -87,19 +99,24 @@ static var _cache := {}
 
 
 static func label(item: Node) -> String:
-	match item.kind:
+	return label_of(item.kind, item.data)
+
+
+## O nome de um item que não está no mundo (o montinho dentro da máquina de lavar).
+static func label_of(kind: String, data: Dictionary) -> String:
+	match kind:
 		"ream":
 			return "paper ream"
 		"sheet":
 			var sheet := "printed sheet"
-			if item.data.get("wet", false):
-				var wetness: float = item.data.get("wetness", 1.0)
+			if data.get("wet", false):
+				var wetness: float = data.get("wetness", 1.0)
 				sheet = "wet sheet" if wetness >= 0.99 else "damp sheet (%d%% dry)" % roundi((1.0 - wetness) * 100.0)
-			return sheet + (" (off-color)" if item.data.get("offcolor", false) else "")
+			return sheet + (" (off-color)" if data.get("offcolor", false) else "")
 		"bills":
-			var count: int = item.data.get("count", 0)
-			var smudged: int = item.data.get("smudged", 0)
-			var crooked: int = item.data.get("crooked", 0)
+			var count: int = data.get("count", 0)
+			var smudged: int = data.get("smudged", 0)
+			var crooked: int = data.get("crooked", 0)
 			var text := "%d bill%s" % [count, "" if count == 1 else "s"]
 			var notes: Array[String] = []
 			if smudged >= count and count > 0:
@@ -110,21 +127,37 @@ static func label(item: Node) -> String:
 				notes.append("crooked")
 			elif crooked > 0:
 				notes.append("%d crooked" % crooked)
-			var offcolor: int = item.data.get("offcolor", 0)
+			var offcolor: int = data.get("offcolor", 0)
 			if offcolor >= count and count > 0:
 				notes.append("off-color")
 			elif offcolor > 0:
 				notes.append("%d off-color" % offcolor)
+			var worn: int = data.get("worn", 0)
+			if worn >= count and count > 0:
+				notes.append("worn")
+			elif worn > 0:
+				notes.append("%d worn" % worn)
 			return text + (" (%s)" % ", ".join(notes) if not notes.is_empty() else "")
 		"finger":
-			return "%s's %s" % [item.data.get("owner", "Someone"), String(item.data.get("digit", "finger")).to_lower()]
+			return "%s's %s" % [data.get("owner", "Someone"), String(data.get("digit", "finger")).to_lower()]
 		"hand":
-			return "%s's %s hand" % [item.data.get("owner", "Someone"), "right" if item.data.get("side", 0) == 0 else "left"]
+			return "%s's %s hand" % [data.get("owner", "Someone"), "right" if data.get("side", 0) == 0 else "left"]
 		"cartridge":
-			return "%s (%s)" % [cartridge_name(item.data.get("brand", "generic")), ink_text(item.data.get("ink", 0.0))]
+			return "%s (%s)" % [cartridge_name(data.get("brand", "generic")), ink_text(data.get("ink", 0.0))]
 		"parcel":
-			return "parcel from %s" % item.data.get("from", "somewhere")
-	return item.kind
+			return "parcel from %s" % data.get("from", "somewhere")
+	return kind
+
+
+## Quanto um montinho de notas vale de verdade, em notas perfeitas: o `worth` da guilhotina (já
+## com as tortas e as de cor errada), com as que nunca foram lavadas valendo CRISP_WORTH.
+static func value(data: Dictionary) -> float:
+	var count: int = data.get("count", 0)
+	if count <= 0:
+		return 0.0
+	var worth: float = data.get("worth", float(count))
+	var worn := clampi(data.get("worn", 0), 0, count)
+	return worth * (worn + (count - worn) * CRISP_WORTH) / count
 
 
 ## Quanto a tinta da folha ainda está molhada, de 0 a 1 (o brilho do shader).
@@ -266,7 +299,7 @@ static func refresh(item: RigidBody3D) -> void:
 		var count: int = maxi(item.data.get("count", 1), 1)
 		var height := maxf(count * BILL_THICKNESS, 0.0015)
 		mesh.mesh = _bills_mesh(item.data.get("top_smudged", false), item.data.get("top_cut", Rect2()),
-				item.data.get("top_offcolor", false))
+				item.data.get("top_offcolor", false), item.data.get("top_worn", false))
 		Toon.apply_one(mesh)
 		mesh.scale = Vector3(1.0, height, 1.0)
 		var col: CollisionShape3D = item.get_child(0)
@@ -388,12 +421,15 @@ static func _ream_mesh() -> Mesh:
 ## Montinho de notas: caixa de 1 de altura (o item estica), com a nota na tampa (borrada ou não),
 ## o verso embaixo e as bordas de papel nos lados. Três superfícies, uma para cada material. Se a
 ## nota de cima saiu torta da guilhotina (`top_cut` não vazio), a tampa mostra o pedaço da folha
-## que ela é de verdade: sobra de margem ou da nota vizinha, ou a nota comida pelo corte.
-static func _bills_mesh(top_smudged: bool, top_cut := Rect2(), offcolor := false) -> Mesh:
+## que ela é de verdade: sobra de margem ou da nota vizinha, ou a nota comida pelo corte. Lavado
+## (`worn`), o monte usa as texturas desbotadas e vincadas.
+static func _bills_mesh(top_smudged: bool, top_cut := Rect2(), offcolor := false, worn := false) -> Mesh:
 	var cut := top_cut.has_area()
 	var key := "bills_mesh_cut_%s" % top_cut if cut else ("bills_mesh_smudged" if top_smudged else "bills_mesh")
 	if offcolor:
 		key += "_offcolor"
+	if worn:
+		key += "_worn"
 	if _cache.has(key):
 		return _cache[key]
 	var h: Vector3 = Vector3(SIZES["bills"].x, 1.0, SIZES["bills"].z) / 2.0
@@ -402,9 +438,14 @@ static func _bills_mesh(top_smudged: bool, top_cut := Rect2(), offcolor := false
 	var top_tex: Texture2D = SHEET_FRONT if cut else (BILL_FRONT_SMUDGED if top_smudged else BILL_FRONT)
 	if offcolor:
 		top_tex = SHEET_FRONT_OFFCOLOR if cut else (BILL_FRONT_SMUDGED if top_smudged else BILL_FRONT_OFFCOLOR)
+	var back_tex: Texture2D = BILL_BACK_OFFCOLOR if offcolor else BILL_BACK
+	if worn:
+		back_tex = BILL_BACK_OFFCOLOR_WORN if offcolor else BILL_BACK_WORN
+		if not cut:
+			top_tex = BILL_FRONT_SMUDGED_WORN if top_smudged else (BILL_FRONT_OFFCOLOR_WORN if offcolor else BILL_FRONT_WORN)
 	var faces := [
 		[top_tex, [[Vector3.UP, [Vector3(-h.x, h.y, -h.z), Vector3(h.x, h.y, -h.z), Vector3(h.x, h.y, h.z), Vector3(-h.x, h.y, h.z)]]]],
-		[BILL_BACK_OFFCOLOR if offcolor else BILL_BACK, [[Vector3.DOWN, [Vector3(h.x, -h.y, -h.z), Vector3(-h.x, -h.y, -h.z), Vector3(-h.x, -h.y, h.z), Vector3(h.x, -h.y, h.z)]]]],
+		[back_tex, [[Vector3.DOWN, [Vector3(h.x, -h.y, -h.z), Vector3(-h.x, -h.y, -h.z), Vector3(-h.x, -h.y, h.z), Vector3(h.x, -h.y, h.z)]]]],
 		[null, [
 			[Vector3.BACK, [Vector3(-h.x, h.y, h.z), Vector3(h.x, h.y, h.z), Vector3(h.x, -h.y, h.z), Vector3(-h.x, -h.y, h.z)]],
 			[Vector3.FORWARD, [Vector3(h.x, h.y, -h.z), Vector3(-h.x, h.y, -h.z), Vector3(-h.x, -h.y, -h.z), Vector3(h.x, -h.y, -h.z)]],
@@ -422,9 +463,11 @@ static func _bills_mesh(top_smudged: bool, top_cut := Rect2(), offcolor := false
 		if surface[0] != null:
 			mat.albedo_texture = surface[0]
 			mat.roughness = 0.75
+			if worn and cut and surface == faces[0]:
+				mat.albedo_color = WORN_TINT
 		else:
-			# Bordas: papel claro com um tom de verde das notas empilhadas.
-			mat.albedo_color = Color(0.8, 0.86, 0.76)
+			# Bordas: papel claro com um tom de verde das notas empilhadas (lavadas, mais apagado).
+			mat.albedo_color = Color(0.76, 0.78, 0.68) if worn else Color(0.8, 0.86, 0.76)
 			mat.roughness = 0.9
 		st.set_material(mat)
 		st.commit(mesh)

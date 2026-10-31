@@ -1,6 +1,6 @@
 """Texturas do papel: a nota (frente e verso), a folha A4 impressa com 2 x 3 notas (frente e
 verso), a fibra do papel e a embalagem da resma, e as versões com a cor errada do cartucho
-genérico (*_offcolor). Saem em assets/textures/.
+genérico (*_offcolor) e as notas lavadas na máquina (*_worn). Saem em assets/textures/.
 
 Roda com o Python do sistema e o Pillow (não dentro do Blender, que não tem Pillow):
 
@@ -374,6 +374,80 @@ def save_offcolor():
         offcolor(Image.open(os.path.join(OUT, name + ".png"))).save(os.path.join(OUT, name + "_offcolor.png"))
 
 
+def worn(img, seed=11):
+    """A mesma nota depois de passar na máquina de lavar: cor desbotada e meio amarelada, os vincos
+    de quem dobrou em quatro (claro de um lado, escuro do outro), amassados suaves, bordas gastas
+    e umas manchinhas. O toon achata o detalhe fino, então tudo é bem marcado."""
+    w, h = img.size
+    r = random.Random(seed)
+    arr = np.asarray(img.convert("RGB")).astype(np.float32) / 255.0
+    gray = arr.mean(axis=-1, keepdims=True)
+    arr = gray + (arr - gray) * 0.55
+    arr = arr * np.array([0.96, 0.94, 0.82]) + np.array([0.04, 0.035, 0.02])
+    # Amassado: ruído grosso, esticado até o tamanho da nota.
+    noise = np.array([[r.random() for _ in range(14)] for _ in range(7)], dtype=np.float32)
+    crumple = Image.fromarray((noise * 255).astype(np.uint8), "L").resize((w, h), Image.BICUBIC)
+    shade = 0.86 + 0.16 * np.asarray(crumple).astype(np.float32)[..., None] / 255.0
+    # Vincos: no meio na vertical e na horizontal, mais uns tortos. Cada um é uma linha escura com
+    # uma clara do lado (a luz batendo na dobra).
+    dark = Image.new("L", (w, h), 0)
+    light = Image.new("L", (w, h), 0)
+    dd, ld = ImageDraw.Draw(dark), ImageDraw.Draw(light)
+
+    def crease(a, b, strength):
+        pts = [a]
+        steps = 6
+        for i in range(1, steps):
+            t = i / steps
+            pts.append((a[0] + (b[0] - a[0]) * t + r.uniform(-6, 6), a[1] + (b[1] - a[1]) * t + r.uniform(-6, 6)))
+        pts.append(b)
+        dd.line(pts, fill=strength, width=5)
+        ld.line([(x + 6, y + 4) for x, y in pts], fill=strength, width=4)
+
+    crease((w * 0.5 + r.uniform(-12, 12), -10), (w * 0.5 + r.uniform(-12, 12), h + 10), 200)
+    crease((-10, h * 0.5 + r.uniform(-8, 8)), (w + 10, h * 0.5 + r.uniform(-8, 8)), 170)
+    for _ in range(4):
+        x0, y0 = r.uniform(0, w), r.uniform(0, h)
+        a = r.uniform(0, math.pi)
+        length = r.uniform(120, 320)
+        crease((x0, y0), (x0 + math.cos(a) * length, y0 + math.sin(a) * length), r.randint(90, 140))
+    dark_a = np.asarray(dark.filter(ImageFilter.GaussianBlur(2.5))).astype(np.float32)[..., None] / 255.0
+    light_a = np.asarray(light.filter(ImageFilter.GaussianBlur(3))).astype(np.float32)[..., None] / 255.0
+    # Bordas gastas: escurecem e clareiam em volta, com uns dentes.
+    edge = Image.new("L", (w, h), 0)
+    ed = ImageDraw.Draw(edge)
+    ed.rectangle((0, 0, w - 1, h - 1), outline=255, width=14)
+    for _ in range(40):
+        x, y = (r.uniform(0, w), r.choice((0, h))) if r.random() < 0.7 else (r.choice((0, w)), r.uniform(0, h))
+        rad = r.uniform(6, 18)
+        ed.ellipse((x - rad, y - rad, x + rad, y + rad), fill=255)
+    edge_a = np.asarray(edge.filter(ImageFilter.GaussianBlur(10))).astype(np.float32)[..., None] / 255.0
+    # Manchinhas de sujeira.
+    stain = Image.new("L", (w, h), 0)
+    sd = ImageDraw.Draw(stain)
+    for _ in range(7):
+        x, y = r.uniform(0, w), r.uniform(0, h)
+        rx, ry = r.uniform(20, 70), r.uniform(15, 45)
+        sd.ellipse((x - rx, y - ry, x + rx, y + ry), fill=r.randint(50, 110))
+    stain_a = np.asarray(stain.filter(ImageFilter.GaussianBlur(12))).astype(np.float32)[..., None] / 255.0
+    out = arr * shade
+    out = out * (1.0 - 0.45 * dark_a) + 0.35 * light_a * (1.0 - out)
+    out = out * (1.0 - 0.3 * edge_a) + np.array([0.45, 0.42, 0.33]) * 0.3 * edge_a
+    out = out * (1.0 - stain_a) + out * np.array([0.78, 0.7, 0.55]) * stain_a
+    return Image.fromarray(np.clip(out * 255.0 + 0.5, 0, 255).astype(np.uint8), "RGB")
+
+
+WORN = ("bill_front", "bill_back", "bill_front_smudged", "bill_front_offcolor", "bill_back_offcolor")
+
+
+def save_worn():
+    """As versões lavadas (*_worn), a partir das que já estão em assets/textures/ (rode depois do
+    save_offcolor). Frente e verso usam vincos diferentes."""
+    for name in WORN:
+        img = Image.open(os.path.join(OUT, name + ".png"))
+        worn(img, seed=12 if "back" in name else 11).save(os.path.join(OUT, name + "_worn.png"))
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     front, back = neon(bill_front()), neon(bill_back())
@@ -386,6 +460,7 @@ def main():
     paper_normal().save(os.path.join(OUT, "paper_normal.png"))
     ream_wrapper().save(os.path.join(OUT, "ream_wrapper.png"))
     save_offcolor()
+    save_worn()
     print("texturas do papel em", OUT)
 
 

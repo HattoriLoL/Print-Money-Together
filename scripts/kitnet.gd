@@ -19,6 +19,7 @@ const Guillotine := preload("res://scripts/machines/guillotine.gd")
 const Computer := preload("res://scripts/machines/computer.gd")
 const ClothesLine := preload("res://scripts/machines/clothesline.gd")
 const Fan := preload("res://scripts/machines/fan.gd")
+const Washer := preload("res://scripts/machines/washer.gd")
 const Wallet := preload("res://scripts/wallet.gd")
 const Deliveries := preload("res://scripts/shop/deliveries.gd")
 const Toon := preload("res://scripts/toon.gd")
@@ -60,6 +61,8 @@ var computer: Node3D
 ## O varal (secar as folhas) e o ventilador virado para ele.
 var clothesline: Node3D
 var fan: Node3D
+## A máquina de lavar (as notas saem com cara de usadas).
+var washer: Node3D
 ## Dinheiro do grupo e as entregas a caminho.
 var wallet: Node
 var deliveries: Node
@@ -235,6 +238,8 @@ func _add_stations() -> void:
 	model.find_child("MACHINE_Fan", true, false).add_child(fan)
 	clothesline = ClothesLine.new()
 	model.find_child("MACHINE_ClothesLine", true, false).add_child(clothesline)
+	washer = Washer.new()
+	model.find_child("MACHINE_Washer", true, false).add_child(washer)
 
 
 func _setup_light(light: Light3D) -> void:

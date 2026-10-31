@@ -51,7 +51,8 @@ A cortina da janela (`Curtain_Main`) fica meio aberta: dá para ver a impressora
 |---|---|
 | `MACHINE_*` / `SUPPLY_*` | Estações da produção. A origem fica na base. |
 | `MACHINE_Guillotine_Arm` | Alavanca da guilhotina, com a origem no pivô; gira no Y local (filha da base). |
-| `MACHINE_Washer_Lid` | Tampa da máquina de lavar, gira no X local na dobradiça de trás. |
+| `MACHINE_Washer_Lid` | Tampa da máquina de lavar, gira no X local na dobradiça de trás. A máquina é oca: o cesto fica embaixo da tampa. |
+| `MACHINE_Washer_Knob`, `MACHINE_Washer_Led` | Botão do timer da máquina de lavar (gira no Y local) e o LED do painel. |
 | `MACHINE_PC_Screen`, `MACHINE_PC_Mouse` | Tela do monitor (UV de 0 a 1, o Godot desenha o navegador) e o mouse (anda com o cursor). |
 | `MACHINE_Fan_Blades` | Pás do ventilador, giram no Y local (o `ambience.gd` gira com o ventilador ligado). |
 | `HIDE_*` | Esconderijos: `HIDE_SofaBed` (vão de 12 cm embaixo), `HIDE_Wardrobe` (e a mala em cima), `HIDE_Fridge`. |
@@ -119,7 +120,7 @@ A kitnet fica no 3º andar. A rua passa 8,6 m abaixo, entre o nosso prédio e o 
 - `LIGHT_<zona>_<n>` ganham alcance, energia e sombra por zona (`ZONE_LIGHT`).
 - Os jogadores nascem nos `SPAWN_<vaga + 1>`.
 
-As resmas, a impressora, o varal e a guilhotina já funcionam (ver `docs/maquinas.md`), e o PC compra
+As resmas, a impressora, o varal, a guilhotina e a máquina de lavar já funcionam (ver `docs/maquinas.md`), e o PC compra
 papel e tinta (ver `docs/loja.md`). As outras máquinas, os esconderijos e o fiscal ainda não.
 
 ## Rede
