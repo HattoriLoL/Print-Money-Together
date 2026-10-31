@@ -15,6 +15,13 @@ extends Node3D
 ## jogador pode puxar a alavanca pelo pegador vermelho ([E]): o corte vai onde quem opera está
 ## segurando a folha.
 ##
+## As mãos andam livres pela mesa. Em cima da folha, o mouse empurra (ou puxa) a folha junto;
+## fora dela, só as mãos andam, até encostar e empurrar pela ponta. Com o botão direito segurado,
+## só as mãos andam, para onde for. Folha sem mão em cima fica solta; longe da lâmina ela treme e o
+## corte sai com um erro aleatório; perto fica firme. Mas o que passar da linha da lâmina no golpe
+## vai embora: primeiro o polegar e o indicador, depois o médio, e passando o meio da mão, ela
+## inteira (os pedaços caem na mesa como itens). Sem dedos a folha treme mais.
+##
 ## A folha é cortada como numa gráfica, em duas fases:
 ##   Linhas: os cortes horizontais soltam tiras (uma linha de notas, ainda grudadas lado a lado),
 ##     que vão para uma pilha do lado da lâmina. O corte que deixa só a última linha na mesa solta
@@ -88,6 +95,30 @@ const FEED_RATE := 30.0
 ## a zona onde outro jogador aperta [E] para puxar.
 const LEVER_GRIP := Vector3(0.585, 0.01, 0.0)
 const LEVER_GRIP_SIZE := Vector3(0.2, 0.08, 0.08)
+## Mãos de quem opera: as duas na mesma altura, `hands_z`, andando livres de HANDS_RANGE (da
+## lâmina, m). Ao chegar, pegam HANDS_REST na frente da borda de trás da folha. Seguram a folha
+## com pelo menos PAPER_TOUCH da luva por cima dela. A folha volta até FEED_BACK atrás da lâmina.
+## A luva deitada de lado vai de HAND_BACK atrás a HAND_FRONT na frente do pulso (o polegar para a
+## lâmina), e DIGIT_Z diz onde fica cada dedo (player.DIGITS). HAND_LOST é o bit da mão inteira
+## (o mesmo do player.gd).
+const HANDS_RANGE := Vector2(-0.34, 0.12)
+## Pulso até o meio do que está na lâmina, no mínimo: na pilha estreita, as luvas não se encavalam
+## (os dedos chegam só perto do meio).
+const HANDS_MIN_SPREAD := 0.14
+const HANDS_REST := 0.04
+const PAPER_TOUCH := 0.01
+const FEED_BACK := 0.06
+const HAND_FRONT := 0.046
+const HAND_BACK := 0.034
+const DIGIT_Z := [0.034, 0.027, 0.009, -0.009, -0.026]
+const HAND_LOST := 1 << 5
+## Firmeza: com a frente da mão até FIRM_GAP atrás da lâmina a folha fica firme; a partir de
+## LOOSE_GAP ela treme SHAKE_MAX (m, para cada lado) no golpe. Cada dedo a menos de quem opera
+## treme mais FINGER_SHAKE.
+const FIRM_GAP := 0.015
+const LOOSE_GAP := 0.12
+const SHAKE_MAX := 0.004
+const FINGER_SHAKE := 0.0006
 ## Tranco da câmera no golpe: de quem opera e de quem está perto (até CHOP_KICK_REACH m).
 const CHOP_KICK := 0.5
 const CHOP_KICK_REACH := 1.5
@@ -110,6 +141,8 @@ var sheet_wet := false
 var cut_pos := 0.0
 ## Quanto a frente do que sobrou passou da lâmina (m). Quem opera mexe; os outros seguem.
 var feed := 0.0
+## Onde estão as mãos de quem opera: o z do pulso (o meio da mão deitada), na guilhotina.
+var hands_z := CUT_Z - 0.17
 ## Peer operando (0 = ninguém).
 var operator := 0
 ## Tiras na pilha e qual pedaço da folha é a de cima (m da frente: [frente, trás]).
@@ -147,6 +180,8 @@ var _arm_swinging := false
 ## Até quando (s, Time.get_ticks_msec) a folha fica parada: do clique até a alavanca voltar.
 var _locked_until := 0.0
 var _feed_target := 0.0
+var _hands_target := CUT_Z - 0.17
+var _guide_mat: StandardMaterial3D
 var _feed_timer := 0.0
 var _feed_dirty := false
 ## O boneco que está com `operating` apontando para esta guilhotina.
@@ -188,12 +223,17 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if not _is_mine():
 		feed = lerpf(feed, _feed_target, clampf(20.0 * delta, 0.0, 1.0))
+		hands_z = lerpf(hands_z, _hands_target, clampf(20.0 * delta, 0.0, 1.0))
 	elif _feed_dirty:
 		_feed_timer -= delta
 		if _feed_timer <= 0.0:
 			_feed_timer = 1.0 / FEED_RATE
 			_feed_dirty = false
-			_kitnet.rpc_roster(self, &"_remote_feed", [feed])
+			_kitnet.rpc_roster(self, &"_remote_feed", [feed, hands_z])
+	# A linha-guia pisca com as mãos passando dela.
+	var danger := hands_in_danger()
+	_guide_mat.albedo_color = Color(1.0, 0.15, 0.1, 0.4 + 0.6 * absf(sin(Time.get_ticks_msec() / 80.0))) \
+			if danger else Color(1.0, 0.15, 0.1, 0.85)
 	_view_x = lerpf(_view_x, _work_x(), clampf(6.0 * delta, 0.0, 1.0))
 	_update_paper()
 
@@ -303,11 +343,12 @@ func _start_swing(at := 0.0) -> void:
 	get_tree().create_timer(stats.swing_down + stats.swing_up).timeout.connect(func(): _busy = false)
 
 
-## Host: o clique de quem opera (`at` = quanto a folha passou da lâmina, m).
-func _cut(peer: int, at: float) -> void:
+## Host: o clique de quem opera (`at` = quanto a folha passou da lâmina, m; `hz` = onde estão as
+## mãos).
+func _cut(peer: int, at: float, hz: float) -> void:
 	if _busy or peer != operator or not has_sheet():
 		return
-	_pull(at, [peer])
+	_pull(at, hz, [peer])
 
 
 ## Host: [E] no pegador da alavanca. Com alguém operando, quem puxa é outro jogador, e o corte vai
@@ -318,7 +359,7 @@ func _press_lever(peer: int) -> void:
 	if operator == 0:
 		_start_swing()
 	elif peer != operator and has_sheet():
-		_pull(_operator_feed(), [operator, peer])
+		_pull(_operator_feed(), hands_z if _is_mine() else _hands_target, [operator, peer])
 
 
 ## Onde o host vê a folha de quem opera: a dele mesmo, ou a última posição que chegou.
@@ -328,24 +369,32 @@ func _operator_feed() -> float:
 
 ## Host: a alavanca desce, e o corte acontece quando a lâmina chega embaixo (se quem opera não
 ## saiu antes). `tell` = quem fica sabendo como saiu.
-func _pull(at: float, tell: Array) -> void:
-	at = clampf(at, 0.0, feed_max())
+func _pull(at: float, hz: float, tell: Array) -> void:
+	at = clampf(at, -FEED_BACK, feed_max())
+	hz = _clamp_hands(hz)
 	_start_swing(at)
-	if at < 0.001:
-		return
 	var op := operator
 	get_tree().create_timer(stats.swing_down).timeout.connect(func():
 		if operator == op and has_sheet():
-			_resolve_cut(at, tell))
+			_resolve_cut(maxf(at, 0.0), hz, tell))
 
 
 ## Host: a lâmina chegou embaixo. Sai a tira que passou dela, da frente do que sobrou (`cut_pos`)
 ## até o corte. Se sobrou só a última peça (no máximo um resto pequeno de outra na frente dela),
 ## ela já está solta e sai junto, numa segunda tira; com um resto maior, ela espera alguém aparar
-## no vão. Nas linhas, as tiras vão para a pilha; nas colunas, viram as notas do montinho.
-func _resolve_cut(at: float, tell: Array) -> void:
+## no vão. Nas linhas, as tiras vão para a pilha; nas colunas, viram as notas do montinho. A
+## folha treme conforme as mãos (o corte sai um pouco para lá ou para cá), e o que delas passou da
+## linha da lâmina vai embora.
+func _resolve_cut(at: float, hz: float, tell: Array) -> void:
 	var op := operator
-	var cut := minf(cut_pos + at, _length())
+	var chopped := _chopped(hz)
+	if at < 0.001:
+		# Sem folha passando da lâmina, o golpe não corta papel, mas pega as mãos embaixo dela.
+		if chopped != 0:
+			_send_result([op], _chop_hands(chopped))
+		return
+	var shake := _shake(at, hz)
+	var cut := minf(cut_pos + maxf(at + randf_range(-shake, shake), 0.002), _length())
 	var spans: Array[Vector2] = [Vector2(cut_pos, cut)]
 	var last := _count() - 1
 	var only_last := not _out(last, cut) and range(last).all(func(i): return _out(i, cut))
@@ -394,6 +443,11 @@ func _resolve_cut(at: float, tell: Array) -> void:
 		var direct := _next_phase()
 		if direct["bills"] > 0 or direct["ruined"] > 0:
 			text = _bills_text(direct)
+	if chopped != 0:
+		var ouch := _chop_hands(chopped)
+		if not ouch.is_empty():
+			_send_result([op], ouch + ("\n" + text if not text.is_empty() else ""))
+			tell = tell.filter(func(peer): return peer != op)
 	_send_result(tell, text)
 	_send_state()
 	if not has_sheet():
@@ -551,6 +605,40 @@ func drop_peer(peer: int) -> void:
 		_send_state()
 
 
+## Host: a lâmina pegou as mãos de quem opera (as duas na mesma altura da folha: perdem as mesmas
+## partes, `lost`). O que elas ainda tinham cai na mesa, na frente da lâmina, como item. Devolve o
+## aviso para quem opera.
+func _chop_hands(lost: int) -> String:
+	var player: Node = _kitnet.players.get(operator)
+	if player == null:
+		return ""
+	var fingers := 0
+	var hands := 0
+	for i in 2:
+		var before: int = player.injury[i]
+		if before & HAND_LOST:
+			continue
+		var side := 1 if i == 0 else -1
+		var spot := Vector3(_work_x() + side * _work_half_width(), SHEET_Y + 0.04, CUT_Z + 0.04)
+		if lost & HAND_LOST:
+			hands += 1
+			_kitnet.items.spawn("hand", global_transform * Transform3D(Basis.IDENTITY, spot),
+					{"owner": player.player_name, "side": i, "lost": before})
+		else:
+			for d in DIGIT_Z.size():
+				if lost & (1 << d) and not before & (1 << d):
+					fingers += 1
+					var at := spot + Vector3(-side * 0.025 * d, 0.0, 0.0)
+					_kitnet.items.spawn("finger", global_transform * Transform3D(Basis.IDENTITY, at),
+							{"owner": player.player_name, "side": i, "digit": player.DIGITS[d]})
+		player.injure(i, lost)
+	if hands > 0:
+		return "OUCH! You lost %s!" % ("both hands" if hands == 2 else "a hand")
+	if fingers > 0:
+		return "OUCH! You lost %d finger%s!" % [fingers, "" if fingers == 1 else "s"]
+	return ""
+
+
 func send_state_to(peer: int) -> void:
 	_sync.rpc_id(peer, pieces_left, phase, cut_pos, sheet_wet, operator, stack_count, top_strip)
 
@@ -603,19 +691,104 @@ func is_operated_by(player: Node) -> bool:
 	return operator != 0 and operator == player.name.to_int()
 
 
-## Quem opera mexeu o mouse: a folha anda (pixels para baixo = a folha vem para quem opera,
-## passando da lâmina). `fine` (Shift segurado) anda bem menos, para acertar a marca.
+## Quem opera mexeu o mouse (pixels para baixo = para quem opera, passando da lâmina). Com as mãos
+## em cima da folha, elas empurram (ou puxam) a folha junto; fora dela, andam sozinhas pela mesa
+## até encostar e começar a empurrar (dá para empurrar pela ponta de trás). A folha vai de
+## FEED_BACK atrás da lâmina até feed_max(). `fine` (Shift segurado) anda bem menos, para acertar
+## a marca.
 func slide(pixels: float, fine := false) -> void:
 	if _locked():
 		return
-	var per_pixel := FEED_PER_PIXEL * (FEED_FINE if fine else 1.0)
-	feed = clampf(feed + pixels * per_pixel, 0.0, feed_max())
+	var move := pixels * FEED_PER_PIXEL * (FEED_FINE if fine else 1.0)
+	if _on_paper(feed, hands_z):
+		var moved := clampf(feed + move, -FEED_BACK, feed_max()) - feed
+		feed += moved
+		hands_z = _clamp_hands(hands_z + moved)
+	else:
+		hands_z = _clamp_hands(hands_z + move)
 	_feed_dirty = true
 
 
-## Põe a folha passando `amount` m da lâmina (testes).
+## Põe a folha passando `amount` m da lâmina (testes), com as mãos indo junto.
 func slide_to(amount: float) -> void:
-	slide((amount - feed) / FEED_PER_PIXEL)
+	var moved := clampf(amount, -FEED_BACK, feed_max()) - feed
+	feed += moved
+	hands_z = _clamp_hands(hands_z + moved)
+	_feed_dirty = true
+
+
+## Quem opera, segurando o botão direito, mexeu o mouse: as mãos andam sozinhas pela mesa (pixels
+## para baixo = para a lâmina), para qualquer lugar de HANDS_RANGE, e a folha fica onde está.
+func regrip(pixels: float, fine := false) -> void:
+	if _locked():
+		return
+	hands_z = _clamp_hands(hands_z + pixels * FEED_PER_PIXEL * (FEED_FINE if fine else 1.0))
+	_feed_dirty = true
+
+
+## Põe as mãos com a frente delas `gap` m atrás da linha da lâmina (negativo: passando dela), sem
+## mexer a folha (testes).
+func place_hands(gap: float) -> void:
+	hands_z = _clamp_hands(CUT_Z - gap - HAND_FRONT)
+	_feed_dirty = true
+
+
+func _clamp_hands(z: float) -> float:
+	return clampf(z, CUT_Z + HANDS_RANGE.x, CUT_Z + HANDS_RANGE.y)
+
+
+## Onde as mãos pegam quando chegam (alguém começou a operar, ou a pilha girou): na borda de trás
+## do que está na lâmina, com a folha encostada nela.
+func _rest_hands_z() -> float:
+	return _clamp_hands(_back_z(0.0) + HANDS_REST)
+
+
+## z da borda de trás do que está na lâmina, com ele passando `at` m dela.
+func _back_z(at: float) -> float:
+	return CUT_Z + at - (_length() - cut_pos)
+
+
+## Se as mãos (o pulso em `hz`) estão em cima do que está na lâmina, passando `at` dela: pelo menos
+## PAPER_TOUCH da luva por cima do papel.
+func _on_paper(at: float, hz: float) -> bool:
+	return hz + HAND_FRONT >= _back_z(at) + PAPER_TOUCH and hz - HAND_BACK <= CUT_Z + at - PAPER_TOUCH
+
+
+## Quanto a folha treme no golpe agora (m, para cada lado).
+func shake_now() -> float:
+	return _shake(feed, hands_z)
+
+
+## O tremor da folha no golpe: pela distância das mãos até a lâmina; sem mão em cima, ou só
+## segurando a tira que sai (na frente da lâmina), ela fica solta. Mais os dedos que faltam a quem
+## opera.
+func _shake(at: float, hz: float) -> float:
+	var gap := CUT_Z - (hz + HAND_FRONT)
+	var loose := SHAKE_MAX
+	if _on_paper(at, hz) and gap > -(HAND_FRONT + HAND_BACK):
+		loose = SHAKE_MAX * clampf((gap - FIRM_GAP) / (LOOSE_GAP - FIRM_GAP), 0.0, 1.0)
+	var player: Node = _kitnet.players.get(operator)
+	return loose + FINGER_SHAKE * (player.fingers_missing() if player != null else 0)
+
+
+## O que o golpe leva das mãos com o pulso em `hz` (bits de player.DIGITS e HAND_LOST; 0 = nada):
+## o que passou da linha da lâmina. Passando o meio da mão, vai ela inteira; com a mão toda na
+## frente da lâmina (segurando a tira que sai), a lâmina desce atrás dela.
+func _chopped(hz: float) -> int:
+	if hz - HAND_BACK > CUT_Z:
+		return 0
+	if hz > CUT_Z:
+		return HAND_LOST
+	var lost := 0
+	for d in DIGIT_Z.size():
+		if hz + DIGIT_Z[d] > CUT_Z:
+			lost |= 1 << d
+	return lost
+
+
+## Se o golpe agora pegaria as mãos de quem opera.
+func hands_in_danger() -> bool:
+	return operator != 0 and has_sheet() and _chopped(hands_z) != 0
 
 
 ## Clique de quem opera. A folha já para aqui, sem esperar o host; o golpe que vem dele renova a
@@ -625,9 +798,9 @@ func request_cut() -> void:
 		return
 	_lock_for_swing()
 	if multiplayer.is_server():
-		_cut(multiplayer.get_unique_id(), feed)
+		_cut(multiplayer.get_unique_id(), feed, hands_z)
 	else:
-		_rpc_cut.rpc_id(1, feed)
+		_rpc_cut.rpc_id(1, feed, hands_z)
 
 
 func request_leave() -> void:
@@ -638,9 +811,9 @@ func request_leave() -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
-func _rpc_cut(at: float) -> void:
+func _rpc_cut(at: float, hz: float) -> void:
 	if multiplayer.is_server():
-		_cut(multiplayer.get_remote_sender_id(), at)
+		_cut(multiplayer.get_remote_sender_id(), at, hz)
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -661,6 +834,7 @@ func _leave(peer: int) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _sync(pieces: int, new_phase: Phase, cut: float, wet: bool, op: int, stack: int, top: Vector2) -> void:
 	var to_columns := new_phase == Phase.COLUMNS and phase != Phase.COLUMNS
+	var regrab := op != operator or new_phase != phase
 	pieces_left = pieces
 	phase = new_phase
 	cut_pos = cut
@@ -676,9 +850,13 @@ func _sync(pieces: int, new_phase: Phase, cut: float, wet: bool, op: int, stack:
 		_stack_shift = -STACK_GAP
 		create_tween().tween_property(self, "_stack_shift", 0.0, PILE_SLIDE) \
 				.set_delay(STRIP_NEXT + STRIP_TO_PILE).set_trans(Tween.TRANS_SINE)
-	# Cada mudança (pôs a folha, cortou, entrou, saiu) começa com a folha na lâmina.
+	# Cada mudança (pôs a folha, cortou, entrou, saiu) começa com a folha na lâmina. As mãos pegam
+	# de novo por trás com outra pessoa ou outra fase; senão ficam onde estavam.
 	feed = 0.0
 	_feed_target = 0.0
+	if regrab:
+		hands_z = _rest_hands_z()
+		_hands_target = hands_z
 	_guide.visible = op != 0
 	var now: Node = _kitnet.players.get(op) if op != 0 else null
 	if now != _operating_player:
@@ -721,10 +899,11 @@ func _lock_for_swing() -> void:
 
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
-func _remote_feed(amount: float) -> void:
+func _remote_feed(amount: float, hz: float) -> void:
 	# Durante o golpe a folha está parada: uma posição atrasada, de antes do clique, não vale.
 	if multiplayer.get_remote_sender_id() == operator and not _locked():
-		_feed_target = clampf(amount, 0.0, feed_max())
+		_feed_target = clampf(amount, -FEED_BACK, feed_max())
+		_hands_target = _clamp_hands(hz)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -926,7 +1105,16 @@ func _paint_paper(mat: StandardMaterial3D) -> bool:
 
 ## z da frente do que está na lâmina (a folha, ou a pilha na fase das colunas).
 func _front_z() -> float:
-	return CUT_Z + feed + (_stack_shift if phase == Phase.COLUMNS else 0.0)
+	return CUT_Z + feed + (_stack_shift if phase == Phase.COLUMNS else 0.0) + _tremor()
+
+
+## A folha (e as mãos) tremendo nas mãos de quem opera, para todos verem quanto o golpe vai
+## tremer. No golpe ela fica parada.
+func _tremor() -> float:
+	if operator == 0 or _locked():
+		return 0.0
+	var t := Time.get_ticks_msec() / 1000.0
+	return shake_now() * 0.5 * sin(t * 29.0) * sin(t * 7.3)
 
 
 ## x do meio do que está na lâmina, e a meia largura dele.
@@ -977,6 +1165,7 @@ func _build_guide() -> void:
 	mat.albedo_color = Color(1.0, 0.15, 0.1, 0.85)
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	quad.material = mat
+	_guide_mat = mat
 	_guide = MeshInstance3D.new()
 	_guide.name = "CutGuide"
 	_guide.mesh = quad
@@ -987,14 +1176,13 @@ func _build_guide() -> void:
 	add_child(_guide)
 
 
-## Onde fica a luva de quem opera (side 1 = direita, -1 = esquerda): segurando a folha (ou a
-## pilha) pelos lados, atrás da lâmina, com os dedos para dentro em cima do papel (os braços vêm de
-## fora e não tapam a linha de corte); anda junto com ela.
+## Onde fica a luva de quem opera (side 1 = direita, -1 = esquerda): nos lados da folha (ou da
+## pilha), em `hands_z`, com os dedos para dentro e o polegar para a lâmina (os braços vêm de fora
+## e não tapam a linha de corte). Em cima da folha, treme junto com ela.
 func hand_transform(side: int) -> Transform3D:
-	var back := _front_z() - (_length() - cut_pos)
-	var z := clampf(back + 0.05, back + 0.02, CUT_Z - 0.035)
+	var z := hands_z + (_tremor() if _on_paper(feed, hands_z) else 0.0)
 	var local := Transform3D(Basis(Vector3.UP, side * PI / 2),
-			Vector3(_work_x() + side * (_work_half_width() + 0.06), SHEET_Y + 0.01, z))
+			Vector3(_work_x() + side * maxf(_work_half_width() + 0.06, HANDS_MIN_SPREAD), SHEET_Y + 0.01, z))
 	return global_transform * local
 
 

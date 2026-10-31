@@ -62,6 +62,8 @@ var model: Node3D
 var skeleton: Skeleton3D
 ## Índice 0 = direita, 1 = esquerda (a mesma ordem das luvas do player.gd).
 var gloves: Array[Node3D] = []
+## A mão que o boneco perdeu na guilhotina (a luva dela não aparece mais).
+var glove_lost: Array[bool] = [false, false]
 var accessory: Node3D
 ## Último giro de cada coxa e joelho (radianos; para o teste e para quem quiser ler).
 var leg_angles := [0.0, 0.0]
@@ -256,7 +258,7 @@ func _pose_arms(swing: float, air: float) -> void:
 		_turn(_bones["UpperArm." + tag], flail * Basis.from_euler(Vector3(fwd, 0.0, (ARM_SPLAY + air * 1.4 + out) * side)))
 		var elbow := ELBOW_REST + maxf(0.0, -fwd) * 0.8 + air * 0.3
 		_turn(_bones["Forearm." + tag], Basis(Vector3.RIGHT, -elbow))
-		gloves[i].visible = true
+		gloves[i].visible = not glove_lost[i]
 
 
 ## IK de dois ossos: a mão do braço `i` vai até `target` (no mundo), com o cotovelo apontando

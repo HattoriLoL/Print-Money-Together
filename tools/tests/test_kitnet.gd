@@ -695,7 +695,7 @@ func _test_guillotine(kitnet: Node3D, player: CharacterBody3D) -> void:
 	# Na marca: a linha sai reta. O corte só acontece com a lâmina embaixo, e do clique até a
 	# alavanca voltar a folha fica parada. A tira (2 notas ainda grudadas) vai para a pilha do lado
 	# da lâmina: só com o corte vertical, no fim, elas viram notas.
-	g.slide_to(g.ideal_cut() - g.cut_pos)
+	_feed_to(g, g.ideal_cut() - g.cut_pos)
 	var feed_at: float = g.feed
 	player._input(_left_click())
 	await create_timer(stats.swing_down * 0.4).timeout
@@ -719,7 +719,7 @@ func _test_guillotine(kitnet: Node3D, player: CharacterBody3D) -> void:
 	# 5 mm depois da marca: a linha sai torta, e a de trás perde um pedaço da frente. Esse corte
 	# separa a última linha, que sai junto (segunda tira). Acabaram as linhas: a pilha gira e vai
 	# para a lâmina.
-	g.slide_to(g.ideal_cut() - g.cut_pos + 0.005)
+	_feed_to(g, g.ideal_cut() - g.cut_pos + 0.005)
 	await _cut_click(player, stats.swing_down + 0.15)
 	_check(g._strips[0].visible and g._strips[1].visible, "a última linha sai junto, numa segunda tira")
 	await create_timer(swing - stats.swing_down - 0.15).timeout
@@ -733,7 +733,7 @@ func _test_guillotine(kitnet: Node3D, player: CharacterBody3D) -> void:
 
 	# Corte vertical 4 mm depois da marca: separa as colunas de todas as tiras de uma vez (a de trás
 	# sai junto), e o erro dele soma no de cada linha: as 6 notas saem tortas.
-	g.slide_to(g.ideal_cut() - g.cut_pos + 0.004)
+	_feed_to(g, g.ideal_cut() - g.cut_pos + 0.004)
 	await _cut_click(player, stats.swing_down + 0.15)
 	_check(g._strips[0].visible and g._strips[1].visible, "as duas colunas saem, cada uma para o montinho")
 	await create_timer(swing - stats.swing_down - 0.15).timeout
@@ -758,10 +758,10 @@ func _test_guillotine(kitnet: Node3D, player: CharacterBody3D) -> void:
 	await create_timer(0.3).timeout
 	g.zone.interact(player)
 	await physics_frame
-	g.slide_to(g.ideal_cut() - g.cut_pos)
+	_feed_to(g, g.ideal_cut() - g.cut_pos)
 	await _cut_click(player, swing)
 	_check(g.stack_count == 1 and pile.data["count"] == total, "a linha da folha seca foi para a pilha")
-	g.slide_to(0.03)
+	_feed_to(g, 0.03)
 	await _cut_click(player, swing)
 	_check(g.stack_count == 1 and g.pieces_left == 1, "cortar no meio da linha estraga ela (não vai para a pilha)")
 	# [E] sai, e a folha e a pilha ficam na mesa.
@@ -779,7 +779,7 @@ func _test_guillotine(kitnet: Node3D, player: CharacterBody3D) -> void:
 	g.zone.interact(player)
 	await physics_frame
 	_check(player.operating == g, "voltou a operar")
-	g.slide_to(g.ideal_cut() - g.cut_pos)
+	_feed_to(g, g.ideal_cut() - g.cut_pos)
 	var stranger := Node.new()
 	_check(g._lever_prompt(player) == "" and g._lever_prompt(stranger).begins_with("[E] Pull the lever"),
 			"o pegador da alavanca é para outro jogador puxar")
@@ -790,7 +790,7 @@ func _test_guillotine(kitnet: Node3D, player: CharacterBody3D) -> void:
 	await create_timer(swing - stats.swing_down - 0.15).timeout
 	_check(g.phase == g.Phase.COLUMNS and g.stack_count == 2, "outro jogador aparou, e as 2 linhas boas foram para o corte vertical")
 	# Corte vertical na marca: as 4 notas saem perfeitas e somam no mesmo montinho sem borrar.
-	g.slide_to(g.ideal_cut() - g.cut_pos)
+	_feed_to(g, g.ideal_cut() - g.cut_pos)
 	await _cut_click(player, swing)
 	_check(pile.data["count"] == total + 4 and pile.data["smudged"] == total and pile.data["crooked"] == total,
 			"na marca, as notas da folha seca saem perfeitas e somam no montinho sem borrar")
@@ -819,11 +819,132 @@ func _test_guillotine(kitnet: Node3D, player: CharacterBody3D) -> void:
 	player._drop_held()
 	await create_timer(0.5).timeout
 
+	# Mãos: andam livres pela mesa. Pegando pela borda de trás a folha treme; o botão direito anda só
+	# com as mãos; perto da lâmina ela fica firme; o que passar da linha da lâmina vai embora.
+	player.global_position = stand
+	await physics_frame
+	items.give(1, "sheet", {"wet": false})
+	await create_timer(0.3).timeout
+	g.zone.interact(player)
+	await physics_frame
+	_check(g._on_paper(g.feed, g.hands_z) and not g.hands_in_danger() and g.shake_now() > 0.002,
+			"pega a folha pela borda de trás: seguro, mas ela treme (%.1f mm)" % (g.shake_now() * 1000.0))
+	var feed_before: float = g.feed
+	var hands_before: float = g.hands_z
+	player._input(_right_button(true))
+	player._input(_mouse_motion(Vector2(0, 300)))
+	player._input(_right_button(false))
+	_check(g.hands_z > hands_before + 0.03 and g.feed == feed_before, "com o botão direito, só as mãos andam")
+	player._input(_mouse_motion(Vector2(0, 100)))
+	_check(g.feed > feed_before, "com as mãos em cima, o mouse empurra a folha")
+	_feed_to(g, g.ideal_cut() - g.cut_pos)
+	_check(g.shake_now() == 0.0 and not g.hands_in_danger(), "com as mãos perto da lâmina, a folha fica firme")
+	await _cut_click(player, swing)
+	_check(player.fingers_missing() == 0 and g.stack_count == 1, "mãos perto, mas atrás da lâmina: corte sem susto")
+	# Sobrou pouca folha atrás da lâmina. Empurrando com as mãos onde estão, o polegar passaria da
+	# linha; então as mãos saem da folha pelo botão direito, empurram pela ponta de trás e voltam
+	# para perto da lâmina sem mexer nela.
+	_check(g._chopped(g.hands_z + (g.ideal_cut() - g.cut_pos)) != 0, "empurrar a folha curta com as mãos onde estão levaria os dedos")
+	player._input(_right_button(true))
+	player._input(_mouse_motion(Vector2(0, -1200)))
+	player._input(_right_button(false))
+	_check(not g._on_paper(g.feed, g.hands_z) and g.feed == 0.0, "as mãos saem da folha, para trás dela")
+	hands_before = g.hands_z
+	player._input(_mouse_motion(Vector2(0, 60)))
+	_check(g.feed == 0.0 and g.hands_z > hands_before, "fora da folha, o mouse anda só com as mãos")
+	for i in 30:
+		player._input(_mouse_motion(Vector2(0, 20)))
+	_check(g.feed > 0.02 and g._on_paper(g.feed, g.hands_z), "encostando, as mãos empurram a folha pela ponta (%.3f m)" % g.feed)
+	g.slide_to(g.ideal_cut() - g.cut_pos)
+	_check(not g.hands_in_danger() and g.shake_now() > 0.001,
+			"pela ponta, a última linha chega na marca sem perigo, mas tremendo (%.1f mm)" % (g.shake_now() * 1000.0))
+	feed_before = g.feed
+	player._input(_right_button(true))
+	player._input(_mouse_motion(Vector2(0, (g.CUT_Z - 0.01 - g.HAND_FRONT - g.hands_z) / g.FEED_PER_PIXEL)))
+	player._input(_right_button(false))
+	_check(g.feed == feed_before and g.shake_now() == 0.0 and not g.hands_in_danger(),
+			"as mãos voltam para perto da lâmina sem mexer a folha: firme")
+	await _cut_click(player, swing)
+	_check(player.fingers_missing() == 0 and g.phase == g.Phase.COLUMNS and g.stack_count == 3, "a última linha saiu sem susto")
+	# Corte vertical com o polegar e o indicador passando da linha: o golpe leva os dois, das duas mãos.
+	g.slide_to(g.ideal_cut() - g.cut_pos)
+	g.place_hands(-0.022)
+	_check(g.hands_in_danger(), "com os dedos passando da linha, a guilhotina avisa")
+	await _shot("18d_guilhotina_dedos_na_linha")
+	await _cut_click(player, swing)
+	var kinds := preload("res://scripts/items/item_kinds.gd")
+	var fingers: Array = items.items.values().filter(func(it): return it.kind == "finger")
+	_check(player.injury[0] == 0b11 and player.injury[1] == 0b11 and player.fingers_missing() == 4,
+			"o golpe levou o polegar e o indicador das duas mãos")
+	_check(fingers.size() == 4 and kinds.label(fingers[0]).begins_with(player.player_name),
+			"os 4 dedos caíram na mesa como itens (%s)" % (kinds.label(fingers[0]) if fingers.size() > 0 else "nenhum"))
+	var glove: MeshInstance3D = player._hands[0]
+	_check(not glove.get_node("Hand_R_Thumb").visible and glove.get_node("Hand_R_StumpThumb").visible
+			and glove.get_node("Hand_R_Middle").visible and not glove.get_node("Hand_R_StumpMiddle").visible,
+			"a luva fica sem o polegar e o indicador, com o curativo no lugar")
+	await create_timer(0.3).timeout
+	# Outra folha: sem dedos ela treme mesmo segurando perto; e o golpe sem papel passando da lâmina
+	# não corta nada, mas pega a mão que estiver embaixo dela.
+	items.give(1, "sheet", {"wet": false})
+	await create_timer(0.3).timeout
+	g.zone.interact(player)
+	await physics_frame
+	g.place_hands(0.01)
+	_check(is_equal_approx(g.shake_now(), 4 * g.FINGER_SHAKE), "sem dedos, a folha treme mesmo segurando perto")
+	g.place_hands(-0.06)
+	await _cut_click(player, swing)
+	var hands: Array = items.items.values().filter(func(it): return it.kind == "hand")
+	_check(player.hands_left() == 0 and hands.size() == 2 and g.pieces_left == stats.rows_per_sheet,
+			"sem papel passando, o golpe não corta a folha, mas leva as mãos que estavam embaixo da lâmina")
+	g.request_leave()
+	await create_timer(0.4).timeout
+	_check(not glove.get_node("Hand_R_Glove").visible and glove.get_node("Hand_R_StumpWrist").visible
+			and not player.character.gloves[0].visible, "sem a mão: curativo na ponta da manga, e o boneco sem a luva")
+	await _look(player, Vector3(2.62, 0, -1.4), Vector3(2.3, 0.78, -1.75), "19c_dedos_na_mesa")
+	# Sem as duas mãos a resma não vem, e o que está na mão escorrega andando.
+	player.global_position = stand
+	await physics_frame
+	var ream: Node = items.spawn("ream", Transform3D(Basis.IDENTITY, stand + Vector3(0.0, 0.3, 0.4)))
+	await create_timer(0.3).timeout
+	_check(ream.get_prompt(player) == "Needs both hands to carry", "a resma pede as duas mãos")
+	items.request_pickup(ream.id)
+	await create_timer(0.3).timeout
+	_check(player.held_item() == null, "sem uma das mãos, a resma não vem")
+	items.consume(ream)
+	var slipping: Node = items.give(1, "sheet", {"wet": false})
+	await create_timer(0.3).timeout
+	seed(5)
+	var steps := 0
+	while player.held_item() != null and steps < 400:
+		player._maybe_slip(0.1, 2.0)
+		steps += 1
+	_check(player.held_item() == null, "sem dedos, o que está na mão escorrega andando (%d passos de 0,1 s)" % steps)
+	await physics_frame
+	for it in fingers + hands + [slipping]:
+		items.consume(it)
+	player.heal()
+	_check(player.fingers_missing() == 0 and glove.get_node("Hand_R_Thumb").visible and glove.get_node("Hand_R_Glove").visible
+			and not glove.get_node("Hand_R_StumpThumb").visible, "mãos de volta (partida nova)")
+	await create_timer(0.3).timeout
+
 
 ## Clique de quem opera (desce a alavanca) e espera ela voltar.
 func _cut_click(player: CharacterBody3D, swing: float) -> void:
 	player._input(_left_click())
 	await create_timer(swing).timeout
+
+
+## Põe a folha passando `amount` m da lâmina e as mãos firmes logo atrás dela (sem tremor).
+func _feed_to(g: Node3D, amount: float) -> void:
+	g.slide_to(amount)
+	g.place_hands(0.01)
+
+
+func _right_button(pressed: bool) -> InputEventMouseButton:
+	var button := InputEventMouseButton.new()
+	button.button_index = MOUSE_BUTTON_RIGHT
+	button.pressed = pressed
+	return button
 
 
 func _left_click() -> InputEventMouseButton:

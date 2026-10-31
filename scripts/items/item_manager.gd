@@ -104,6 +104,8 @@ func _pickup(peer: int, id: int) -> void:
 	var player: Node3D = _kitnet.players.get(peer)
 	if item == null or player == null or item.holder != 0 or held_by(peer) != null:
 		return
+	if item.kind in ItemKinds.TWO_HANDED and player.hands_left() < 2:
+		return
 	if player.global_position.distance_to(item.global_position) > REACH:
 		return
 	_set_holder(id, peer, item.global_transform, Vector3.ZERO, Vector3.ZERO)

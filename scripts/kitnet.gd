@@ -107,6 +107,8 @@ func _client_ready(player_name: String) -> void:
 	items.send_all_to(id)
 	for station in get_tree().get_nodes_in_group("station"):
 		station.send_state_to(id)
+	for other: int in roster:
+		players[other].send_injury_to(id)
 	_register(id, player_name)
 
 

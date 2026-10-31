@@ -8,6 +8,10 @@ extends RefCounted
 ##            data.crooked = quantas saíram tortas da guilhotina, data.worth = quanto o monte
 ##            vale em notas perfeitas (sem a chave: count), data.top_cut = o pedaço da folha que
 ##            virou a nota de cima, se ela saiu torta (Rect2 na textura da folha; vazio = reta)
+##   "finger" um dedo que a guilhotina levou (a peça da luva do hands.glb); data.owner = de quem,
+##            data.side = 0 direita / 1 esquerda, data.digit = qual (player.DIGITS)
+##   "hand"   a mão inteira que a guilhotina levou: a luva com os dedos que ainda tinha;
+##            data.owner, data.side e data.lost = os dedos que já tinham ido antes (bits)
 ##
 ## As texturas saem do art_source/paper_textures.py (assets/textures/).
 
@@ -20,6 +24,12 @@ const REAM_WRAPPER := preload("res://assets/textures/ream_wrapper.png")
 const BILL_FRONT := preload("res://assets/textures/bill_front.png")
 const BILL_FRONT_SMUDGED := preload("res://assets/textures/bill_front_smudged.png")
 const BILL_BACK := preload("res://assets/textures/bill_back.png")
+const HANDS_MODEL := preload("res://assets/models/hands.glb")
+const DIGITS := ["Thumb", "Index", "Middle", "Ring", "Pinky"]
+## Pedaços de luva: o tamanho sai da malha.
+const GLOVE_PIECES := ["finger", "hand"]
+## Só dá para carregar com as duas mãos.
+const TWO_HANDED := ["ream"]
 
 const SIZES := {
 	"ream": Vector3(0.3, 0.052, 0.21),
@@ -29,12 +39,14 @@ const SIZES := {
 ## Espessura de cada nota no montinho (bem mais que o papel de verdade, para o monte aparecer).
 const BILL_THICKNESS := 0.0004
 ## Uma resma de 500 folhas pesa uns 2,5 kg; uma folha A4 de 75 g/m², 5 g.
-const MASS := {"ream": 2.5, "sheet": 0.005, "bills": 0.001}
+const MASS := {"ream": 2.5, "sheet": 0.005, "bills": 0.001, "finger": 0.02, "hand": 0.35}
 ## Atrito, quique e amortecimento do giro de cada tipo.
 const PHYSICS := {
 	"ream": {"friction": 0.8, "bounce": 0.12, "angular_damp": 0.6},
 	"sheet": {"friction": 0.9, "bounce": 0.0, "angular_damp": 1.0},
 	"bills": {"friction": 0.85, "bounce": 0.02, "angular_damp": 0.8},
+	"finger": {"friction": 0.7, "bounce": 0.3, "angular_damp": 0.3},
+	"hand": {"friction": 0.75, "bounce": 0.25, "angular_damp": 0.4},
 }
 ## Ar na folha (ver item.gd, _paper_air). Arrasto da face: 0,5 · ρ · Cd · área (1,2 · 1,2 · 0,062 / 2),
 ## o que dá ~1 m/s de velocidade final caindo deitada. O de lado (pela borda) é bem menor.
@@ -71,6 +83,10 @@ static func label(item: Node) -> String:
 			elif crooked > 0:
 				notes.append("%d crooked" % crooked)
 			return text + (" (%s)" % ", ".join(notes) if not notes.is_empty() else "")
+		"finger":
+			return "%s's %s" % [item.data.get("owner", "Someone"), String(item.data.get("digit", "finger")).to_lower()]
+		"hand":
+			return "%s's %s hand" % [item.data.get("owner", "Someone"), "right" if item.data.get("side", 0) == 0 else "left"]
 	return item.kind
 
 
@@ -105,6 +121,11 @@ static func hand_offset(kind: String, side: int) -> Transform3D:
 ## Monta a malha e a colisão do item (filhos do RigidBody3D).
 static func build(item: RigidBody3D) -> void:
 	var size: Vector3 = SIZES.get(item.kind, Vector3(0.2, 0.2, 0.2))
+	var piece: Node3D = null
+	if item.kind in GLOVE_PIECES:
+		piece = _glove_piece(item)
+		size = piece.get_meta("size")
+		item.continuous_cd = true
 	item.mass = MASS.get(item.kind, 1.0)
 	var phys: Dictionary = PHYSICS.get(item.kind, {})
 	var material := PhysicsMaterial.new()
@@ -117,6 +138,9 @@ static func build(item: RigidBody3D) -> void:
 	var col := CollisionShape3D.new()
 	col.shape = shape
 	item.add_child(col)
+	if piece != null:
+		item.add_child(piece)
+		return
 	var mesh: MeshInstance3D
 	if item.kind == "sheet":
 		item.continuous_cd = true
@@ -136,6 +160,36 @@ static func build(item: RigidBody3D) -> void:
 	item.add_child(mesh)
 	if item.kind == "bills":
 		refresh(item)
+
+
+## Um dedo ou a mão inteira que a guilhotina levou: as peças da luva (hands.glb) do lado certo,
+## centradas no meio delas (o item gira em volta dele). O tamanho vai no meta "size".
+static func _glove_piece(item: RigidBody3D) -> Node3D:
+	var prefix := "Hand_R_" if item.data.get("side", 0) == 0 else "Hand_L_"
+	var names: Array[String] = []
+	if item.kind == "finger":
+		names.append(prefix + String(item.data.get("digit", "Index")))
+	else:
+		names.append(prefix + "Glove")
+		var lost: int = item.data.get("lost", 0)
+		for d in DIGITS.size():
+			if lost & (1 << d) == 0:
+				names.append(prefix + DIGITS[d])
+	var model := HANDS_MODEL.instantiate()
+	var root := Node3D.new()
+	root.name = "Pieces"
+	var box := AABB()
+	for i in names.size():
+		var part: MeshInstance3D = model.find_child(names[i], true, false)
+		var copy := MeshInstance3D.new()
+		copy.mesh = part.mesh
+		root.add_child(copy)
+		box = part.mesh.get_aabb() if i == 0 else box.merge(part.mesh.get_aabb())
+	model.free()
+	for copy: Node3D in root.get_children():
+		copy.position = -box.get_center()
+	root.set_meta("size", box.size)
+	return root
 
 
 ## Atualiza a aparência quando o estado muda (folha secou, o montinho cresceu).

@@ -84,6 +84,8 @@ func apply_mode() -> void:
 func get_prompt(player: Node) -> String:
 	if holder != 0 or player.held_item() != null:
 		return ""
+	if kind in ItemKinds.TWO_HANDED and player.hands_left() < 2:
+		return "Needs both hands to carry"
 	return "[E] Pick up " + ItemKinds.label(self)
 
 

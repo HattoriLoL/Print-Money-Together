@@ -6,7 +6,9 @@ grandes. A cara é de cansado: olhos pequenos de pálpebra caída e olheira, sob
 franzidas, nariz comprido caído, sorrisinho torto e barba por fazer no queixo. Usam moletom com
 capuz (gola de ribana, capuz caído nas costas, bolso canguru), calça com a barra embolada em cima
 do tênis (bico de borracha, cadarço, lingueta e listra vermelha) e luvas amarelas de borracha de
-desenho, com três dedos e o polegar (na primeira pessoa aparecem as do `hands.glb`). O contorno preto e o cel
+desenho, com três dedos e o polegar (na primeira pessoa aparecem as do `hands.glb`). As do
+`hands.glb` vêm em peças (manga, luva, cada dedo e os curativos), para o boneco poder perder dedos
+na guilhotina (ver "Mãos machucadas"). O contorno preto e o cel
 shading vêm do visual do mapa (`docs/visual.md`).
 
 Todos usam o mesmo boneco. A vaga muda a cor do moletom (`Net.PLAYER_COLORS`) e o acessório:
@@ -139,3 +141,23 @@ Os bonecos não travam um no outro como blocos: a colisão dos jogadores é só 
 | Quando vale trombada e o tranco da câmera | `IMPACT_MIN_SPEED`, `CAMERA_KICK` no `player.gd` |
 | Quando derruba, quanto tempo fica caído, intervalo até poder cair de novo | `RAGDOLL_SPEED`, `RAGDOLL_TIME`, `RAGDOLL_COOLDOWN` no `player.gd` |
 | Tamanho, peso e juntas dos ossos de física, tempo para levantar | `RAGDOLL_BONES`, `GETUP_TIME` no `character_rig.gd` |
+
+## Mãos machucadas
+
+A guilhotina pode levar dedos ou a mão inteira de quem opera (`docs/maquinas.md`, "Mãos perto da
+lâmina"). O host decide (`player.injure`) e avisa todo mundo; quem entra depois recebe como as mãos
+estão (`send_injury_to`). Vale até sair da partida (`heal` só numa partida nova e nos testes).
+
+- `player.injury` = [direita, esquerda], um bit por dedo (`DIGITS`: polegar, indicador, médio,
+  anelar e mínimo, da frente para trás na guilhotina) e `HAND_LOST` para a mão inteira.
+- **Luvas:** as peças que foram somem, e aparece o curativo no lugar (`Hand_R_StumpThumb`...; sem a
+  mão, `Hand_R_StumpWrist` na ponta da manga). Sem a mão, o boneco também perde a luva dele
+  (`character_rig.glove_lost`).
+- **Escorregar:** com dedo faltando, andando com algo na mão, ele às vezes escorrega e cai
+  (`SLIP_PER_FINGER` por segundo, por dedo; sem uma mão conta os 5): "It slipped out of your hand!".
+- **Duas mãos:** sem uma delas não dá para pegar a resma (`ItemKinds.TWO_HANDED`).
+- **Guilhotina:** a folha treme mais nas mãos de quem tem dedo faltando.
+
+O `hands.glb` sai do `art_source/blender/hands.py`: cada mão é a manga (`Hand_R`, a raiz) com a
+luva (`Hand_R_Glove`), os dedos (`Hand_R_Thumb`, `_Index`, `_Middle`, `_Ring`, `_Pinky`) e os
+curativos de filhos, todos com a origem no pulso.

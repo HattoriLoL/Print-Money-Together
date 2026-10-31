@@ -26,11 +26,14 @@ func _prompt(player: Node) -> String:
 		return "No paper left"
 	if player.held_item() != null:
 		return "Paper reams: %d left" % stock
+	if player.hands_left() < 2:
+		return "Needs both hands to carry a ream"
 	return "[E] Take a paper ream (%d left)" % stock
 
 
 func _take(peer: int) -> void:
-	if stock <= 0 or _kitnet.items.held_by(peer) != null:
+	var player: Node = _kitnet.players.get(peer)
+	if stock <= 0 or _kitnet.items.held_by(peer) != null or player == null or player.hands_left() < 2:
 		return
 	stock -= 1
 	_kitnet.items.give(peer, "ream")

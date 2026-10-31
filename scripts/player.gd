@@ -23,7 +23,13 @@ extends CharacterBody3D
 ## Operando uma máquina de perto (`operating`, a guilhotina): o boneco fica parado na frente dela,
 ## as luvas vão para onde a máquina manda (todos veem), e no jogador local a câmera vai para a
 ## vista da máquina (outra câmera, que sai da de primeira pessoa e volta para ela), o mouse e o
-## clique vão para a máquina e [E] sai.
+## clique vão para a máquina e [E] sai. Com o botão direito segurado, o mouse mexe só as mãos
+## (na guilhotina, elas andam livres pela mesa, sem levar a folha).
+##
+## Mãos machucadas (`injury`, a guilhotina decide no host): cada mão pode perder dedos ou ela
+## inteira, e as luvas mostram o curativo no lugar. Vale até sair da partida. Com dedo faltando o
+## item na mão escorrega andando (SLIP_PER_FINGER), e sem uma das mãos não dá para pegar o que
+## precisa das duas (ItemKinds.TWO_HANDED).
 ##
 ## Camadas de colisão: 1 = mundo, 2 = jogadores (os itens esbarram neles), 3 = itens,
 ## 4 = zonas de interação. A mira acerta mundo, itens e zonas.
@@ -35,6 +41,12 @@ const OutlineShader := preload("res://shaders/outline.gdshader")
 const CharacterRig := preload("res://scripts/character_rig.gd")
 ## Onde o item fica na frente da câmera, parado.
 const HOLD_REST := Vector3(0.0, -0.25, -0.46)
+## Dedos de cada mão, da frente (o lado do polegar) para trás: os nomes das peças do hands.glb e
+## os bits de `injury`. HAND_LOST é o bit da mão inteira.
+const DIGITS := ["Thumb", "Index", "Middle", "Ring", "Pinky"]
+const HAND_LOST := 1 << 5
+## Com dedo faltando, o item na mão escorrega: chance por segundo andando, por dedo a menos.
+const SLIP_PER_FINGER := 0.015
 ## Segurando [G]: segundos até a força máxima, abaixo de quanto é só soltar, e a velocidade
 ## do arremesso (m/s) da mais fraca à mais forte.
 const THROW_CHARGE_TIME := 0.8
@@ -124,6 +136,10 @@ var _tag: Label3D
 var _hold_zone: Node = null
 ## Luvas: [direita, esquerda].
 var _hands: Array[MeshInstance3D] = []
+## O que cada mão perdeu ([direita, esquerda]): um bit por dedo (DIGITS) e HAND_LOST.
+var injury: Array[int] = [0, 0]
+## Botão direito segurado operando uma máquina: o mouse mexe as mãos.
+var _regripping := false
 ## Balanço do item na mão com o mouse (só no jogador local).
 var _sway := Vector2.ZERO
 ## Força do arremesso sendo carregada, de 0 a 1 (-1 = não está segurando [G]).
@@ -186,8 +202,14 @@ func _input(event: InputEvent) -> void:
 	if not is_local():
 		return
 	if operating != null and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not hud.is_blocking():
+		var fine := Input.is_action_pressed("sprint")
 		if event is InputEventMouseMotion:
-			operating.slide(event.relative.y, Input.is_action_pressed("sprint"))
+			if _regripping:
+				operating.regrip(event.relative.y, fine)
+			else:
+				operating.slide(event.relative.y, fine)
+		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
+			_regripping = event.pressed
 		elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			operating.request_cut()
 		return
@@ -274,6 +296,7 @@ func _physics_process(delta: float) -> void:
 	velocity.z -= push.z
 
 	_update_bob(delta, horizontal.length())
+	_maybe_slip(delta, horizontal.length())
 	_update_interaction(delta)
 	_send_state(delta)
 
@@ -537,10 +560,86 @@ func _build_hands() -> void:
 			elif mat_name == "M_SleeveCuff":
 				hand.set_surface_override_material(i, cuff)
 		if is_local():
-			hand.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			for part in [hand] + hand.get_children():
+				part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(hand)
 		_hands.append(hand)
 	model.free()
+	_show_injury()
+
+
+# --- Mãos machucadas ---------------------------------------------------------------
+
+## Quantos dedos faltam, somando as duas mãos (uma mão perdida conta os 5).
+func fingers_missing() -> int:
+	var count := 0
+	for lost in injury:
+		for d in DIGITS.size():
+			if lost & HAND_LOST or lost & (1 << d):
+				count += 1
+	return count
+
+
+func hands_left() -> int:
+	return injury.filter(func(lost): return lost & HAND_LOST == 0).size()
+
+
+## Host: a mão `hand` (0 = direita, 1 = esquerda) perdeu as partes `lost` (bits de DIGITS e
+## HAND_LOST), somadas ao que ela já tinha perdido. Todo mundo fica sabendo.
+func injure(hand: int, lost: int) -> void:
+	var now := injury[hand] | lost
+	if now == injury[hand]:
+		return
+	get_tree().get_first_node_in_group("kitnet").rpc_roster(self, &"_set_injury", [hand, now])
+	_set_injury(hand, now)
+
+
+## Host: quem entrou depois vê as mãos como estão.
+func send_injury_to(peer: int) -> void:
+	for hand in injury.size():
+		if injury[hand] != 0:
+			_set_injury.rpc_id(peer, hand, injury[hand])
+
+
+## As mãos de volta, inteiras (partida nova e testes).
+func heal() -> void:
+	injury = [0, 0]
+	_show_injury()
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _set_injury(hand: int, lost: int) -> void:
+	if multiplayer.get_remote_sender_id() not in [0, 1]:
+		return
+	injury[hand] = lost
+	_show_injury()
+
+
+## As luvas sem o que foi perdido, com o curativo no lugar; sem a mão, o boneco também perde a
+## luva dele.
+func _show_injury() -> void:
+	for i in _hands.size():
+		var hand := _hands[i]
+		var lost := injury[i]
+		var hand_gone := lost & HAND_LOST != 0
+		hand.get_node(NodePath(hand.name + "_Glove")).visible = not hand_gone
+		hand.get_node(NodePath(hand.name + "_StumpWrist")).visible = hand_gone
+		for d in DIGITS.size():
+			var gone := lost & (1 << d) != 0
+			hand.get_node(NodePath(hand.name + "_" + DIGITS[d])).visible = not gone and not hand_gone
+			hand.get_node(NodePath(hand.name + "_Stump" + DIGITS[d])).visible = gone and not hand_gone
+	if character != null:
+		character.glove_lost.assign([injury[0] & HAND_LOST != 0, injury[1] & HAND_LOST != 0])
+
+
+## Com dedo faltando, andando com algo na mão, às vezes ele escorrega e cai.
+func _maybe_slip(delta: float, speed: float) -> void:
+	var missing := fingers_missing()
+	if missing == 0 or speed < 0.5 or held_item() == null:
+		return
+	if randf() < SLIP_PER_FINGER * missing * delta:
+		_drop_held()
+		hud.show_message("It slipped out of your hand!", 1.6)
 
 
 ## Solta o item na frente do jogador (charge abaixo de THROW_MIN_CHARGE) ou arremessa com a força
@@ -589,7 +688,8 @@ func _start_operating() -> void:
 		_add_outline(_station_cam)
 	hud.set_prompt("")
 	hud.set_carry("")
-	hud.show_hint("Mouse: slide the sheet · Shift: fine · Click: cut · E: leave", 6.0)
+	_regripping = false
+	hud.show_hint("Mouse: push the sheet (hands on it) · Right mouse: move only your hands · Shift: fine · Click: cut · E: leave", 6.0)
 
 
 ## A câmera da vista vai até a máquina operada e volta para a de primeira pessoa quando sai.
