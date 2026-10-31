@@ -117,7 +117,9 @@ Os bonecos não travam um no outro como blocos: a colisão dos jogadores é só 
   outros). Depois de `RAGDOLL_TIME` (1,6 s) ele levanta: a cápsula do jogador desliza até onde os
   quadris pararam (sem atravessar parede) e a animação sai da pose de pano aos poucos
   (`GETUP_TIME`); só então ele volta a andar. Fica `RAGDOLL_COOLDOWN` sem poder cair de novo.
-  - Em primeira pessoa, a câmera vai junto com a cabeça do ragdoll e volta enquanto levanta.
+  - Em primeira pessoa, a câmera vai junto com a cabeça do ragdoll e volta enquanto levanta. Ela
+    vai até lá como uma bolinha (`FALL_CAMERA_RADIUS`, 0,12 m) saindo da cabeça da cápsula e para
+    antes da parede: caindo de cara nela, a cabeça do ragdoll encosta e a câmera entrava.
   - Rede: quem cai é o dono que decide (pela velocidade de quem chegou, que vem pela rede) e avisa
     os outros para cair e para levantar (`_remote_fall`, `_remote_stand`). Cada máquina simula o
     próprio ragdoll, então a queda pode sair um pouco diferente em cada tela; ao levantar, todos

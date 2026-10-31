@@ -21,8 +21,8 @@ extends SceneTree
 ## - empurra-empurra: encostados se afastam, quem vem andando empurra junto e o tronco balança; na
 ##   trombada o peito e a cabeça vêm atrasados, o corpo achata, a câmera dá um tranco e os passos
 ##   vão para o lado do empurrão;
-## - ragdoll parcial: andando não derruba; correndo, quem leva a trombada solta o item, cai e levanta
-##   onde caiu;
+## - ragdoll parcial: andando não derruba; correndo, quem leva a trombada solta o item, cai (a
+##   câmera vai junto sem entrar na parede) e levanta onde caiu;
 ## - com --solo, entra sozinho sem rede (o botão "Play solo") em vez de hospedar;
 ## - com --client, abre uma segunda janela que entra na sala e confere que ela aparece e se mexe.
 ## Prints de alguns pontos de vista na pasta --out (rode com janela, sem --headless).
@@ -387,12 +387,16 @@ func _test_ragdoll(kitnet: Node3D, player: CharacterBody3D) -> void:
 	_check(player.fallen, "correndo, a trombada derruba")
 	_check(player.held_item() == null, "quem cai solta o que segurava")
 	var lowest := 9.0
+	var in_wall := 0
 	for i in 50:
 		await physics_frame
 		lowest = minf(lowest, player.character.ragdoll_hips().y)
+		if _camera_in_wall(player):
+			in_wall += 1
 		if i == 12:
 			await _shot("48_caindo_primeira_pessoa")
 	_check(lowest < 0.45, "caído, os quadris vão ao chão (%.2f m)" % lowest)
+	_check(in_wall == 0, "caindo, a câmera não entra na parede (%d quadros dentro)" % in_wall)
 	var waited := 0.0
 	while player.fallen and waited < 4.0:
 		await physics_frame
@@ -402,6 +406,25 @@ func _test_ragdoll(kitnet: Node3D, player: CharacterBody3D) -> void:
 	_check(slid > 0.3, "levanta onde caiu, para o lado da trombada (%.2f m)" % slid)
 	await create_timer(1.0).timeout
 	_check(player.character.getup >= 1.0 and player._has_control(), "de pé de novo, o jogador volta a andar")
+
+	# Caindo de cara na parede do fundo (z -5): a cabeça do ragdoll vai até ela, a câmera não entra.
+	player.global_position = Vector3(4.2, 0.05, -4.55)
+	player._last_physics_pos = player.global_position
+	player.rotation.y = 0.0
+	player.head.rotation.x = 0.0
+	await physics_frame
+	player._begin_fall(Vector3.FORWARD, 5.0)
+	in_wall = 0
+	for i in 50:
+		await physics_frame
+		if _camera_in_wall(player):
+			in_wall += 1
+		if i == 10:
+			await _shot("53_caindo_na_parede")
+	_check(in_wall == 0, "caindo na parede, a câmera não entra nela (%d quadros dentro)" % in_wall)
+	while player.fallen:
+		await physics_frame
+	await create_timer(1.0).timeout
 
 	# De fora: o corredor cai (sem rede, chamado direto) e levanta.
 	runner._target_position = Vector3(3.6, 0.05, -3.3)
@@ -419,6 +442,23 @@ func _test_ragdoll(kitnet: Node3D, player: CharacterBody3D) -> void:
 	await _shot("52_ragdoll_levantando")
 	runner.queue_free()
 	await physics_frame
+
+
+## A câmera do jogador entrou no cenário? A colisão do cenário é oca (trimesh): entrou se a linha
+## da cabeça da cápsula até ela cruza o cenário, ou se ela está encostada numa superfície (o plano
+## near corta).
+func _camera_in_wall(player: CharacterBody3D) -> bool:
+	var space: PhysicsDirectSpaceState3D = player.get_world_3d().direct_space_state
+	var eye: Vector3 = player.camera.global_position
+	var line := PhysicsRayQueryParameters3D.create(player.head.global_position as Vector3, eye, 1)
+	line.hit_back_faces = true
+	var near := SphereShape3D.new()
+	near.radius = player.camera.near
+	var touch := PhysicsShapeQueryParameters3D.new()
+	touch.shape = near
+	touch.transform = Transform3D(Basis.IDENTITY, eye)
+	touch.collision_mask = 1
+	return not space.intersect_ray(line).is_empty() or not space.intersect_shape(touch, 1).is_empty()
 
 
 ## O outro boneco vem andando em linha reta para cima do jogador, a `speed` m/s, por `frames`.

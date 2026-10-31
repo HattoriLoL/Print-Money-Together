@@ -150,6 +150,7 @@ func _ready() -> void:
 	_build_body()
 	_build_hands()
 	hold_point.position = HOLD_REST
+	_fall_camera_ball.radius = FALL_CAMERA_RADIUS
 	if is_local():
 		_setup_input()
 		camera.make_current()
@@ -275,11 +276,14 @@ func _update_push(delta: float) -> void:
 const RAGDOLL_SPEED := 3.5
 const RAGDOLL_TIME := 1.6
 const RAGDOLL_COOLDOWN := 1.5
+## Raio (m) que a câmera de quem caiu guarda das paredes (o plano near está a 0,05 m).
+const FALL_CAMERA_RADIUS := 0.12
 
 ## Caído (todas as máquinas sabem; quem decide é o dono).
 var fallen := false
 var _fallen_time := 0.0
 var _fall_cooldown := 0.0
+var _fall_camera_ball := SphereShape3D.new()
 
 
 ## Só o dono: alguém veio correndo para cima deste boneco.
@@ -337,14 +341,24 @@ func _update_fall(delta: float) -> void:
 		kitnet.rpc_roster(self, &"_remote_stand")
 
 
-## Câmera de quem caiu: vai junto com a cabeça do ragdoll e volta enquanto levanta.
+## Câmera de quem caiu: vai junto com a cabeça do ragdoll e volta enquanto levanta. Vai até lá
+## como uma bolinha de FALL_CAMERA_RADIUS saindo da cabeça da cápsula, e para antes de entrar na
+## parede (a cabeça do ragdoll pode parar encostada nela ou num batente).
 func _update_fall_camera() -> void:
 	var weight := 1.0 if fallen else 1.0 - smoothstep(0.0, 1.0, character.getup)
 	if weight <= 0.0:
 		return
 	var target: Vector3 = character.ragdoll_head() + Vector3.UP * 0.08 if fallen else character.skeleton.to_global(
 			character.skeleton.get_bone_global_pose(character.skeleton.find_bone("Head")).origin) + Vector3.UP * 0.2
-	camera.global_position = head.global_position.lerp(target, weight)
+	var from := head.global_position
+	var move := (target - from) * weight
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = _fall_camera_ball
+	query.transform = Transform3D(Basis.IDENTITY, from)
+	query.motion = move
+	query.collision_mask = 1
+	var safe: PackedFloat32Array = get_world_3d().direct_space_state.cast_motion(query)
+	camera.global_position = from + move * safe[0]
 
 
 # --- Rede ---------------------------------------------------------------------
