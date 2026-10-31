@@ -131,14 +131,72 @@ O código é `scripts/machines/guillotine.gd`. Os números ficam em
 
 | Na mão | [E] |
 |---|---|
-| Folha impressa | Põe a folha encostada no esquadro, com a primeira linha de notas passando da lâmina. Se ainda estiver molhada, o aviso diz que vai borrar. |
-| Nada | A alavanca desce (0,16 s) e volta (0,4 s). Com folha, corta uma linha: as 2 notas caem no montinho na frente da guilhotina e o resto da folha anda até a lâmina. São 3 cortes por folha. |
+| Folha impressa | Põe a folha encostada no esquadro, com a borda da frente na lâmina, e começa a operar. Se ainda estiver molhada, o aviso diz que vai borrar. |
+| Nada, com folha na mesa | Começa a operar. |
+| Nada, sem folha | A alavanca desce (0,16 s) e volta (0,4 s), à toa. |
 | Outra coisa | Não entra. |
+
+### Operando
+
+Quem opera fica parado na frente da mesa, e só um por vez. Os outros veem "Someone is holding the sheet (pull the red lever to cut for them)".
+
+- **Câmera:** sai da primeira pessoa e vai para cima da mesa (`VIEW_FROM`, `VIEW_AT`, `VIEW_FOV`), quase de cima, para a alavanca e os braços não taparem a linha. É outra câmera (`player._station_cam`, com o contorno), que volta para a de primeira pessoa ao sair (`STATION_CAMERA_TIME`). Ela desliza de lado para acompanhar o que está na lâmina (a folha, ou a pilha de tiras).
+- **Mãos:** as luvas do boneco seguram a folha (ou a pilha) pelos lados, atrás da lâmina, com os dedos para dentro (`hand_transform`), e o braço vai até elas pelo IK. Os outros jogadores também veem.
+- **Alavanca:** fica quase em pé enquanto alguém opera (`OPERATE_ANGLE`), para não tapar a folha.
+- **Mouse:** desliza a folha. Puxando para baixo, ela vem para quem opera e passa da lâmina (`FEED_PER_PIXEL`). Ela passa no máximo uma peça (linha ou coluna) com a margem e uma folga (`feed_max()`, com `FEED_SLACK`), então não dá para passar duas de uma vez. Uma linha-guia vermelha em cima da folha, como o laser das guilhotinas de verdade, mostra onde a lâmina corta.
+- **Shift:** ajuste fino. Segurando, a folha anda `FEED_FINE` (um quarto) do normal, para acertar a marca.
+- **Clique:** desce a alavanca. O corte acontece quando a lâmina chega embaixo (`swing_down`): a tira que passou da lâmina sai e a borda do que sobrou fica na lâmina. Do clique até a alavanca voltar, a folha fica parada em todas as máquinas, e clicar de novo não faz nada.
+- **Golpe:** quando a lâmina bate, toca o som do golpe (`_chop`, feito no próprio código: estalo do papel, pancada na mesa e o metal tinindo) e a câmera dá um tranco (`player.kick_camera`), forte para quem opera e mais fraco para quem está a até `CHOP_KICK_REACH` m.
+- **Outro jogador na alavanca:** o pegador vermelho tem uma zona própria (`Zone_Lever`, filha da alavanca, gira junto). Com alguém operando, outro jogador aperta [E] ali e a alavanca desce com o corte onde quem opera está segurando a folha. Os dois recebem o aviso de como saiu. Sem ninguém operando, o pegador só bate a alavanca. Quem opera sozinho continua cortando com o clique.
+- **[E]:** sai, e a folha e a pilha de tiras ficam na mesa. Cair (trombada) também tira da guilhotina; se for no meio da descida, o corte não acontece. Quando a folha acaba, sai sozinho.
+
+### Duas fases: linhas e colunas
+
+A folha (2 x 3 notas) é cortada como numa gráfica. Uma folha pede **3 cortes**: 2 horizontais e 1 vertical.
+
+1. **Linhas** (`Phase.ROWS`): os cortes horizontais soltam tiras, cada uma com uma linha de notas ainda grudadas lado a lado. Elas ainda não são notas: cada tira gira e pousa numa pilha na parte livre do tapete, à direita da folha (`STACK_X`), já virada para o corte vertical e `STACK_GAP` atrás da lâmina, para não ser cortada junto.
+2. **Colunas** (`Phase.COLUMNS`): quando sai a última linha, a pilha anda até a lâmina (`PILE_SLIDE`). Um corte vertical separa as colunas de todas as tiras de uma vez, e só aí as notas vão para o montinho. A frente da pilha é a borda esquerda da folha.
+
+As duas fases usam a mesma regra (`piece_edges`, `_out`, `_released`), só muda a direção:
+
+- O corte certo é no meio do vão entre duas peças (3 mm; as marcas de corte na margem da folha mostram onde). Cada corte solta uma tira, da frente do que sobrou até a lâmina. Cada peça que veio na tira tem o erro somado das duas pontas dela: sobra de papel além do meio do vão, ou nota comida pelo corte. As margens da folha não contam: a frente da primeira peça e a trás da última podem sobrar.
+- **A última peça sai sozinha:** o corte que deixa só ela na mesa solta também ela, numa segunda tira, porque atrás dela só tem a margem. Ela vale pelo erro da frente. Se na frente dela ainda estiver grudado um resto maior que `ruin_error` de uma peça estragada, ela espera: o corte de aparar no vão solta o retalho e ela juntos.
+- Uma peça com erro maior que `ruin_error` estraga. Cortar fundo numa peça (mais de `ruin_error` de cada lado) também estraga ela, e o resto dela fica grudado na frente da próxima: para não estragar a próxima também, é preciso aparar no vão antes. Uma lasca da frente de uma peça (até `ruin_error`) fica como erro para quando ela sair.
+- Errar para além da marca também atrapalha a peça de trás, que perde um pedaço da frente.
+- Uma linha estragada não vai para a pilha. Uma coluna estragada perde a nota dela em todas as tiras da pilha.
+
+Cada nota vale pelo **erro das quatro bordas**: o da linha dela mais o da coluna. Por isso o corte vertical decide a folha inteira: errar ali entorta (ou estraga) as notas de uma coluna em todas as tiras.
+
+| Erro da nota | Resultado |
+|---|---|
+| Até `perfect_error` (2 mm) | Sai perfeita. |
+| Até `ruin_error` (1 cm) | Sai torta (`crooked`) e vale menos: de `crooked_worth.x` (90%) a `crooked_worth.y` (30%) de uma perfeita, conforme o erro. A nota de cima do montinho mostra o pedaço da folha que ela é de verdade (`top_cut`). |
+| Mais que isso | Estraga e não sai. |
+
+- Com uma coluna só (`bills_per_row = 1`), não tem o que separar: quando sai a última linha, as tiras já viram as notas.
+- As peças não guardam estado: com os cortes sempre andando para trás, `_out(peça, cut_pos)` diz se ela já saiu (ficou para trás no máximo `ruin_error` dela) ou estragou (o corte entrou mais que isso). Cada corte avalia só as peças que saem nele. Só as linhas da pilha ficam guardadas no host (`_rows`, com o erro de cada uma), para somar no corte vertical.
+- Se duas peças viessem na mesma tira (o `feed_max()` não deixa), sairiam grudadas: a primeira leva a outra atrás, a segunda leva a primeira na frente, e as duas estragam.
+- Cada corte avisa quem operou (e quem puxou a alavanca, se foi outro) como saiu. Nas linhas: "Clean cut!", "Crooked cut" ou "Ruined 1 row". No corte vertical, pelas notas: "Clean cut!", "Crooked cut: bills worth 79%" ou "Ruined 2 bills".
+
+### O que aparece na mesa
+
+- **A folha** é um retângulo só, do alto da textura até onde já foi cortada (`cut_pos`), que anda com o `feed`. Ela fica um pouco acima do tampo (`SHEET_Y`), por cima da contra-lâmina de aço, senão o aço tapa o vão bem na linha de corte.
+- **A pilha de tiras** (`_stack`) mostra a tira de cima, girada. Na fase das colunas, ela é o que anda com o `feed`.
+- **As tiras cortadas** (`_strips`, duas: a segunda é a última peça, que sai junto e vai `STRIP_NEXT` s depois) vão para a pilha (girando no caminho), para o montinho (`STRIP_TO_PILE`) ou, sem nota nenhuma, viram retalho: escorregam para a frente, ficam um pouco na mesa e somem (`SCRAP_*`). A pilha só mostra a tira nova quando ela pousa (`_landing`).
+- Todos são o mesmo papel com um pedaço da textura da folha (`_pose_paper`). A versão toon do material guarda uma cópia da escala e do deslocamento da textura, então ela é sincronizada (`Toon.sync`) quando eles mudam.
+- A alavanca é mexida por um tween só (`_tween`). A volta do golpe lê o ângulo de parada a cada quadro, então ela acerta mesmo se quem opera sair no meio (acabou a folha, caiu).
+
+### Rede
+
+O host guarda o estado (a fase, `cut_pos`, quantas peças faltam, a pilha e quem opera) e manda para todos. Quem opera mexe a folha na hora e manda a posição para os outros (`_remote_feed`); o clique trava a folha na hora e leva essa posição para o host, que desce a alavanca em todos (`_swing`, com a posição) e corta quando a lâmina chega embaixo. As tiras saem antes do estado novo (`_strip_fell`), para cada máquina saber de onde elas saíram. Durante o golpe, uma posição atrasada que chegue de antes do clique é ignorada. Quem opera e sai da sala solta a guilhotina.
+
+### Montinho
 
 - O montinho é um item `bills`: os cortes seguintes somam no mesmo enquanto ele estiver parado lá (até `pile_max` notas). Se alguém pegou, ou se ele encheu, nasce outro do lado.
 - Folha cortada molhada dá notas borradas (`smudged`). Por enquanto elas só ficam marcadas; depois vão valer menos ou ser recusadas.
+- `data.crooked` conta as tortas e `data.worth` guarda quanto o monte vale em notas perfeitas (ainda não tem economia; é para quando tiver). O nome mostra as duas marcas: "10 bills (6 smudged, 6 crooked)".
 - `noise()` é o golpe da lâmina, por um instante.
-- Ainda não tem: som, nem cortar várias folhas de uma vez (upgrade).
+- Ainda não tem: cortar várias folhas de uma vez (upgrade).
 
 Peça do modelo que o Godot mexe: `MACHINE_Guillotine_Arm`, com a origem no pivô; a ponta sobe
 girando no Z do Godot (Y local no Blender).
@@ -152,4 +210,4 @@ girando no Z do Godot (Y local no Blender).
 3. Confere que saíram 2 folhas molhadas, gastando papel e toner, e que desligada ela não imprime mais.
 4. Pega uma folha da bandeja e solta no chão.
 5. Confere o `PAPER OUT` sem papel.
-6. Põe uma folha molhada na guilhotina, corta as 3 linhas (6 notas borradas no montinho), corta uma linha de uma folha seca (soma no mesmo montinho sem borrar), confere que a resma não entra e pega o montinho.
+6. Põe uma folha molhada na guilhotina e confere a câmera em cima da mesa, a linha-guia, as luvas na folha e o mouse deslizando a folha. Confere que a folha passa no máximo uma linha da lâmina e que o Shift anda um quarto. Corta na marca (conferindo que o corte espera a lâmina descer, que a folha fica parada durante o golpe, que a tira vai para a pilha e pousa lá, que a câmera dá um tranco, que o que sobrou da folha mostra só a parte certa da textura e que cortar só na horizontal não solta nota) e 5 mm fora dela: a última linha sai junto numa segunda tira, e a pilha de 3 tiras gira e vai para a lâmina, com as luvas segurando ela. O corte vertical 4 mm fora da marca solta as duas colunas: as 6 notas vão para o montinho, todas tortas e valendo menos, com a nota de cima mostrando o corte. Sai sozinho quando a folha acaba, com a alavanca voltando para o ângulo de parada. Depois uma folha seca: corta na marca (a tira vai para a pilha), corta no meio de uma linha (estraga, não vai para a pilha), sai com [E] deixando a folha e a pilha na mesa, volta, e outro jogador puxa a alavanca pelo pegador aparando no vão: sai o retalho da linha estragada e a última linha vai para a pilha. O corte vertical na marca solta 4 notas perfeitas, que somam no mesmo montinho sem borrar. Confere que a resma não entra e pega o montinho.

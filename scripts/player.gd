@@ -20,6 +20,11 @@ extends CharacterBody3D
 ## Quem leva uma trombada de alguém correndo cai (ragdoll parcial, RAGDOLL_*): solta o que
 ## segura, tomba e rola com o tranco, e depois levanta onde caiu. O dono decide e avisa os outros.
 ##
+## Operando uma máquina de perto (`operating`, a guilhotina): o boneco fica parado na frente dela,
+## as luvas vão para onde a máquina manda (todos veem), e no jogador local a câmera vai para a
+## vista da máquina (outra câmera, que sai da de primeira pessoa e volta para ela), o mouse e o
+## clique vão para a máquina e [E] sai.
+##
 ## Camadas de colisão: 1 = mundo, 2 = jogadores (os itens esbarram neles), 3 = itens,
 ## 4 = zonas de interação. A mira acerta mundo, itens e zonas.
 
@@ -59,6 +64,8 @@ const IMPACT_MIN_SPEED := 0.6
 const CAMERA_KICK := 0.02
 ## Acima disso (m/s) o boneco não andou, foi teleportado.
 const TELEPORT_SPEED := 9.0
+## Quanto tempo (s) a câmera leva para ir até a vista da máquina operada e voltar.
+const STATION_CAMERA_TIME := 0.35
 ## Balanço do tronco: quanto o boneco ganha de giro (rad/s, por segundo encostado) por unidade de
 ## empurrão.
 const PUSH_WOBBLE := 10.0
@@ -121,6 +128,15 @@ var _hands: Array[MeshInstance3D] = []
 var _sway := Vector2.ZERO
 ## Força do arremesso sendo carregada, de 0 a 1 (-1 = não está segurando [G]).
 var _throw_charge := -1.0
+## Máquina que este jogador está operando de perto (todas as máquinas sabem; quem diz é a máquina).
+var operating: Node3D = null:
+	set(value):
+		operating = value
+		if value != null and is_local():
+			_start_operating()
+## Câmera da vista da máquina (só no jogador local) e de 0 (primeira pessoa) a 1 (na máquina).
+var _station_cam: Camera3D
+var _station_blend := 0.0
 
 @onready var head: Node3D = $Head
 @onready var camera: Camera3D = $Head/Camera3D
@@ -154,7 +170,7 @@ func _ready() -> void:
 	if is_local():
 		_setup_input()
 		camera.make_current()
-		_add_outline()
+		_add_outline(camera)
 		hud = Hud.new()
 		add_child(hud)
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -169,6 +185,12 @@ func _ready() -> void:
 func _input(event: InputEvent) -> void:
 	if not is_local():
 		return
+	if operating != null and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not hud.is_blocking():
+		if event is InputEventMouseMotion:
+			operating.slide(event.relative.y, Input.is_action_pressed("sprint"))
+		elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			operating.request_cut()
+		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and _has_control():
 		rotate_y(-event.relative.x * mouse_sensitivity)
 		head.rotation.x = clampf(head.rotation.x - event.relative.y * mouse_sensitivity, -1.5, 1.5)
@@ -182,6 +204,7 @@ func _process(delta: float) -> void:
 	_animate_character(delta)
 	if is_local():
 		_update_fall_camera()
+		_update_station_camera(delta)
 
 
 func _physics_process(delta: float) -> void:
@@ -200,12 +223,24 @@ func _physics_process(delta: float) -> void:
 		velocity.y -= _gravity * delta
 	_update_fall(delta)
 	if fallen or character.getup < 1.0:
-		# Caído ou levantando: sem andar nem pular, só a gravidade.
+		# Caído ou levantando: sem andar nem pular, só a gravidade (e larga a máquina que operava).
+		if operating != null:
+			operating.request_leave()
 		velocity.x = 0.0
 		velocity.z = 0.0
 		move_and_slide()
 		# Sem controle, só para a interface largar o aviso do item que caiu da mão.
 		_update_interaction(delta)
+		_send_state(delta)
+		return
+
+	if operating != null:
+		# Operando: parado na frente da máquina; [E] sai.
+		velocity.x = 0.0
+		velocity.z = 0.0
+		move_and_slide()
+		if not hud.is_blocking() and Input.is_action_just_pressed("interact"):
+			operating.request_leave()
 		_send_state(delta)
 		return
 
@@ -456,14 +491,17 @@ func _update_hands() -> void:
 	var held := held_item()
 	for i in _hands.size():
 		var hand := _hands[i]
-		hand.visible = held != null
-		if held != null:
-			hand.global_transform = held.global_transform * ItemKinds.hand_offset(held.kind, 1 if i == 0 else -1)
+		var side := 1 if i == 0 else -1
+		hand.visible = held != null or operating != null
+		if operating != null:
+			hand.global_transform = operating.hand_transform(side)
+		elif held != null:
+			hand.global_transform = held.global_transform * ItemKinds.hand_offset(held.kind, side)
 
 
 ## O contorno preto do visual de desenho: um quadrado na frente da câmera que o shader estica
 ## até cobrir a tela.
-func _add_outline() -> void:
+func _add_outline(cam: Camera3D) -> void:
 	var quad := QuadMesh.new()
 	quad.size = Vector2(2.0, 2.0)
 	var mat := ShaderMaterial.new()
@@ -475,7 +513,7 @@ func _add_outline() -> void:
 	outline.position = Vector3(0.0, 0.0, -0.5)
 	outline.extra_cull_margin = 16384.0
 	outline.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	camera.add_child(outline)
+	cam.add_child(outline)
 
 
 func _build_hands() -> void:
@@ -529,7 +567,52 @@ func _drop_held(charge := 0.0) -> void:
 
 
 func _has_control() -> bool:
-	return controls_enabled and not hud.is_blocking() and not fallen
+	return controls_enabled and not hud.is_blocking() and not fallen and operating == null
+
+
+# --- Operando uma máquina -----------------------------------------------------
+
+## Jogador local começou a operar: vai para a frente da máquina, olhando para ela, e a câmera da
+## vista sai de onde está a de primeira pessoa.
+func _start_operating() -> void:
+	var to: Vector3 = operating.stand_point() - global_position
+	move_and_collide(Vector3(to.x, 0.0, to.z))
+	rotation.y = operating.stand_yaw()
+	head.rotation.x = 0.0
+	if _station_cam == null:
+		_station_cam = Camera3D.new()
+		_station_cam.name = "StationCamera"
+		_station_cam.top_level = true
+		_station_cam.fov = operating.VIEW_FOV
+		_station_cam.near = 0.02
+		add_child(_station_cam)
+		_add_outline(_station_cam)
+	hud.set_prompt("")
+	hud.set_carry("")
+	hud.show_hint("Mouse: slide the sheet · Shift: fine · Click: cut · E: leave", 6.0)
+
+
+## A câmera da vista vai até a máquina operada e volta para a de primeira pessoa quando sai.
+func _update_station_camera(delta: float) -> void:
+	if _station_cam == null:
+		return
+	var goal := 1.0 if operating != null else 0.0
+	_station_blend = move_toward(_station_blend, goal, delta / STATION_CAMERA_TIME)
+	if _station_blend <= 0.0:
+		if _station_cam.current:
+			camera.make_current()
+		return
+	if operating != null:
+		_station_cam.set_meta("view", operating.view_transform())
+	var view: Transform3D = _station_cam.get_meta("view")
+	var t := smoothstep(0.0, 1.0, _station_blend)
+	_station_cam.global_transform = camera.global_transform.interpolate_with(view, t)
+	# O tranco da câmera (golpe da máquina, trombada) também na vista dela.
+	_station_cam.rotate_object_local(Vector3.RIGHT, camera_kick.y * t)
+	_station_cam.rotate_object_local(Vector3.FORWARD, camera_kick.x * t)
+	_station_cam.fov = lerpf(camera.fov, operating.VIEW_FOV if operating != null else _station_cam.fov, t)
+	if not _station_cam.current:
+		_station_cam.make_current()
 
 
 # --- Corpo --------------------------------------------------------------------
@@ -611,6 +694,11 @@ func _kick_camera(dir: Vector3, speed: float) -> void:
 	_camera_kick_vel += Vector2(-side, -back) * speed * CAMERA_KICK * 30.0
 
 
+## Tranco de fora (o golpe da guilhotina): a câmera dá uma cabeçada para baixo, um pouco torta.
+func kick_camera(strength: float) -> void:
+	_camera_kick_vel += Vector2(randf_range(-0.4, 0.4), -1.0) * strength
+
+
 func _update_camera_kick(delta: float) -> void:
 	_camera_kick_vel += (-160.0 * camera_kick - 12.0 * _camera_kick_vel) * delta
 	camera_kick = (camera_kick + _camera_kick_vel * delta).limit_length(0.12)
@@ -625,7 +713,7 @@ func _animate_character(delta: float) -> void:
 	_wobble_from_others(delta)
 	var airborne := absf(moved.y) > 0.6
 	var targets := []
-	if held_item() != null and _hands.size() == 2:
+	if (held_item() != null or operating != null) and _hands.size() == 2:
 		targets = [_hands[0].global_position, _hands[1].global_position]
 	character.animate(delta, moved, airborne, head.rotation.x, targets)
 	if is_local() and not fallen:

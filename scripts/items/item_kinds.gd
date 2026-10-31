@@ -4,7 +4,10 @@ extends RefCounted
 ##   "ream"   resma de papel embrulhada (vira folhas na impressora)
 ##   "sheet"  folha A4 impressa com 2 x 3 notas; data.wet = tinta ainda fresca
 ##   "bills"  montinho de notas cortadas; data.count = quantas, data.smudged = quantas
-##            borradas (cortadas molhadas), data.top_smudged = se a de cima está borrada
+##            borradas (cortadas molhadas), data.top_smudged = se a de cima está borrada,
+##            data.crooked = quantas saíram tortas da guilhotina, data.worth = quanto o monte
+##            vale em notas perfeitas (sem a chave: count), data.top_cut = o pedaço da folha que
+##            virou a nota de cima, se ela saiu torta (Rect2 na textura da folha; vazio = reta)
 ##
 ## As texturas saem do art_source/paper_textures.py (assets/textures/).
 
@@ -56,10 +59,18 @@ static func label(item: Node) -> String:
 		"bills":
 			var count: int = item.data.get("count", 0)
 			var smudged: int = item.data.get("smudged", 0)
+			var crooked: int = item.data.get("crooked", 0)
 			var text := "%d bill%s" % [count, "" if count == 1 else "s"]
+			var notes: Array[String] = []
 			if smudged >= count and count > 0:
-				return text + " (smudged)"
-			return text + (" (%d smudged)" % smudged if smudged > 0 else "")
+				notes.append("smudged")
+			elif smudged > 0:
+				notes.append("%d smudged" % smudged)
+			if crooked >= count and count > 0:
+				notes.append("crooked")
+			elif crooked > 0:
+				notes.append("%d crooked" % crooked)
+			return text + (" (%s)" % ", ".join(notes) if not notes.is_empty() else "")
 	return item.kind
 
 
@@ -136,7 +147,7 @@ static func refresh(item: RigidBody3D) -> void:
 		# Uma malha de 1 de altura, esticada até a altura do monte; a colisão acompanha.
 		var count: int = maxi(item.data.get("count", 1), 1)
 		var height := maxf(count * BILL_THICKNESS, 0.0015)
-		mesh.mesh = _bills_mesh(item.data.get("top_smudged", false))
+		mesh.mesh = _bills_mesh(item.data.get("top_smudged", false), item.data.get("top_cut", Rect2()))
 		Toon.apply_one(mesh)
 		mesh.scale = Vector3(1.0, height, 1.0)
 		var col: CollisionShape3D = item.get_child(0)
@@ -197,16 +208,20 @@ static func _ream_mesh() -> Mesh:
 
 
 ## Montinho de notas: caixa de 1 de altura (o item estica), com a nota na tampa (borrada ou não),
-## o verso embaixo e as bordas de papel nos lados. Três superfícies, uma para cada material.
-static func _bills_mesh(top_smudged: bool) -> Mesh:
-	var key := "bills_mesh_smudged" if top_smudged else "bills_mesh"
+## o verso embaixo e as bordas de papel nos lados. Três superfícies, uma para cada material. Se a
+## nota de cima saiu torta da guilhotina (`top_cut` não vazio), a tampa mostra o pedaço da folha
+## que ela é de verdade: sobra de margem ou da nota vizinha, ou a nota comida pelo corte.
+static func _bills_mesh(top_smudged: bool, top_cut := Rect2()) -> Mesh:
+	var cut := top_cut.has_area()
+	var key := "bills_mesh_cut_%s" % top_cut if cut else ("bills_mesh_smudged" if top_smudged else "bills_mesh")
 	if _cache.has(key):
 		return _cache[key]
 	var h: Vector3 = Vector3(SIZES["bills"].x, 1.0, SIZES["bills"].z) / 2.0
 	var full := Rect2(0, 0, 1, 1)
 	var mesh := ArrayMesh.new()
+	var top_tex: Texture2D = SHEET_FRONT if cut else (BILL_FRONT_SMUDGED if top_smudged else BILL_FRONT)
 	var faces := [
-		[BILL_FRONT_SMUDGED if top_smudged else BILL_FRONT, [[Vector3.UP, [Vector3(-h.x, h.y, -h.z), Vector3(h.x, h.y, -h.z), Vector3(h.x, h.y, h.z), Vector3(-h.x, h.y, h.z)]]]],
+		[top_tex, [[Vector3.UP, [Vector3(-h.x, h.y, -h.z), Vector3(h.x, h.y, -h.z), Vector3(h.x, h.y, h.z), Vector3(-h.x, h.y, h.z)]]]],
 		[BILL_BACK, [[Vector3.DOWN, [Vector3(h.x, -h.y, -h.z), Vector3(-h.x, -h.y, -h.z), Vector3(-h.x, -h.y, h.z), Vector3(h.x, -h.y, h.z)]]]],
 		[null, [
 			[Vector3.BACK, [Vector3(-h.x, h.y, h.z), Vector3(h.x, h.y, h.z), Vector3(h.x, -h.y, h.z), Vector3(-h.x, -h.y, h.z)]],
@@ -219,7 +234,7 @@ static func _bills_mesh(top_smudged: bool) -> Mesh:
 		var st := SurfaceTool.new()
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)
 		for face in surface[1]:
-			_face(st, face[0], face[1], full)
+			_face(st, face[0], face[1], top_cut if cut and surface == faces[0] else full)
 		var mat := StandardMaterial3D.new()
 		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 		if surface[0] != null:

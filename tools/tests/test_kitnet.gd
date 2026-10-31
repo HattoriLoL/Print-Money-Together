@@ -9,8 +9,10 @@ extends SceneTree
 ## - física ao soltar: a folha cai devagar balançando e pousa deitada, a resma cai rápido, o
 ##   arremesso carregado vai longe (a resma mais que a folha), andando se empurra a resma e o
 ##   que cai fora do mapa volta;
-## - guilhotina: pôr a folha, cortar linha por linha (2 notas por corte no montinho da frente,
-##   borradas se a folha estava molhada), somar no mesmo montinho e carregar o montinho;
+## - guilhotina: pôr a folha começa a operar (câmera em cima da mesa, luvas na folha), o mouse
+##   desliza a folha, o clique corta: na marca as notas saem perfeitas, fora dela tortas (valem
+##   menos e a de cima mostra o corte), no meio da linha estraga; [E] sai; somar no mesmo montinho
+##   e carregar o montinho;
 ## - etapa 3 do visual: prints da fita na impressora, jornal, retrato, geladeira, TV, pizza, trancas e lâmpada;
 ## - vida no cenário: ventilador girando, vento no varal e na cortina, chuvisco na TV, vapor na panela,
 ##   lâmpada piscando e balançando quando alguém passa perto;
@@ -646,50 +648,158 @@ func _test_guillotine(kitnet: Node3D, player: CharacterBody3D) -> void:
 	var items: Node = kitnet.items
 	var stats: Resource = g.stats
 	var swing: float = stats.swing_down + stats.swing_up + 0.1
-	_check(g != null and g.rows_left == 0, "guilhotina montada e vazia")
+	_check(g != null and not g.has_sheet(), "guilhotina montada e vazia")
 	# Em pé na frente da guilhotina (lado da lâmina), olhando para ela.
 	var stand := Vector3(2.35, 0.05, -1.35)
 	player.global_position = stand
 	await physics_frame
 	_check(g._prompt(player).begins_with("[E] Pull the lever"), "vazia ela oferece só bater a alavanca")
 
-	# Folha molhada: põe, corta as 3 linhas.
+	# Folha molhada: põe e começa a operar, com a câmera em cima da mesa e as luvas na folha.
 	items.give(1, "sheet", {"wet": true})
 	await create_timer(0.3).timeout
 	_check(g._prompt(player).contains("smudge"), "avisa que a folha molhada vai borrar")
 	g.zone.interact(player)
 	await physics_frame
-	_check(player.held_item() == null and g.rows_left == stats.rows_per_sheet, "a folha foi para a guilhotina (3 linhas)")
-	_check(g._strips.all(func(st): return st.visible), "as 3 faixas da folha aparecem")
-	g.zone.interact(player)
-	await create_timer(stats.swing_down * 0.5).timeout
-	await _look(player, Vector3(2.62, 0, -1.4), Vector3(2.32, 0.82, -2.05), "17_guilhotina_cortando")
-	await create_timer(swing).timeout
-	_check(g.rows_left == stats.rows_per_sheet - 1, "um corte, uma linha a menos")
-	var pile: Node = items.items.get(g._pile_id)
-	_check(pile != null and pile.kind == "bills" and pile.data["count"] == stats.bills_per_row,
-			"saíram %d notas no montinho" % stats.bills_per_row)
-	for i in stats.rows_per_sheet - 1:
-		g.zone.interact(player)
-		await create_timer(swing).timeout
-	var total: int = stats.rows_per_sheet * stats.bills_per_row
-	_check(g.rows_left == 0 and not g._strips.any(func(st): return st.visible), "folha toda cortada")
-	_check(pile.data["count"] == total and pile.data["smudged"] == total,
-			"montinho com %d notas, todas borradas (%d, %d)" % [total, pile.data["count"], pile.data["smudged"]])
+	_check(player.held_item() == null and g.pieces_left == stats.rows_per_sheet, "a folha foi para a guilhotina (3 linhas)")
+	_check(player.operating == g and g._sheet.visible, "pondo a folha, começa a operar")
+	await create_timer(player.STATION_CAMERA_TIME + 0.15).timeout
+	_check(root.get_camera_3d() == player._station_cam, "a câmera foi para cima da mesa")
+	var right: MeshInstance3D = player._hands[0]
+	_check(g._guide.visible, "a linha-guia da lâmina aparece")
+	_check(right.visible and right.global_position.distance_to(g._sheet.global_position) < 0.3,
+			"as luvas seguram a folha (%.2f m)" % right.global_position.distance_to(g._sheet.global_position))
+	await _shot("17_guilhotina_operando")
 
-	# Folha seca: as notas somam no mesmo montinho, sem borrar.
+	# O mouse desliza a folha para além da lâmina, e as luvas vão junto.
+	var hand_before := right.global_position
+	var sheet_before: Vector3 = g._sheet.global_position
+	player._input(_mouse_motion(Vector2(0, 300)))
+	await process_frame
+	await process_frame
+	_check(g.feed > 0.03, "o mouse desliza a folha (%.3f m)" % g.feed)
+	_check(g._sheet.global_position.distance_to(sheet_before) > 0.03, "a folha anda na mesa")
+	_check(right.global_position.distance_to(hand_before) > 0.02, "as luvas vão junto com a folha")
+	await _shot("18_guilhotina_folha_passando")
+	# Mais que uma linha não passa da lâmina, e com Shift a folha anda um quarto.
+	player._input(_mouse_motion(Vector2(0, 5000)))
+	_check(is_equal_approx(g.feed, g.feed_max()) and g.feed_max() < 2.0 * (g.row_edges(1).x - g.row_edges(0).x),
+			"a folha passa no máximo uma linha da lâmina (%.3f m)" % g.feed)
+	g.slide_to(0.02)
+	Input.action_press("sprint")
+	player._input(_mouse_motion(Vector2(0, 100)))
+	Input.action_release("sprint")
+	_check(is_equal_approx(g.feed - 0.02, 100 * g.FEED_PER_PIXEL * g.FEED_FINE),
+			"com Shift, o ajuste fino anda menos (%.4f m em 100 px)" % (g.feed - 0.02))
+
+	# Na marca: a linha sai reta. O corte só acontece com a lâmina embaixo, e do clique até a
+	# alavanca voltar a folha fica parada. A tira (2 notas ainda grudadas) vai para a pilha do lado
+	# da lâmina: só com o corte vertical, no fim, elas viram notas.
+	g.slide_to(g.ideal_cut() - g.cut_pos)
+	var feed_at: float = g.feed
+	player._input(_left_click())
+	await create_timer(stats.swing_down * 0.4).timeout
+	_check(g.pieces_left == stats.rows_per_sheet and g.feed == feed_at and g._pile_id == 0,
+			"o corte espera a lâmina descer (a folha fica onde estava)")
+	player._input(_mouse_motion(Vector2(0, 200)))
+	_check(g.feed == feed_at, "durante o golpe o mouse não mexe a folha")
+	await create_timer(stats.swing_down * 0.6 + 0.05).timeout
+	_check(g._strips[0].visible and g._strip_tweens[0].is_running() and not g._strips[1].visible,
+			"a tira cortada vai para a pilha")
+	_check(player.camera_kick.length() > 0.003, "a câmera dá um tranco no golpe (%.3f rad)" % player.camera_kick.length())
+	await _shot("18b_guilhotina_golpe")
+	await create_timer(swing - stats.swing_down - 0.05).timeout
+	_check(not g._strips[0].visible and g._stack.visible and g.stack_count == 1, "a tira pousou na pilha")
+	var toon_uv: Vector3 = g._sheet.get_surface_override_material(0).get_shader_parameter("uv1_scale")
+	_check(toon_uv.is_equal_approx((g._sheet.mesh as QuadMesh).material.uv1_scale) and toon_uv.y < 0.9,
+			"o que sobrou da folha mostra só a parte que sobrou (escala %.2f)" % toon_uv.y)
+	_check(g._pile_id == 0, "cortar só na horizontal não solta nota")
+	_check(g.pieces_left == stats.rows_per_sheet - 1 and g.feed == 0.0, "um corte, uma linha a menos, e a folha volta para a lâmina")
+
+	# 5 mm depois da marca: a linha sai torta, e a de trás perde um pedaço da frente. Esse corte
+	# separa a última linha, que sai junto (segunda tira). Acabaram as linhas: a pilha gira e vai
+	# para a lâmina.
+	g.slide_to(g.ideal_cut() - g.cut_pos + 0.005)
+	await _cut_click(player, stats.swing_down + 0.15)
+	_check(g._strips[0].visible and g._strips[1].visible, "a última linha sai junto, numa segunda tira")
+	await create_timer(swing - stats.swing_down - 0.15).timeout
+	_check(g.phase == g.Phase.COLUMNS and g.pieces_left == stats.bills_per_row and g.stack_count == stats.rows_per_sheet
+			and g._stack.visible and not g._sheet.visible and g._pile_id == 0,
+			"acabaram as linhas: a pilha de %d tiras gira para o corte vertical" % g.stack_count)
+	var stack_x: float = (g.global_transform * Vector3(g.STACK_X, 0, 0)).x
+	_check(is_equal_approx(g._stack_shift, 0.0) and absf(g.hand_transform(1).origin.x - stack_x) < 0.15,
+			"a pilha chegou na lâmina e as luvas seguram ela")
+	await _shot("18c_guilhotina_pilha_de_tiras")
+
+	# Corte vertical 4 mm depois da marca: separa as colunas de todas as tiras de uma vez (a de trás
+	# sai junto), e o erro dele soma no de cada linha: as 6 notas saem tortas.
+	g.slide_to(g.ideal_cut() - g.cut_pos + 0.004)
+	await _cut_click(player, stats.swing_down + 0.15)
+	_check(g._strips[0].visible and g._strips[1].visible, "as duas colunas saem, cada uma para o montinho")
+	await create_timer(swing - stats.swing_down - 0.15).timeout
+	var total: int = stats.rows_per_sheet * stats.bills_per_row
+	var pile: Node = items.items.get(g._pile_id)
+	_check(pile != null and pile.kind == "bills" and pile.data["count"] == total and pile.data["smudged"] == total,
+			"3 cortes acabam a folha: %d notas borradas no montinho" % total)
+	_check(pile != null and pile.data["crooked"] == total and pile.data["worth"] > 3.2 and pile.data["worth"] < 3.9,
+			"o corte vertical torto entorta as notas das duas colunas (valem %.2f de %d)" % [pile.data["worth"] if pile else 0.0, total])
+	_check(pile != null and (pile.data["top_cut"] as Rect2).has_area(), "a nota de cima mostra o corte torto")
+	_check(not g.has_sheet() and not g._sheet.visible and not g._stack.visible and g.phase == g.Phase.ROWS, "a folha acabou")
+	await create_timer(0.3).timeout
+	_check(player.operating == null, "acabou a folha, sai da guilhotina sozinho")
+	await create_timer(player.STATION_CAMERA_TIME + 0.15).timeout
+	_check(root.get_camera_3d() == player.camera, "a câmera voltou para a primeira pessoa")
+	_check(absf(g._arm.rotation.z - g.OPEN_ANGLE) < 0.01,
+			"a alavanca volta para o ângulo de parada (%.0f°)" % rad_to_deg(g._arm.rotation.z))
+	await _look(player, Vector3(2.62, 0, -1.4), Vector3(2.25, 0.78, -1.85), "19_montinho_torto")
+
+	# Folha seca: na marca a linha vai para a pilha; no meio da linha estraga ela.
 	items.give(1, "sheet", {"wet": false})
 	await create_timer(0.3).timeout
 	g.zone.interact(player)
 	await physics_frame
+	g.slide_to(g.ideal_cut() - g.cut_pos)
+	await _cut_click(player, swing)
+	_check(g.stack_count == 1 and pile.data["count"] == total, "a linha da folha seca foi para a pilha")
+	g.slide_to(0.03)
+	await _cut_click(player, swing)
+	_check(g.stack_count == 1 and g.pieces_left == 1, "cortar no meio da linha estraga ela (não vai para a pilha)")
+	# [E] sai, e a folha e a pilha ficam na mesa.
+	Input.action_press("interact")
+	await physics_frame
+	await physics_frame
+	Input.action_release("interact")
+	await physics_frame
+	_check(player.operating == null and g.pieces_left == 1 and g._stack.visible, "[E] sai e a folha e a pilha ficam na mesa")
+	await create_timer(player.STATION_CAMERA_TIME + 0.15).timeout
+	_check(g._prompt(player).begins_with("[E] Cut"), "de mão vazia, dá para voltar a cortar")
+	# A última linha tem grudado na frente o resto da que estragou, então não saiu sozinha. Outro
+	# jogador puxa a alavanca no pegador, aparando no vão onde quem opera segura a folha: o resto
+	# vira retalho na mesa e a última linha, agora solta, vai para a pilha.
 	g.zone.interact(player)
-	await create_timer(swing).timeout
-	_check(pile.data["count"] == total + stats.bills_per_row and pile.data["smudged"] == total,
-			"a folha seca soma no montinho sem borrar")
+	await physics_frame
+	_check(player.operating == g, "voltou a operar")
+	g.slide_to(g.ideal_cut() - g.cut_pos)
+	var stranger := Node.new()
+	_check(g._lever_prompt(player) == "" and g._lever_prompt(stranger).begins_with("[E] Pull the lever"),
+			"o pegador da alavanca é para outro jogador puxar")
+	stranger.free()
+	g._press_lever(99)
+	await create_timer(stats.swing_down + 0.15).timeout
+	_check(g._strips[0].visible and g._strips[1].visible, "aparou: sai o retalho e a última linha")
+	await create_timer(swing - stats.swing_down - 0.15).timeout
+	_check(g.phase == g.Phase.COLUMNS and g.stack_count == 2, "outro jogador aparou, e as 2 linhas boas foram para o corte vertical")
+	# Corte vertical na marca: as 4 notas saem perfeitas e somam no mesmo montinho sem borrar.
+	g.slide_to(g.ideal_cut() - g.cut_pos)
+	await _cut_click(player, swing)
+	_check(pile.data["count"] == total + 4 and pile.data["smudged"] == total and pile.data["crooked"] == total,
+			"na marca, as notas da folha seca saem perfeitas e somam no montinho sem borrar")
 	var top: Material = pile.get_node("Mesh").get_surface_override_material(0)
 	_check(top is ShaderMaterial and top.get_shader_parameter("albedo_tex") == preload("res://assets/textures/bill_front.png"),
-			"a nota de cima do montinho voltou a ser a limpa (toon acompanhou a troca de malha)")
-	await _look(player, Vector3(2.62, 0, -1.4), Vector3(2.25, 0.78, -1.85), "18_montinho")
+			"a nota de cima do montinho voltou a ser a limpa e reta (toon acompanhou a troca de malha)")
+	await create_timer(0.3).timeout
+	_check(player.operating == null, "acabou a folha de novo, saiu sozinho")
+	await create_timer(player.STATION_CAMERA_TIME + 0.15).timeout
 	# Cortar com a mão ocupada não dá; outra coisa que não folha também não entra.
 	items.give(1, "ream")
 	await create_timer(0.3).timeout
@@ -704,9 +814,29 @@ func _test_guillotine(kitnet: Node3D, player: CharacterBody3D) -> void:
 	await create_timer(0.4).timeout
 	_check(player.held_item() == pile, "pegou o montinho de notas")
 	_check(g._pile_id == 0, "a guilhotina sabe que o montinho saiu")
-	await _look(player, Vector3(2.4, 0, -1.2), Vector3(1.0, 1.0, -0.6), "19_notas_na_mao")
+	_check(preload("res://scripts/items/item_kinds.gd").label(pile).contains("6 crooked"), "o nome do montinho conta as tortas (%s)" % preload("res://scripts/items/item_kinds.gd").label(pile))
+	await _look(player, Vector3(2.4, 0, -1.2), Vector3(1.0, 1.0, -0.6), "19b_notas_na_mao")
 	player._drop_held()
 	await create_timer(0.5).timeout
+
+
+## Clique de quem opera (desce a alavanca) e espera ela voltar.
+func _cut_click(player: CharacterBody3D, swing: float) -> void:
+	player._input(_left_click())
+	await create_timer(swing).timeout
+
+
+func _left_click() -> InputEventMouseButton:
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	return click
+
+
+func _mouse_motion(relative: Vector2) -> InputEventMouseMotion:
+	var motion := InputEventMouseMotion.new()
+	motion.relative = relative
+	return motion
 
 
 ## Dá um item na mão do jogador em `at`, olhando para -X, solta com a força `charge` e devolve

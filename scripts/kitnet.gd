@@ -148,6 +148,9 @@ func _on_peer_disconnected(id: int) -> void:
 	items.drop_all_of(id)
 	for zone in get_tree().get_nodes_in_group("interact_zone"):
 		zone.drop_peer(id)
+	for station in get_tree().get_nodes_in_group("station"):
+		if station.has_method("drop_peer"):
+			station.drop_peer(id)
 	_remove_player(id)
 	rpc_roster(self, &"_remove_player", [id])
 
