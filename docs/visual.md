@@ -36,7 +36,7 @@ primeira pessoa.
      cima do micro-ondas.
 
 5. **Feito:** vida no cenário (`scripts/ambience.gd`, só visual, nada passa pela rede):
-   - o ventilador gira e o vento dele faz as folhas de notas do varal tremularem; a cortina
+   - o ventilador gira quando está ligado, e o vento dele balança o varal e as folhas penduradas; a cortina
      balança devagar;
    - a lâmpada pelada pisca de vez em quando (a luz junto) e balança no fio quando alguém passa
      perto, levando a luz e as sombras;

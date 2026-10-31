@@ -1,7 +1,7 @@
 extends Node
 ## Vida no cenário, só visual (cada máquina anima a sua; nada passa pela rede):
-## - o ventilador gira e o vento dele faz as folhas do varal tremularem; a cortina balança devagar
-##   (vento no vértice, ver `wind` no toon.gd);
+## - o ventilador gira quando está ligado (fan.gd, `spin`) e o vento dele balança as cordas do
+##   varal; a cortina balança devagar (vento no vértice, ver `wind` no toon.gd);
 ## - a lâmpada pelada pisca de vez em quando e balança no fio quando alguém passa perto (a luz
 ##   vai junto, então as sombras balançam);
 ## - a TV de tubo mostra chuvisco;
@@ -52,6 +52,8 @@ var _bulb_pivot := Vector3.ZERO
 var _bulb_materials: Array[ShaderMaterial] = []
 var _bulb_emission: Array[float] = []
 var _swing_vel := Vector2.ZERO
+## O varal: o vento nele segue o ventilador.
+var _clothes: GeometryInstance3D
 var _flicker_wait := 0.0
 ## Piscada em andamento: pares [segundos, brilho].
 var _flicker: Array = []
@@ -66,6 +68,7 @@ func setup(model: Node3D, kitnet: Node) -> void:
 	_flicker_wait = _rng.randf_range(FLICKER_GAP.x, FLICKER_GAP.y)
 	fan_blades = model.find_child("MACHINE_Fan_Blades", true, false)
 	_setup_wind("MACHINE_ClothesLine", CLOTHES_WIND, CLOTHES_LINE_Y, 0.25)
+	_clothes = model.find_child("MACHINE_ClothesLine", true, false)
 	_setup_wind("Curtain_Main", CURTAIN_WIND, CURTAIN_ROD_Y, 1.4)
 	_setup_bulb()
 	_setup_tv()
@@ -73,8 +76,13 @@ func setup(model: Node3D, kitnet: Node) -> void:
 
 
 func _process(delta: float) -> void:
+	var spin: float = _kitnet.fan.spin if _kitnet.fan != null else 1.0
 	if fan_blades != null:
-		fan_blades.rotate_object_local(Vector3.FORWARD, FAN_SPEED * TAU * delta)
+		fan_blades.rotate_object_local(Vector3.FORWARD, FAN_SPEED * TAU * spin * delta)
+	if _clothes != null:
+		var wind: Vector4 = _clothes.get_instance_shader_parameter("wind")
+		wind.x = CLOTHES_WIND[0] * lerpf(0.1, 1.0, spin)
+		_clothes.set_instance_shader_parameter("wind", wind)
 	_update_flicker(delta)
 	_update_swing(delta)
 

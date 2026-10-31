@@ -2,7 +2,8 @@
 
 A linha de produção planejada é: papel → tinta → impressora → varal → guilhotina → máquina de
 lavar → contadora → esconderijo. Até agora funcionam o **papel**, a **impressora** (com o
-**cartucho de tinta**) e a **guilhotina**. As outras máquinas ainda são só o modelo.
+**cartucho de tinta**), o **varal** (com o **ventilador**) e a **guilhotina**. As outras máquinas
+ainda são só o modelo.
 
 Papel e cartucho se compram no PC e chegam numa caixa na porta: ver `docs/loja.md`.
 
@@ -51,7 +52,7 @@ A resma precisa das duas mãos (`ItemKinds.TWO_HANDED`): quem perdeu uma não pe
 
 ### De onde vêm
 
-- **As texturas do papel**: o `art_source/paper_textures.py` desenha a nota (frente com a capivara, verso com o prédio da kitnet, e a frente borrada de quem cortou molhada), a folha A4 (6 notas, marcas de corte e barra de cores), a fibra do papel, a embalagem da resma e o tapete quadriculado da guilhotina. Ele roda com o Python do sistema e o Pillow, não no Blender. As decorações do mapa (varal, guilhotina) usam a mesma folha.
+- **As texturas do papel**: o `art_source/paper_textures.py` desenha a nota (frente com a capivara, verso com o prédio da kitnet, e a frente borrada de quem cortou molhada), a folha A4 (6 notas, marcas de corte e barra de cores), a fibra do papel, a embalagem da resma e o tapete quadriculado da guilhotina. Ele roda com o Python do sistema e o Pillow, não no Blender. As decorações do mapa (a guilhotina) usam a mesma folha.
 
   ```
   python art_source/paper_textures.py
@@ -141,6 +142,37 @@ Peças do modelo que o Godot mexe, filhas de `MACHINE_Printer`:
 
 As folhas são A4 com 2 x 3 notas (`ItemKinds`). Na mão, a folha fica inclinada para quem segura
 ver as notas.
+
+## Varal (`MACHINE_ClothesLine`) e ventilador (`MACHINE_Fan`)
+
+A impressora é de jato de tinta e a folha sai molhada. Cortada assim, as notas saem borradas. No
+varal de teto da área de serviço ela seca.
+
+O código é `scripts/machines/clothesline.gd` e `scripts/machines/fan.gd`. As medidas do varal
+(as cordas e as vagas) ficam em `art_source/blender/machines.py` (`CLOTHES`, `CLOTHES_SLOTS_Y`),
+e o Godot usa as mesmas (`LINES_X`, `SLOTS_Z`, `LINE_Y`). O modelo tem só as cordas e os
+pregadores; as folhas penduradas são itens do jogo.
+
+| Onde | [E] |
+|---|---|
+| Varal, com uma folha na mão | Pendura a folha na próxima vaga livre: 5 cordas com 3 vagas. A folha fica em pé, presa pela borda de cima (`slot_transform`). |
+| Folha pendurada | Pega de volta, como qualquer item. |
+| Ventilador | Liga ou desliga. Começa desligado. |
+
+- **Secagem:** pendurada, a folha seca em `DRY_SECONDS` (40 s). Com o ventilador ligado, seca
+  `FAN_FACTOR` (3) vezes mais rápido.
+- **Umidade:** fica na folha (`data.wetness`, de 1 a 0). O brilho de molhada vai sumindo, e o
+  nome mostra quanto já secou ("damp sheet (60% dry)").
+- **Tirar no meio:** a folha sai ainda úmida, e pendurar de novo continua de onde parou. Seca de
+  vez, `data.wet` vira falso e ela vira uma "printed sheet": na guilhotina, não borra.
+- **Varal cheio:** "The clothesline is full".
+- **Ventilador ligado:** as pás giram (o `ambience.gd` lê `fan.spin`, que sobe e desce devagar),
+  as cordas balançam e as folhas penduradas tremulam (`flutter` do `shaders/paper.gdshader`).
+  `noise()` é um zumbido baixo, para a suspeita dos vizinhos depois.
+- **Rede:** o host conta a secagem e manda a umidade de cada folha a cada `SYNC_STEP` (5%). As
+  vagas ficam só no host. Os outros contam as folhas penduradas (`data.hanging`) para saber se o
+  varal está cheio.
+- Fora do varal a folha não seca.
 
 ## Guilhotina (`MACHINE_Guillotine`)
 

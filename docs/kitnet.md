@@ -38,7 +38,7 @@ cômodo sem travar.
 | Tinta | `MACHINE_InkPot`, `SUPPLY_Ink` | panela fervendo no cooktop e galões na bancada (ainda decoração; por enquanto a tinta é o cartucho da impressora, comprado no PC) |
 | Compras | `MACHINE_PC` | PC velho na ponta esquerda da escrivaninha da impressora: papel e cartucho pela internet (`docs/loja.md`) |
 | Impressão | `MACHINE_Printer` | impressora de escritório velha na escrivaninha embaixo da janela |
-| Secagem | `MACHINE_ClothesLine`, `MACHINE_Fan` | varal de teto e ventilador no serviço |
+| Secagem | `MACHINE_ClothesLine`, `MACHINE_Fan` | varal de teto (só as cordas e os pregadores) e ventilador no serviço |
 | Corte | `MACHINE_Guillotine` | guilhotina de alavanca na mesa do meio |
 | Envelhecer | `MACHINE_Washer` | máquina de lavar no serviço |
 | Contar e cintar | `MACHINE_CashCounter` | contadora de cédulas na mesa |
@@ -53,7 +53,7 @@ A cortina da janela (`Curtain_Main`) fica meio aberta: dá para ver a impressora
 | `MACHINE_Guillotine_Arm` | Alavanca da guilhotina, com a origem no pivô; gira no Y local (filha da base). |
 | `MACHINE_Washer_Lid` | Tampa da máquina de lavar, gira no X local na dobradiça de trás. |
 | `MACHINE_PC_Screen`, `MACHINE_PC_Mouse` | Tela do monitor (UV de 0 a 1, o Godot desenha o navegador) e o mouse (anda com o cursor). |
-| `MACHINE_Fan_Blades` | Pás do ventilador, giram no Y local (o `ambience.gd` gira sempre). |
+| `MACHINE_Fan_Blades` | Pás do ventilador, giram no Y local (o `ambience.gd` gira com o ventilador ligado). |
 | `HIDE_*` | Esconderijos: `HIDE_SofaBed` (vão de 12 cm embaixo), `HIDE_Wardrobe` (e a mala em cima), `HIDE_Fridge`. |
 | `KEEP_BathHatch` | Tampa do alçapão do forro do banheiro (o pacote vai entre o forro e a laje). |
 | `KEEP_Door_<n>` | Porta com a origem na dobradiça, folha para +X local, face de fora para -Y local: `301` (entrada, com olho mágico), `302`, `303`, `Stairs`, `Bath`. |
@@ -119,7 +119,7 @@ A kitnet fica no 3º andar. A rua passa 8,6 m abaixo, entre o nosso prédio e o 
 - `LIGHT_<zona>_<n>` ganham alcance, energia e sombra por zona (`ZONE_LIGHT`).
 - Os jogadores nascem nos `SPAWN_<vaga + 1>`.
 
-As resmas, a impressora e a guilhotina já funcionam (ver `docs/maquinas.md`), e o PC compra
+As resmas, a impressora, o varal e a guilhotina já funcionam (ver `docs/maquinas.md`), e o PC compra
 papel e tinta (ver `docs/loja.md`). As outras máquinas, os esconderijos e o fiscal ainda não.
 
 ## Rede

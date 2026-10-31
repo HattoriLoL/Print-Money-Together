@@ -135,15 +135,17 @@ func _open(peer: int, id: int) -> void:
 		return
 	if player.global_position.distance_to(item.global_position) > REACH:
 		return
-	var at: Vector3 = item.global_position
+	# Saem por cima da caixa, um em cima do outro (nascer dentro de outro item, como as resmas de
+	# outra caixa aberta do lado, dava um tranco que jogava o cartucho através do chão).
+	var top: Vector3 = item.global_position + Vector3.UP * (ItemKinds.SIZES["parcel"].y / 2.0 + 0.06)
 	var contents: Array = item.data.get("contents", [])
 	consume(item)
 	for i in contents.size():
 		var entry: Array = contents[i]
-		var xform := Transform3D(Basis(Vector3.UP, randf() * TAU), at + Vector3(randf_range(-0.08, 0.08), 0.05 + i * 0.07, randf_range(-0.08, 0.08)))
+		var xform := Transform3D(Basis(Vector3.UP, randf() * TAU), top + Vector3(randf_range(-0.05, 0.05), i * 0.08, randf_range(-0.05, 0.05)))
 		var spawned := spawn(entry[0], xform, entry[1])
-		spawned.linear_velocity = Vector3(randf_range(-0.6, 0.6), randf_range(1.2, 2.0), randf_range(-0.6, 0.6))
-		spawned.angular_velocity = Vector3(randf_range(-3.0, 3.0), randf_range(-3.0, 3.0), randf_range(-3.0, 3.0))
+		spawned.linear_velocity = Vector3(randf_range(-0.4, 0.4), randf_range(0.8, 1.4), randf_range(-0.4, 0.4))
+		spawned.angular_velocity = Vector3(randf_range(-2.0, 2.0), randf_range(-2.0, 2.0), randf_range(-2.0, 2.0))
 
 
 func _drop(peer: int, xform: Transform3D, velocity: Vector3, spin: Vector3) -> void:

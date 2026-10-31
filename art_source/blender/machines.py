@@ -400,10 +400,17 @@ def washer(coll):
     lid.finish("MACHINE_Washer_Lid", coll, loc=(0, hd - 0.12, h), parent=base)
 
 
+# Varal de teto do serviço: os dois tubos (de y0 a y1), as 5 cordas (de x0 a x1) e a altura delas.
+CLOTHES = (5.35, 6.2, 2.55, 4.85, 2.22)
+# Onde cada folha fica pendurada em cada corda (y do meio dela). O Godot usa os mesmos lugares
+# (scripts/machines/clothesline.gd, SLOTS_Z = -y).
+CLOTHES_SLOTS_Y = (2.95, 3.55, 4.15)
+
+
 def clothesline(coll):
-    """Varal de teto do serviço, com folhas de notas penduradas para secar."""
-    sx0, sy0, sx1, sy1 = P.SERVICE
-    x0, x1, y0, y1, z = 5.35, 6.2, 2.55, 4.85, 2.22
+    """Varal de teto do serviço: dois tubos presos no teto por cordinhas e 5 cordas de varal, com
+    os pregadores azuis já presos onde as folhas ficam (as folhas são objetos do jogo)."""
+    x0, x1, y0, y1, z = CLOTHES
     p = Part(bevel=0.004)
     for y in (y0, y1):
         p.cyl(((x0 + x1) / 2, y, z), x1 - x0 + 0.1, 0.015, "M_Metal", axis="X", seg=8)
@@ -412,18 +419,11 @@ def clothesline(coll):
     lines = [x0 + 0.05 + i * (x1 - x0 - 0.1) / 4 for i in range(5)]
     for x in lines:
         p.box(x - 0.003, y0, z - 0.003, x + 0.003, y1, z + 0.003, "M_Rope")
-    # Folhas A4 (2 x 3 notas) presas com pregador; algumas linhas mais cheias que outras.
-    sw, sh = 0.297, 0.21
-    fill = [(0, (2.75, 3.15, 3.9)), (1, (2.85, 3.3, 3.7, 4.45)), (2, (3.0, 3.55, 4.2)),
-            (3, (2.8, 3.25, 4.0, 4.5)), (4, (3.4, 4.3))]
-    for li, ys in fill:
-        x = lines[li]
-        for yc in ys:
-            sway = 0.012 * math.sin(yc * 7)
-            a, b = yc - sw / 2, yc + sw / 2
-            p.quad(((x + sway, a, z - sh), (x + sway, b, z - sh), (x, b, z - 0.004), (x, a, z - 0.004)),
-                   "M_MoneySheet", uvs=((0, 0), (1, 0), (1, 1), (0, 1)))
-            for pin_y in (a + 0.04, b - 0.04):
+    # Dois pregadores em cada vaga, nas pontas de cima de uma folha A4 deitada (29,7 cm).
+    sw = 0.297
+    for x in lines:
+        for yc in CLOTHES_SLOTS_Y:
+            for pin_y in (yc - sw / 2 + 0.04, yc + sw / 2 - 0.04):
                 p.box(x - 0.008, pin_y - 0.006, z - 0.03, x + 0.008, pin_y + 0.006, z + 0.012, "M_PlasticBlue")
     p.finish("MACHINE_ClothesLine", coll)
 

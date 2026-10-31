@@ -2,7 +2,8 @@ extends RefCounted
 ## Tipos de objeto carregável: aparência, colisão, peso, nome na tela e como fica na mão.
 ##
 ##   "ream"   resma de papel embrulhada (vira folhas na impressora)
-##   "sheet"  folha A4 impressa com 2 x 3 notas; data.wet = tinta ainda fresca, data.offcolor =
+##   "sheet"  folha A4 impressa com 2 x 3 notas; data.wet = tinta ainda fresca (data.wetness = quanto,
+##            de 1 a 0, secando no varal; data.hanging = pendurada nele), data.offcolor =
 ##            impressa com cartucho genérico (as cores saem erradas e as notas valem menos)
 ##   "bills"  montinho de notas cortadas; data.count = quantas, data.smudged = quantas
 ##            borradas (cortadas molhadas), data.top_smudged = se a de cima está borrada,
@@ -90,7 +91,10 @@ static func label(item: Node) -> String:
 		"ream":
 			return "paper ream"
 		"sheet":
-			var sheet := "wet sheet" if item.data.get("wet", false) else "printed sheet"
+			var sheet := "printed sheet"
+			if item.data.get("wet", false):
+				var wetness: float = item.data.get("wetness", 1.0)
+				sheet = "wet sheet" if wetness >= 0.99 else "damp sheet (%d%% dry)" % roundi((1.0 - wetness) * 100.0)
 			return sheet + (" (off-color)" if item.data.get("offcolor", false) else "")
 		"bills":
 			var count: int = item.data.get("count", 0)
@@ -121,6 +125,13 @@ static func label(item: Node) -> String:
 		"parcel":
 			return "parcel from %s" % item.data.get("from", "somewhere")
 	return item.kind
+
+
+## Quanto a tinta da folha ainda está molhada, de 0 a 1 (o brilho do shader).
+static func wet_amount(data: Dictionary) -> float:
+	if not data.get("wet", false):
+		return 0.0
+	return clampf(data.get("wetness", 1.0), 0.0, 1.0)
 
 
 static func cartridge_name(brand: String) -> String:
@@ -190,6 +201,7 @@ static func build(item: RigidBody3D) -> void:
 	if item.kind == "sheet":
 		item.continuous_cd = true
 		mesh = sheet_mesh_instance(item.data.get("wet", false), item.data.get("offcolor", false))
+		mesh.set_instance_shader_parameter("wet", wet_amount(item.data))
 	elif item.kind == "bills":
 		mesh = MeshInstance3D.new()
 		mesh.name = "Mesh"
@@ -199,6 +211,8 @@ static func build(item: RigidBody3D) -> void:
 		if item.kind == "ream":
 			mesh.mesh = _ream_mesh()
 		elif item.kind == "cartridge":
+			# Pequeno e rápido: sem isso ele atravessava o chão.
+			item.continuous_cd = true
 			_cartridge(mesh, item.data.get("brand", "generic"))
 		elif item.kind == "parcel":
 			_parcel(mesh, item.data.get("from", ""))
@@ -245,7 +259,7 @@ static func _glove_piece(item: RigidBody3D) -> Node3D:
 static func refresh(item: RigidBody3D) -> void:
 	var mesh: MeshInstance3D = item.get_node_or_null("Mesh")
 	if item.kind == "sheet" and mesh:
-		mesh.set_instance_shader_parameter("wet", 1.0 if item.data.get("wet", false) else 0.0)
+		mesh.set_instance_shader_parameter("wet", wet_amount(item.data))
 		mesh.set_instance_shader_parameter("offcolor", 1.0 if item.data.get("offcolor", false) else 0.0)
 	elif item.kind == "bills" and mesh:
 		# Uma malha de 1 de altura, esticada até a altura do monte; a colisão acompanha.

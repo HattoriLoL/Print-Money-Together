@@ -17,6 +17,8 @@ extends SceneTree
 ##   comprar papel e cartucho (sem dinheiro não paga), a caixa de cada loja chega na porta com a
 ##   campainha, abrir solta o que veio, a resma volta para o estoque e o cartucho genérico entra na
 ##   impressora (folha e notas com a cor errada); sem cartucho o visor avisa;
+## - varal: a folha molhada pendura e seca (mais rápido com o ventilador ligado, tremulando), tirar
+##   no meio leva ela úmida, seca não borra na guilhotina, varal cheio não aceita mais;
 ## - etapa 3 do visual: prints da fita na impressora, jornal, retrato, geladeira, TV, pizza, trancas e lâmpada;
 ## - vida no cenário: ventilador girando, vento no varal e na cortina, chuvisco na TV, vapor na panela,
 ##   lâmpada piscando e balançando quando alguém passa perto;
@@ -169,7 +171,13 @@ func _run() -> void:
 	var amb: Node = kitnet.ambience
 	var blades_before: Basis = amb.fan_blades.transform.basis
 	await create_timer(0.2).timeout
-	_check(not amb.fan_blades.transform.basis.is_equal_approx(blades_before), "as pás do ventilador giram")
+	_check(not kitnet.fan.powered and amb.fan_blades.transform.basis.is_equal_approx(blades_before),
+			"o ventilador começa desligado, parado")
+	kitnet.fan._toggle(1)
+	await create_timer(kitnet.fan.SPIN_TIME).timeout
+	blades_before = amb.fan_blades.transform.basis
+	await create_timer(0.2).timeout
+	_check(not amb.fan_blades.transform.basis.is_equal_approx(blades_before), "ligado, as pás do ventilador giram")
 	var clothes: GeometryInstance3D = kitnet.model.find_child("MACHINE_ClothesLine", true, false)
 	var curtain: GeometryInstance3D = kitnet.model.find_child("Curtain_Main", true, false)
 	_check(clothes.get_instance_shader_parameter("wind").x > 0.0 and curtain.get_instance_shader_parameter("wind").x > 0.0,
@@ -222,6 +230,7 @@ func _run() -> void:
 	await _test_drop_physics(kitnet, player)
 	await _test_guillotine(kitnet, player)
 	await _test_shop(kitnet, player)
+	await _test_clothesline(kitnet, player)
 	await _test_characters(kitnet, player)
 	await _test_first_person(kitnet, player)
 	await _test_push(kitnet, player)
@@ -1064,7 +1073,8 @@ func _test_shop(kitnet: Node3D, player: CharacterBody3D) -> void:
 	await physics_frame
 	items.request_pickup(cart.id)
 	await physics_frame
-	_check(player.held_item() == cart, "pegou o cartucho")
+	_check(player.held_item() == cart, "pegou o cartucho (cartucho em %s, jogador em %s, na mão de %d)"
+			% [cart.global_position, player.global_position, cart.holder])
 	player.global_position = Vector3(2.3, 0.05, -3.9)
 	await physics_frame
 	var old_ink: float = printer.ink
@@ -1141,6 +1151,115 @@ func _button_center(pc: Node3D, action: String) -> Vector2:
 		if is_instance_valid(b) and b.get_meta("action") == action:
 			return b.get_global_rect().get_center()
 	return Vector2(-1, -1)
+
+
+## Varal: a folha molhada pendura no varal e seca (o brilho some); com o ventilador ligado seca
+## mais rápido e tremula; tirar no meio leva ela úmida e pendurar de novo continua de onde parou;
+## seca, ela deixa de ser molhada (as notas não borram); varal cheio não aceita mais.
+func _test_clothesline(kitnet: Node3D, player: CharacterBody3D) -> void:
+	var line: Node3D = kitnet.clothesline
+	var fan: Node3D = kitnet.fan
+	var items: Node = kitnet.items
+	_check(line != null and fan != null, "varal e ventilador montados")
+	_check(not kitnet.model.find_children("*", "MeshInstance3D", true, false).any(
+			func(m): return m.name == "MACHINE_ClothesLine" and m.mesh.get_surface_count() > 3),
+			"o varal do modelo não tem mais folhas desenhadas")
+	# Pendurar uma folha molhada (ventilador desligado).
+	var under := Vector3(5.75, 0.05, -3.1)
+	player.global_position = under
+	await physics_frame
+	if fan.powered:
+		fan.zone.interact(player)
+		await physics_frame
+	var sheet: Node = items.give(1, "sheet", {"wet": true})
+	await create_timer(0.3).timeout
+	_check(line._prompt(player).begins_with("[E] Hang the sheet to dry (turn on the fan"), "o varal oferece pendurar e lembra do ventilador")
+	line.zone.interact(player)
+	await physics_frame
+	var hung: Array = items.items.values().filter(func(i): return i.kind == "sheet" and i.data.get("hanging", false))
+	_check(player.held_item() == null and hung.size() == 1, "a folha foi para o varal")
+	if hung.is_empty():
+		return
+	sheet = hung[0]
+	var slot_xf: Transform3D = line.slot_transform(0)
+	_check(sheet.global_position.distance_to(slot_xf.origin) < 0.01 and sheet.freeze, "pendurada na primeira vaga, parada")
+	_check(absf(sheet.global_basis.y.x) > 0.99, "pendurada em pé, com a face para o lado")
+	# Sem ventilador, seca devagar; ligado, bem mais rápido.
+	var w0: float = line._wetness[sheet.id]
+	await create_timer(1.0).timeout
+	var calm: float = w0 - line._wetness[sheet.id]
+	fan.zone.interact(player)
+	await physics_frame
+	_check(fan.powered, "o ventilador ligou")
+	await create_timer(fan.SPIN_TIME + 0.1).timeout
+	var blades: Basis = kitnet.ambience.fan_blades.transform.basis
+	var w1: float = line._wetness[sheet.id]
+	await create_timer(1.0).timeout
+	var windy: float = w1 - line._wetness[sheet.id]
+	_check(calm > 0.0 and windy > calm * 2.5, "com o ventilador seca mais rápido (%.3f contra %.3f por segundo)" % [windy, calm])
+	_check(not kitnet.ambience.fan_blades.transform.basis.is_equal_approx(blades), "ligado, as pás giram")
+	var mesh: MeshInstance3D = sheet.get_node("Mesh")
+	_check(mesh.get_instance_shader_parameter("flutter") > line.FLUTTER_CALM * 2.0, "no vento a folha tremula")
+	_check(mesh.get_instance_shader_parameter("wet") < 0.95, "o brilho de molhada vai sumindo (%.2f)" % mesh.get_instance_shader_parameter("wet"))
+	await _look(player, Vector3(5.75, 0, -2.5), Vector3(5.75, 2.1, -3.2), "50_folha_no_varal")
+	# Tirar no meio: vem úmida; pendurar de novo continua de onde parou.
+	items.request_pickup(sheet.id)
+	await physics_frame
+	_check(player.held_item() == sheet and not sheet.data.get("hanging", true), "pegou a folha do varal")
+	var damp: float = sheet.data.get("wetness", 1.0)
+	_check(sheet.data["wet"] and damp < 0.95 and damp > 0.0, "ainda úmida (%.2f)" % damp)
+	_check(ItemKinds.label(sheet).begins_with("damp sheet"), "o nome diz quanto já secou (%s)" % ItemKinds.label(sheet))
+	line.zone.interact(player)
+	await physics_frame
+	hung = items.items.values().filter(func(i): return i.kind == "sheet" and i.data.get("hanging", false))
+	_check(hung.size() == 1 and absf(hung[0].data.get("wetness", 1.0) - damp) < 0.05, "pendurada de novo, continua de onde parou")
+	# Seca de vez.
+	sheet = hung[0]
+	line._wetness[sheet.id] = 0.01
+	await create_timer(0.3).timeout
+	_check(not sheet.data["wet"] and not line._wetness.has(sheet.id), "secou: não está mais molhada")
+	var dry_wet: float = sheet.get_node("Mesh").get_instance_shader_parameter("wet")
+	_check(dry_wet == 0.0, "seca, sem brilho de tinta (%.2f)" % dry_wet)
+	await _look(player, Vector3(5.75, 0, -2.5), Vector3(5.75, 2.1, -3.2), "51_folha_seca")
+	items.request_pickup(sheet.id)
+	await physics_frame
+	_check(ItemKinds.label(sheet) == "printed sheet", "a folha seca é só uma folha impressa")
+	# Na guilhotina, a folha seca não borra.
+	var g: Node3D = kitnet.guillotine
+	player.global_position = Vector3(2.35, 0.05, -1.35)
+	await physics_frame
+	g.zone.interact(player)
+	await physics_frame
+	_check(g.has_sheet() and not g.sheet_wet, "na guilhotina, a folha seca não vai borrar")
+	g.request_leave()
+	await physics_frame
+	g.pieces_left = 0
+	g._rows.clear()
+	g.stack_count = 0
+	g._send_state()
+	await create_timer(player.STATION_CAMERA_TIME + 0.1).timeout
+	# Varal cheio: 15 vagas.
+	player.global_position = under
+	await physics_frame
+	for i in line.slots.size():
+		items.give(1, "sheet", {"wet": true})
+		await physics_frame
+		line.zone.interact(player)
+		await physics_frame
+	_check(line.free_slots() == 0, "15 folhas no varal")
+	await _look(player, Vector3(5.75, 0, -2.4), Vector3(5.85, 2.0, -3.6), "52_varal_cheio")
+	items.give(1, "sheet", {"wet": true})
+	await physics_frame
+	_check(line._prompt(player) == "The clothesline is full", "varal cheio não aceita mais")
+	line.zone.interact(player)
+	await physics_frame
+	_check(player.held_item() != null, "a folha continua na mão")
+	for item in items.items.values():
+		if item.kind == "sheet":
+			items.consume(item)
+	fan.zone.interact(player)
+	await physics_frame
+	_check(not fan.powered, "o ventilador desligou")
 
 
 ## Clique de quem opera (desce a alavanca) e espera ela voltar.
