@@ -108,6 +108,24 @@ Os bonecos não travam um no outro como blocos: a colisão dos jogadores é só 
   empurrão (`CAMERA_KICK`).
 - **Tropeço:** as pernas dão o passo para o lado em que o corpo está indo de verdade, não só para
   frente. Empurrado de lado ou de costas, o boneco tropeça para lá em vez de deslizar.
+- **Caindo (ragdoll parcial):** quem leva uma trombada de alguém vindo a mais de `RAGDOLL_SPEED`
+  (3,5 m/s; andando é 2,8 e correndo 4,8) cai. Andando ninguém derruba ninguém; numa trombada de
+  frente correndo, os dois caem. Quem cai solta o item da mão, e o esqueleto ganha ossos de física
+  (`PhysicalBone3D`, `RAGDOLL_BONES` no `character_rig.gd`: quadril, tronco, peito, cabeça, braços
+  e pernas, com juntas em cone) que tombam e rolam com o tranco: o alto do corpo vai mais, os pés
+  quase ficam. Os ossos de física só batem no mundo (não empurram jogadores, itens nem uns aos
+  outros). Depois de `RAGDOLL_TIME` (1,6 s) ele levanta: a cápsula do jogador desliza até onde os
+  quadris pararam (sem atravessar parede) e a animação sai da pose de pano aos poucos
+  (`GETUP_TIME`); só então ele volta a andar. Fica `RAGDOLL_COOLDOWN` sem poder cair de novo.
+  - Em primeira pessoa, a câmera vai junto com a cabeça do ragdoll e volta enquanto levanta.
+  - Rede: quem cai é o dono que decide (pela velocidade de quem chegou, que vem pela rede) e avisa
+    os outros para cair e para levantar (`_remote_fall`, `_remote_stand`). Cada máquina simula o
+    próprio ragdoll, então a queda pode sair um pouco diferente em cada tela; ao levantar, todos
+    voltam para a posição do dono.
+  - No Godot 4.7 o ragdoll é um modificador aplicado na hora de desenhar: a pose de pano não
+    aparece em `get_bone_global_pose`; para ler, use os próprios ossos de física.
+- Teleporte (nascer, voltar de fora do mapa) não conta como corrida: acima de `TELEPORT_SPEED` a
+  velocidade vira zero, senão quem nascesse do lado de alguém o derrubaria.
 - A velocidade de cada boneco (`body_velocity`) é medida no passo de física: o quadro de desenho
   roda mais vezes que a física, e medida lá ela dava zero em metade dos quadros.
 
@@ -117,3 +135,5 @@ Os bonecos não travam um no outro como blocos: a colisão dos jogadores é só 
 | Quanto o tronco balança | `PUSH_WOBBLE` no `player.gd`, `WOBBLE_*` no `character_rig.gd` |
 | Atraso do peito e da cabeça, chicote dos braços, achatado | `CHEST_*`, `HEAD_*`, `ARM_FLAIL*`, `SQUASH_*` no `character_rig.gd` |
 | Quando vale trombada e o tranco da câmera | `IMPACT_MIN_SPEED`, `CAMERA_KICK` no `player.gd` |
+| Quando derruba, quanto tempo fica caído, intervalo até poder cair de novo | `RAGDOLL_SPEED`, `RAGDOLL_TIME`, `RAGDOLL_COOLDOWN` no `player.gd` |
+| Tamanho, peso e juntas dos ossos de física, tempo para levantar | `RAGDOLL_BONES`, `GETUP_TIME` no `character_rig.gd` |

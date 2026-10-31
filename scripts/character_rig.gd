@@ -13,6 +13,8 @@ extends Node3D
 ##   como gelatina, e o resto vem atrasado, cada parte com a sua mola: o peito, a cabeça e os
 ##   braços, que chicoteiam para fora;
 ## - trombada (impact): além disso o corpo achata e volta (squash e stretch);
+## - caído (start_ragdoll / end_ragdoll): ragdoll parcial, ossos de física (PhysicalBone3D) que
+##   tombam e rolam com o tranco; ao levantar, a animação sai da pose de pano aos poucos;
 ## - segurando um item: ombro e cotovelo se ajustam (IK de dois ossos) para a mão chegar nas
 ##   luvas que seguram o item (hands.glb, do player.gd), e as luvas do boneco somem.
 ##
@@ -237,6 +239,7 @@ func animate(delta: float, velocity: Vector3, airborne: bool, pitch: float, hold
 			_reach(i, hold_targets[i])
 	else:
 		_pose_arms(s * ARM_SWING * _swing, _air)
+	_blend_getup(delta)
 
 
 ## Braços soltos: balançam ao contrário das pernas (o cotovelo dobra mais quando o braço vai para
@@ -281,6 +284,159 @@ func _reach(i: int, target: Vector3) -> void:
 	_aim(fore, fore_dir)
 	gloves[i].visible = false
 
+
+
+# --- Ragdoll -------------------------------------------------------------------------------------
+
+## Ossos de física do ragdoll: nome -> (comprimento, raio, massa, abertura da junta em graus).
+## A junta fica no começo do osso (onde ele gira); mãos, pés e pescoço vão junto com o pai.
+const RAGDOLL_BONES := {
+	"Hips": [0.12, 0.15, 10.0, 0.0],
+	"Spine": [0.2, 0.16, 10.0, 25.0],
+	"Chest": [0.18, 0.14, 8.0, 25.0],
+	"Head": [0.22, 0.13, 4.0, 40.0],
+	"UpperArm.L": [0.3, 0.05, 2.0, 80.0],
+	"UpperArm.R": [0.3, 0.05, 2.0, 80.0],
+	"Forearm.L": [0.3, 0.045, 1.5, 70.0],
+	"Forearm.R": [0.3, 0.045, 1.5, 70.0],
+	"Thigh.L": [0.35, 0.07, 5.0, 60.0],
+	"Thigh.R": [0.35, 0.07, 5.0, 60.0],
+	"Shin.L": [0.32, 0.06, 3.5, 60.0],
+	"Shin.R": [0.32, 0.06, 3.5, 60.0],
+}
+## Quanto dura levantar (a pose de pano vira a pose em pé), em segundos.
+const GETUP_TIME := 0.7
+
+## Caído, com a física mandando nos ossos.
+var ragdolling := false
+## De 0 (acabou de levantar) a 1 (de pé de novo, a animação manda sozinha).
+var getup := 1.0
+var _sim: PhysicalBoneSimulator3D
+var _pbones := {}
+## Pose de cada osso no fim do ragdoll (local, em relação ao pai), para levantar daí.
+var _snapshot := {}
+## Onde os quadris estavam no mundo no fim do ragdoll (a cápsula do jogador pode ter ido para lá).
+var _hips_world := Transform3D.IDENTITY
+
+
+func _build_ragdoll() -> void:
+	_sim = PhysicalBoneSimulator3D.new()
+	_sim.name = "Ragdoll"
+	skeleton.add_child(_sim)
+	for bone_name: String in RAGDOLL_BONES:
+		var spec: Array = RAGDOLL_BONES[bone_name]
+		var length: float = spec[0]
+		var radius: float = spec[1]
+		var pb := PhysicalBone3D.new()
+		pb.name = "PB_" + bone_name.replace(".", "_")
+		pb.bone_name = bone_name
+		pb.mass = spec[2]
+		pb.friction = 0.9
+		pb.linear_damp = 0.4
+		pb.angular_damp = 3.0
+		# Só bate no mundo: não empurra os jogadores, os itens nem os próprios ossos.
+		pb.collision_layer = 0
+		pb.collision_mask = 1
+		var shape := CollisionShape3D.new()
+		if bone_name == "Head":
+			var ball := SphereShape3D.new()
+			ball.radius = radius
+			shape.shape = ball
+		else:
+			var cap := CapsuleShape3D.new()
+			cap.radius = radius
+			cap.height = maxf(length, radius * 2.0 + 0.01)
+			shape.shape = cap
+		pb.add_child(shape)
+		# O corpo fica no meio do osso; a junta, no começo dele.
+		pb.body_offset = Transform3D(Basis.IDENTITY, Vector3(0, length / 2.0, 0))
+		pb.joint_offset = Transform3D(Basis.IDENTITY, Vector3(0, -length / 2.0, 0))
+		if bone_name == "Hips":
+			pb.joint_type = PhysicalBone3D.JOINT_TYPE_NONE
+		else:
+			pb.joint_type = PhysicalBone3D.JOINT_TYPE_CONE
+			pb.set("joint_constraints/swing_span", spec[3])
+			pb.set("joint_constraints/twist_span", 20.0)
+		_sim.add_child(pb)
+		_pbones[_bones[bone_name]] = pb
+
+
+## Cai: a física passa a mandar nos ossos, a partir da pose de agora, com o tranco `speed` (m/s)
+## para o lado `dir` (no mundo) e um pulinho para cima.
+func start_ragdoll(dir: Vector3, speed: float) -> void:
+	if ragdolling:
+		return
+	if _sim == null:
+		_build_ragdoll()
+	ragdolling = true
+	getup = 0.0
+	_snapshot.clear()
+	var to_world := skeleton.global_transform
+	for bone: int in _pbones:
+		var pb: PhysicalBone3D = _pbones[bone]
+		pb.global_transform = to_world * skeleton.get_bone_global_pose(bone) * pb.body_offset
+	_sim.physical_bones_start_simulation()
+	var flat := Vector3(dir.x, 0.0, dir.z).normalized()
+	for bone: int in _pbones:
+		var pb: PhysicalBone3D = _pbones[bone]
+		# O alto do corpo vai mais (tomba), os pés quase ficam (tropeça neles).
+		var height := clampf((pb.global_position.y - global_position.y) / 1.6, 0.0, 1.0)
+		pb.linear_velocity = flat * speed * (0.35 + 0.65 * height) + Vector3.UP * 1.0
+		pb.angular_velocity = flat.cross(Vector3.UP) * -speed * 1.5
+
+
+## Onde os quadris do ragdoll estão agora, no mundo.
+func ragdoll_hips() -> Vector3:
+	var pb: PhysicalBone3D = _pbones.get(_bones["Hips"])
+	return pb.global_position if pb != null and ragdolling else skeleton.to_global(skeleton.get_bone_global_pose(_bones["Hips"]).origin)
+
+
+## Posição da cabeça do ragdoll no mundo (para a câmera de quem caiu ir junto).
+func ragdoll_head() -> Vector3:
+	var pb: PhysicalBone3D = _pbones.get(_bones["Head"])
+	return pb.global_position if pb != null else global_position + Vector3.UP * 1.6
+
+
+## Levanta: guarda a pose de pano (para a animação sair dela aos poucos) e desliga a física.
+func end_ragdoll() -> void:
+	if not ragdolling:
+		return
+	var from_world := skeleton.global_transform.affine_inverse()
+	var globals := {}
+	for bone in skeleton.get_bone_count():
+		var parent := skeleton.get_bone_parent(bone)
+		var g: Transform3D
+		if _pbones.has(bone):
+			var pb: PhysicalBone3D = _pbones[bone]
+			g = from_world * pb.global_transform * pb.body_offset.affine_inverse()
+		elif parent >= 0:
+			g = globals[parent] * skeleton.get_bone_pose(bone)
+		else:
+			g = skeleton.get_bone_global_pose(bone)
+		globals[bone] = g
+		var local := g if parent < 0 else (globals[parent] as Transform3D).affine_inverse() * g
+		_snapshot[bone] = local.orthonormalized()
+	_hips_world = skeleton.global_transform * globals[_bones["Hips"]]
+	_sim.physical_bones_stop_simulation()
+	ragdolling = false
+	getup = 0.0
+
+
+## Depois de levantar: a pose da animação vai saindo da pose de pano (os quadris, que são a raiz,
+## saem de onde ficaram no mundo, mesmo que a cápsula tenha ido para lá).
+func _blend_getup(delta: float) -> void:
+	if getup >= 1.0 or _snapshot.is_empty():
+		return
+	getup = minf(1.0, getup + delta / GETUP_TIME)
+	var t := smoothstep(0.0, 1.0, getup)
+	var hips: int = _bones["Hips"]
+	_snapshot[hips] = skeleton.global_transform.affine_inverse() * _hips_world
+	for bone: int in _snapshot:
+		var snap: Transform3D = _snapshot[bone]
+		var rot := snap.basis.get_rotation_quaternion().slerp(skeleton.get_bone_pose_rotation(bone), t)
+		skeleton.set_bone_pose_rotation(bone, rot)
+		if bone == hips:
+			skeleton.set_bone_pose_position(bone, snap.origin.lerp(skeleton.get_bone_pose_position(bone), t))
 
 # --- Ossos ---------------------------------------------------------------------------------------
 

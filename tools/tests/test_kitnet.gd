@@ -21,6 +21,8 @@ extends SceneTree
 ## - empurra-empurra: encostados se afastam, quem vem andando empurra junto e o tronco balança; na
 ##   trombada o peito e a cabeça vêm atrasados, o corpo achata, a câmera dá um tranco e os passos
 ##   vão para o lado do empurrão;
+## - ragdoll parcial: andando não derruba; correndo, quem leva a trombada solta o item, cai e levanta
+##   onde caiu;
 ## - com --solo, entra sozinho sem rede (o botão "Play solo") em vez de hospedar;
 ## - com --client, abre uma segunda janela que entra na sala e confere que ela aparece e se mexe.
 ## Prints de alguns pontos de vista na pasta --out (rode com janela, sem --headless).
@@ -214,6 +216,7 @@ func _run() -> void:
 	await _test_characters(kitnet, player)
 	await _test_first_person(kitnet, player)
 	await _test_push(kitnet, player)
+	await _test_ragdoll(kitnet, player)
 
 	if _with_client:
 		await _test_client(kitnet)
@@ -355,6 +358,75 @@ func _test_push(kitnet: Node3D, player: CharacterBody3D) -> void:
 	other.queue_free()
 	still.queue_free()
 	await physics_frame
+
+
+## Ragdoll parcial: andando ninguém derruba ninguém; correndo, quem leva a trombada solta o que
+## segura, cai (os ossos de física tombam) e depois levanta onde caiu.
+func _test_ragdoll(kitnet: Node3D, player: CharacterBody3D) -> void:
+	var runner: CharacterBody3D = load("res://scenes/player.tscn").instantiate()
+	runner.setup(4444, "Runner", 1, Transform3D(Basis(Vector3.UP, -PI / 2), Vector3(2.9, 0.05, -3.3)))
+	kitnet.get_node("Players").add_child(runner)
+	await physics_frame
+
+	# Andando (2,8 m/s): empurra, mas não derruba.
+	player.global_position = Vector3(3.9, 0.05, -3.3)
+	await _run_into(runner, player, 2.8, 30)
+	_check(not player.fallen, "andando, a trombada não derruba")
+	await create_timer(0.6).timeout
+
+	# Correndo (4,8 m/s) com a resma na mão: derruba.
+	runner.global_position = Vector3(2.7, 0.05, -3.3)
+	runner._target_position = runner.global_position
+	runner._last_physics_pos = runner.global_position
+	player.global_position = Vector3(3.9, 0.05, -3.3)
+	player._last_physics_pos = player.global_position
+	kitnet.items.give(1, "ream")
+	await create_timer(0.3).timeout
+	var start := player.global_position
+	await _run_into(runner, player, 4.8, 18)
+	_check(player.fallen, "correndo, a trombada derruba")
+	_check(player.held_item() == null, "quem cai solta o que segurava")
+	var lowest := 9.0
+	for i in 50:
+		await physics_frame
+		lowest = minf(lowest, player.character.ragdoll_hips().y)
+		if i == 12:
+			await _shot("48_caindo_primeira_pessoa")
+	_check(lowest < 0.45, "caído, os quadris vão ao chão (%.2f m)" % lowest)
+	var waited := 0.0
+	while player.fallen and waited < 4.0:
+		await physics_frame
+		waited += 1.0 / Engine.physics_ticks_per_second
+	_check(not player.fallen, "depois de %.1f s levanta" % waited)
+	var slid := (player.global_position - start).dot(Vector3.RIGHT)
+	_check(slid > 0.3, "levanta onde caiu, para o lado da trombada (%.2f m)" % slid)
+	await create_timer(1.0).timeout
+	_check(player.character.getup >= 1.0 and player._has_control(), "de pé de novo, o jogador volta a andar")
+
+	# De fora: o corredor cai (sem rede, chamado direto) e levanta.
+	runner._target_position = Vector3(3.6, 0.05, -3.3)
+	runner.global_position = runner._target_position
+	await _look(player, Vector3(2.4, 0, -1.9), Vector3(3.6, 0.6, -3.3), "49_ragdoll_antes")
+	runner._begin_fall(Vector3(1, 0, -0.3).normalized(), 5.0)
+	var shots := {8: "50_ragdoll_tombando", 30: "51_ragdoll_no_chao"}
+	for i in 60:
+		await physics_frame
+		if shots.has(i):
+			await _shot(shots[i])
+	runner._end_fall()
+	for i in 20:
+		await physics_frame
+	await _shot("52_ragdoll_levantando")
+	runner.queue_free()
+	await physics_frame
+
+
+## O outro boneco vem andando em linha reta para cima do jogador, a `speed` m/s, por `frames`.
+func _run_into(runner: CharacterBody3D, player: CharacterBody3D, speed: float, frames: int) -> void:
+	var dir := Vector3(player.global_position.x - runner.global_position.x, 0, player.global_position.z - runner.global_position.z).normalized()
+	for i in frames:
+		runner._target_position += dir * speed / Engine.physics_ticks_per_second
+		await physics_frame
 
 
 ## Segunda janela entrando na sala pelo menu (--join), como um amigo faria.

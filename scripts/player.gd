@@ -17,6 +17,9 @@ extends CharacterBody3D
 ## dos outros, que já vem pela rede), e quem chega andando empurra junto (PUSH_*). O tronco de
 ## quem leva o empurrão balança (character_rig.push), e todo mundo vê.
 ##
+## Quem leva uma trombada de alguém correndo cai (ragdoll parcial, RAGDOLL_*): solta o que
+## segura, tomba e rola com o tranco, e depois levanta onde caiu. O dono decide e avisa os outros.
+##
 ## Camadas de colisão: 1 = mundo, 2 = jogadores (os itens esbarram neles), 3 = itens,
 ## 4 = zonas de interação. A mira acerta mundo, itens e zonas.
 
@@ -54,6 +57,8 @@ const PUSH_MAX := 4.0
 ## e balança de uma vez, e a câmera de quem joga dá um tranco), e quanto a câmera gira por m/s.
 const IMPACT_MIN_SPEED := 0.6
 const CAMERA_KICK := 0.02
+## Acima disso (m/s) o boneco não andou, foi teleportado.
+const TELEPORT_SPEED := 9.0
 ## Balanço do tronco: quanto o boneco ganha de giro (rad/s, por segundo encostado) por unidade de
 ## empurrão.
 const PUSH_WOBBLE := 10.0
@@ -174,20 +179,34 @@ func _process(delta: float) -> void:
 		_update_hold_point(delta)
 	_update_hands()
 	_animate_character(delta)
+	if is_local():
+		_update_fall_camera()
 
 
 func _physics_process(delta: float) -> void:
 	# Quanto andou no último passo de física (o quadro de desenho roda mais vezes que a física, e
 	# medido lá dava zero em metade dos quadros).
 	if delta > 0.0:
-		# Teleporte (nascer, voltar de fora do mapa) não vira uma corrida: no máximo 10 m/s.
-		body_velocity = ((global_position - _last_physics_pos) / delta).limit_length(10.0)
+		body_velocity = (global_position - _last_physics_pos) / delta
+		# Teleporte (nascer, voltar de fora do mapa) não é uma corrida: não derruba nem empurra.
+		if body_velocity.length() > TELEPORT_SPEED:
+			body_velocity = Vector3.ZERO
 	_last_physics_pos = global_position
 	if not is_local():
 		_follow_remote(delta)
 		return
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
+	_update_fall(delta)
+	if fallen or character.getup < 1.0:
+		# Caído ou levantando: sem andar nem pular, só a gravidade.
+		velocity.x = 0.0
+		velocity.z = 0.0
+		move_and_slide()
+		# Sem controle, só para a interface largar o aviso do item que caiu da mão.
+		_update_interaction(delta)
+		_send_state(delta)
+		return
 
 	var input_dir := Vector2.ZERO
 	if _has_control():
@@ -228,7 +247,7 @@ func _update_push(delta: float) -> void:
 	_shove = _shove.lerp(Vector3.ZERO, clampf(PUSH_DAMPING * delta, 0.0, 1.0))
 	var spring := Vector3.ZERO
 	for other: Node3D in get_tree().get_nodes_in_group("player"):
-		if other == self or absf(other.global_position.y - global_position.y) > 1.2:
+		if other == self or other.get("fallen") or absf(other.global_position.y - global_position.y) > 1.2:
 			continue
 		var away := global_position - other.global_position
 		away.y = 0.0
@@ -245,6 +264,87 @@ func _update_push(delta: float) -> void:
 		if coming * PUSH_TRANSFER > along:
 			_shove += dir * (coming * PUSH_TRANSFER - along)
 	push = (_shove + spring).limit_length(PUSH_MAX)
+
+
+
+# --- Caído (ragdoll) ----------------------------------------------------------
+
+## Quem chega correndo (mais rápido que isto, m/s, na direção deste boneco) derruba: andando é
+## 2,8 e correndo 4,8. Caído dura RAGDOLL_TIME segundos; depois levanta e fica RAGDOLL_COOLDOWN
+## sem poder cair de novo.
+const RAGDOLL_SPEED := 3.5
+const RAGDOLL_TIME := 1.6
+const RAGDOLL_COOLDOWN := 1.5
+
+## Caído (todas as máquinas sabem; quem decide é o dono).
+var fallen := false
+var _fallen_time := 0.0
+var _fall_cooldown := 0.0
+
+
+## Só o dono: alguém veio correndo para cima deste boneco.
+func _maybe_fall(dir: Vector3, speed: float) -> void:
+	if not is_local() or fallen or _fall_cooldown > 0.0 or speed < RAGDOLL_SPEED:
+		return
+	var kitnet := get_tree().get_first_node_in_group("kitnet")
+	if held_item() != null:
+		_drop_held()
+	_begin_fall(dir, speed)
+	if kitnet != null:
+		kitnet.rpc_roster(self, &"_remote_fall", [dir, speed])
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _remote_fall(dir: Vector3, speed: float) -> void:
+	if multiplayer.get_remote_sender_id() == get_multiplayer_authority():
+		_begin_fall(dir, speed)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _remote_stand() -> void:
+	if multiplayer.get_remote_sender_id() == get_multiplayer_authority():
+		_end_fall()
+
+
+func _begin_fall(dir: Vector3, speed: float) -> void:
+	fallen = true
+	_fallen_time = RAGDOLL_TIME
+	character.position = Vector3.ZERO
+	character.start_ragdoll(dir, speed)
+
+
+func _end_fall() -> void:
+	fallen = false
+	character.end_ragdoll()
+
+
+## Só o dono: conta o tempo caído e levanta onde os quadris pararam (a cápsula desliza até lá,
+## sem atravessar parede).
+func _update_fall(delta: float) -> void:
+	_fall_cooldown = maxf(0.0, _fall_cooldown - delta)
+	if not fallen:
+		return
+	_fallen_time -= delta
+	if _fallen_time > 0.0:
+		return
+	var hips: Vector3 = character.ragdoll_hips()
+	var move := Vector3(hips.x - global_position.x, 0.0, hips.z - global_position.z)
+	_end_fall()
+	move_and_collide(move)
+	_fall_cooldown = RAGDOLL_COOLDOWN
+	var kitnet := get_tree().get_first_node_in_group("kitnet")
+	if kitnet != null:
+		kitnet.rpc_roster(self, &"_remote_stand")
+
+
+## Câmera de quem caiu: vai junto com a cabeça do ragdoll e volta enquanto levanta.
+func _update_fall_camera() -> void:
+	var weight := 1.0 if fallen else 1.0 - smoothstep(0.0, 1.0, character.getup)
+	if weight <= 0.0:
+		return
+	var target: Vector3 = character.ragdoll_head() + Vector3.UP * 0.08 if fallen else character.skeleton.to_global(
+			character.skeleton.get_bone_global_pose(character.skeleton.find_bone("Head")).origin) + Vector3.UP * 0.2
+	camera.global_position = head.global_position.lerp(target, weight)
 
 
 # --- Rede ---------------------------------------------------------------------
@@ -415,7 +515,7 @@ func _drop_held(charge := 0.0) -> void:
 
 
 func _has_control() -> bool:
-	return controls_enabled and not hud.is_blocking()
+	return controls_enabled and not hud.is_blocking() and not fallen
 
 
 # --- Corpo --------------------------------------------------------------------
@@ -473,12 +573,15 @@ func _wobble_from_others(delta: float) -> void:
 		var dir := away / dist
 		var other_vel: Vector3 = other.get("body_velocity")
 		touching[other] = true
+		if fallen or other.get("fallen"):
+			continue
 		if not _touching.has(other):
 			var closing := (other_vel - body_velocity).dot(dir)
 			if closing > IMPACT_MIN_SPEED:
 				character.impact(dir, closing)
 				if is_local():
 					_kick_camera(dir, closing)
+			_maybe_fall(dir, other_vel.dot(dir))
 		var coming := maxf(0.0, other_vel.dot(dir))
 		var strength := (PUSH_DISTANCE - dist) * 6.0 + coming * 1.5
 		character.push(dir, strength * PUSH_WOBBLE * delta)
@@ -511,11 +614,11 @@ func _animate_character(delta: float) -> void:
 	if held_item() != null and _hands.size() == 2:
 		targets = [_hands[0].global_position, _hands[1].global_position]
 	character.animate(delta, moved, airborne, head.rotation.x, targets)
-	if is_local():
+	if is_local() and not fallen:
 		# Olhando para baixo, o corpo recua para trás da câmera: aparecem a barriga, as pernas e
-		# os tênis, em vez do buraco da gola e dos ombros.
+		# os tênis, em vez do buraco da gola e dos ombros. Levantando, volta aos poucos.
 		var down := clampf(-head.rotation.x / FIRST_PERSON_FULL_DOWN, 0.0, 1.0)
-		character.position.z = lerpf(FIRST_PERSON_BACK.x, FIRST_PERSON_BACK.y, down)
+		character.position.z = lerpf(FIRST_PERSON_BACK.x, FIRST_PERSON_BACK.y, down) * character.getup
 
 
 func _update_crouch(delta: float) -> void:
