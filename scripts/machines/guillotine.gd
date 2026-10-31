@@ -19,8 +19,8 @@ extends Node3D
 ## fora dela, só as mãos andam, até encostar e empurrar pela ponta. Com o botão direito segurado,
 ## só as mãos andam, para onde for. Folha sem mão em cima fica solta; longe da lâmina ela treme e o
 ## corte sai com um erro aleatório; perto fica firme. Mas o que passar da linha da lâmina no golpe
-## vai embora: primeiro o polegar e o indicador, depois o médio, e passando o meio da mão, ela
-## inteira (os pedaços caem na mesa como itens). Sem dedos a folha treme mais.
+## vai embora: do polegar (o que chega primeiro) ao mínimo, e passando o meio da palma, a mão
+## inteira (os pedaços caem na mesa como itens). Os dedos em perigo ficam vermelhos. Sem dedos a folha treme mais.
 ##
 ## A folha é cortada como numa gráfica, em duas fases:
 ##   Linhas: os cortes horizontais soltam tiras (uma linha de notas, ainda grudadas lado a lado),
@@ -47,6 +47,7 @@ const ItemKinds := preload("res://scripts/items/item_kinds.gd")
 const Toon := preload("res://scripts/toon.gd")
 const DEFAULT_STATS := preload("res://data/machines/guillotine_manual.tres")
 const SHEET_FRONT := preload("res://assets/textures/sheet_front.png")
+const HandsModel := preload("res://assets/models/hands.glb")
 
 enum Phase { ROWS, COLUMNS }
 ## Para onde vai uma tira cortada.
@@ -65,8 +66,9 @@ const SHEET_SIZE := Vector2(0.297, 0.21)
 const STACK_X := 0.17
 const STACK_GAP := 0.03
 const OPEN_ANGLE := deg_to_rad(50.0)     # alavanca levantada (gira no Z do Godot)
-## Alavanca levantada com alguém operando: quase em pé, para não tapar a folha de quem olha de cima.
-const OPERATE_ANGLE := deg_to_rad(82.0)
+## Alavanca levantada com alguém operando: passando um pouco do ponto em pé, inclinada para trás,
+## para não tapar a folha nem as mãos de quem olha de cima.
+const OPERATE_ANGLE := deg_to_rad(125.0)
 ## Onde nasce o montinho de notas: na mesa, logo na frente da guilhotina.
 const PILE_POS := Vector3(-0.0835, 0.0, 0.26)
 const PILE_STEP := Vector3(0.16, 0.0, 0.0)
@@ -95,23 +97,31 @@ const FEED_RATE := 30.0
 ## a zona onde outro jogador aperta [E] para puxar.
 const LEVER_GRIP := Vector3(0.585, 0.01, 0.0)
 const LEVER_GRIP_SIZE := Vector3(0.2, 0.08, 0.08)
-## Mãos de quem opera: as duas na mesma altura, `hands_z`, andando livres de HANDS_RANGE (da
-## lâmina, m). Ao chegar, pegam HANDS_REST na frente da borda de trás da folha. Seguram a folha
-## com pelo menos PAPER_TOUCH da luva por cima dela. A folha volta até FEED_BACK atrás da lâmina.
-## A luva deitada de lado vai de HAND_BACK atrás a HAND_FRONT na frente do pulso (o polegar para a
-## lâmina), e DIGIT_Z diz onde fica cada dedo (player.DIGITS). HAND_LOST é o bit da mão inteira
-## (o mesmo do player.gd).
+## Mãos de quem opera (as luvas abertas, HandFlat_* do hands.glb): as duas na mesma altura,
+## `hands_z` (o pulso), andando livres de HANDS_RANGE (da lâmina, m). Ao chegar, o pulso fica
+## HANDS_REST na frente da borda de trás da folha. Os braços vêm de quem opera, na diagonal
+## (ARM_YAW), e o pulso dobra mais WRIST_BEND para dentro: os dedos vão para dentro, um pouco para
+## trás, e o polegar para a lâmina. O pulso fica
+## WRIST_OUT fora da borda do papel (e pelo menos HANDS_MIN_SPREAD do meio, para as luvas não se
+## encavalarem na pilha estreita), a PALM_LIFT do papel (a palma apoiada), e sobe HANDS_LIFT
+## enquanto as mãos andam sem a folha. Seguram a folha com pelo menos PAPER_TOUCH da luva por cima
+## dela. A folha volta até FEED_BACK atrás da lâmina. HAND_LOST é o bit da mão inteira (o mesmo do
+## player.gd).
 const HANDS_RANGE := Vector2(-0.34, 0.12)
-## Pulso até o meio do que está na lâmina, no mínimo: na pilha estreita, as luvas não se encavalam
-## (os dedos chegam só perto do meio).
-const HANDS_MIN_SPREAD := 0.14
-const HANDS_REST := 0.04
+const HANDS_REST := 0.08
+const ARM_YAW := deg_to_rad(45.0)
+const WRIST_BEND := deg_to_rad(35.0)
+const WRIST_OUT := 0.04
+const HANDS_MIN_SPREAD := 0.21
+const PALM_LIFT := 0.017
+const HANDS_LIFT := 0.02
 const PAPER_TOUCH := 0.01
 const FEED_BACK := 0.06
-const HAND_FRONT := 0.046
-const HAND_BACK := 0.034
-const DIGIT_Z := [0.034, 0.027, 0.009, -0.009, -0.026]
 const HAND_LOST := 1 << 5
+## O golpe leva o dedo que passa da linha da lâmina mais que CUT_BITE, e a mão inteira quando o meio
+## da palma (PALM_CENTER, no referencial da luva: o pulso na origem, os dedos para -Z) passa dela.
+const CUT_BITE := 0.003
+const PALM_CENTER := Vector3(0.0, 0.0, -0.033)
 ## Firmeza: com a frente da mão até FIRM_GAP atrás da lâmina a folha fica firme; a partir de
 ## LOOSE_GAP ela treme SHAKE_MAX (m, para cada lado) no golpe. Cada dedo a menos de quem opera
 ## treme mais FINGER_SHAKE.
@@ -181,6 +191,16 @@ var _arm_swinging := false
 var _locked_until := 0.0
 var _feed_target := 0.0
 var _hands_target := CUT_Z - 0.17
+## Medidas da luva aberta girada (z em relação ao pulso, m): onde vai cada dedo ([trás, frente],
+## na ordem de player.DIGITS), o meio da palma e a luva toda sem a manga ([trás, frente]).
+var _digit_z: Array[Vector2] = []
+var _palm_z := 0.0
+var _hand_span := Vector2.ZERO
+## Mãos levantadas (0 = apertando, 1 = no alto), enquanto elas andam sem a folha.
+var _lift := 0.0
+var _lift_timer := 0.0
+var _last_hands_z := 0.0
+var _last_feed := 0.0
 var _guide_mat: StandardMaterial3D
 var _feed_timer := 0.0
 var _feed_dirty := false
@@ -207,6 +227,7 @@ func _ready() -> void:
 		lever_zone.setup(_arm, "Zone_Lever", LEVER_GRIP, LEVER_GRIP_SIZE)
 		lever_zone.prompt_fn = _lever_prompt
 		lever_zone.press_fn = _press_lever
+	_measure_hands()
 	_sheet = _paper_mesh("Sheet")
 	_stack = _paper_mesh("StripStack")
 	for i in 2:
@@ -230,6 +251,15 @@ func _process(delta: float) -> void:
 			_feed_timer = 1.0 / FEED_RATE
 			_feed_dirty = false
 			_kitnet.rpc_roster(self, &"_remote_feed", [feed, hands_z])
+	# As mãos sobem um pouco enquanto andam sem a folha, e voltam a apertar quando param.
+	if absf(hands_z - _last_hands_z) > 1e-5 and absf(feed - _last_feed) < 1e-6:
+		_lift_timer = 0.15
+	_lift_timer -= delta
+	_lift = move_toward(_lift, 1.0 if _lift_timer > 0.0 else 0.0, delta * 8.0)
+	_last_hands_z = hands_z
+	_last_feed = feed
+	if is_instance_valid(_operating_player):
+		_operating_player.show_danger(_chopped(hands_z) if has_sheet() else 0)
 	# A linha-guia pisca com as mãos passando dela.
 	var danger := hands_in_danger()
 	_guide_mat.albedo_color = Color(1.0, 0.15, 0.1, 0.4 + 0.6 * absf(sin(Time.get_ticks_msec() / 80.0))) \
@@ -625,7 +655,7 @@ func _chop_hands(lost: int) -> String:
 			_kitnet.items.spawn("hand", global_transform * Transform3D(Basis.IDENTITY, spot),
 					{"owner": player.player_name, "side": i, "lost": before})
 		else:
-			for d in DIGIT_Z.size():
+			for d in _digit_z.size():
 				if lost & (1 << d) and not before & (1 << d):
 					fingers += 1
 					var at := spot + Vector3(-side * 0.025 * d, 0.0, 0.0)
@@ -729,16 +759,48 @@ func regrip(pixels: float, fine := false) -> void:
 ## Põe as mãos com a frente delas `gap` m atrás da linha da lâmina (negativo: passando dela), sem
 ## mexer a folha (testes).
 func place_hands(gap: float) -> void:
-	hands_z = _clamp_hands(CUT_Z - gap - HAND_FRONT)
+	hands_z = _clamp_hands(CUT_Z - gap - _hand_span.y)
 	_feed_dirty = true
+
+
+## Quanto a mão dobra no pulso em relação ao braço (rad, para dentro).
+func hand_bend() -> float:
+	return WRIST_BEND
+
+
+## Quanto a frente das mãos (o que chega primeiro na lâmina) fica na frente do pulso (m).
+func hands_front_offset() -> float:
+	return _hand_span.y
+
+
+## Mede a luva aberta girada como ela aparece na mesa (a direita; a esquerda é o espelho, com as
+## mesmas medidas em z): cada dedo, o meio da palma e a luva toda sem a manga.
+func _measure_hands() -> void:
+	var model := HandsModel.instantiate()
+	var turn := Basis(Vector3.UP, ARM_YAW + WRIST_BEND)
+	_digit_z.clear()
+	var span := Vector2(INF, -INF)
+	for piece in ["Thumb", "Index", "Middle", "Ring", "Pinky", "Glove"]:
+		var mesh: Mesh = (model.find_child("HandFlat_R_" + piece, true, false) as MeshInstance3D).mesh
+		var box := mesh.get_aabb()
+		var z := Vector2(INF, -INF)
+		for i in 8:
+			var corner: Vector3 = turn * box.get_endpoint(i)
+			z = Vector2(minf(z.x, corner.z), maxf(z.y, corner.z))
+		if piece != "Glove":
+			_digit_z.append(z)
+		span = Vector2(minf(span.x, z.x), maxf(span.y, z.y))
+	model.free()
+	_palm_z = (turn * PALM_CENTER).z
+	_hand_span = span
 
 
 func _clamp_hands(z: float) -> float:
 	return clampf(z, CUT_Z + HANDS_RANGE.x, CUT_Z + HANDS_RANGE.y)
 
 
-## Onde as mãos pegam quando chegam (alguém começou a operar, ou a pilha girou): na borda de trás
-## do que está na lâmina, com a folha encostada nela.
+## Onde as mãos pegam quando chegam (alguém começou a operar, ou a pilha girou): perto da borda de
+## trás do que está na lâmina, com a folha encostada nela.
 func _rest_hands_z() -> float:
 	return _clamp_hands(_back_z(0.0) + HANDS_REST)
 
@@ -751,7 +813,7 @@ func _back_z(at: float) -> float:
 ## Se as mãos (o pulso em `hz`) estão em cima do que está na lâmina, passando `at` dela: pelo menos
 ## PAPER_TOUCH da luva por cima do papel.
 func _on_paper(at: float, hz: float) -> bool:
-	return hz + HAND_FRONT >= _back_z(at) + PAPER_TOUCH and hz - HAND_BACK <= CUT_Z + at - PAPER_TOUCH
+	return hz + _hand_span.y >= _back_z(at) + PAPER_TOUCH and hz + _hand_span.x <= CUT_Z + at - PAPER_TOUCH
 
 
 ## Quanto a folha treme no golpe agora (m, para cada lado).
@@ -763,25 +825,26 @@ func shake_now() -> float:
 ## segurando a tira que sai (na frente da lâmina), ela fica solta. Mais os dedos que faltam a quem
 ## opera.
 func _shake(at: float, hz: float) -> float:
-	var gap := CUT_Z - (hz + HAND_FRONT)
+	var gap := CUT_Z - (hz + _hand_span.y)
 	var loose := SHAKE_MAX
-	if _on_paper(at, hz) and gap > -(HAND_FRONT + HAND_BACK):
+	if _on_paper(at, hz) and hz + _hand_span.x < CUT_Z:
 		loose = SHAKE_MAX * clampf((gap - FIRM_GAP) / (LOOSE_GAP - FIRM_GAP), 0.0, 1.0)
 	var player: Node = _kitnet.players.get(operator)
 	return loose + FINGER_SHAKE * (player.fingers_missing() if player != null else 0)
 
 
-## O que o golpe leva das mãos com o pulso em `hz` (bits de player.DIGITS e HAND_LOST; 0 = nada):
-## o que passou da linha da lâmina. Passando o meio da mão, vai ela inteira; com a mão toda na
-## frente da lâmina (segurando a tira que sai), a lâmina desce atrás dela.
+## O que o golpe leva das mãos com o pulso em `hz` (bits de player.DIGITS e HAND_LOST; 0 = nada),
+## pela forma da luva aberta: o dedo que passa da linha da lâmina mais que CUT_BITE. Passando o
+## meio da palma, vai a mão inteira; com a luva toda na frente da lâmina (segurando a tira que
+## sai), a lâmina desce atrás dela. Os braços passam por cima do protetor da lâmina.
 func _chopped(hz: float) -> int:
-	if hz - HAND_BACK > CUT_Z:
+	if hz + _hand_span.x > CUT_Z:
 		return 0
-	if hz > CUT_Z:
+	if hz + _palm_z > CUT_Z:
 		return HAND_LOST
 	var lost := 0
-	for d in DIGIT_Z.size():
-		if hz + DIGIT_Z[d] > CUT_Z:
+	for d in _digit_z.size():
+		if hz + _digit_z[d].y > CUT_Z + CUT_BITE:
 			lost |= 1 << d
 	return lost
 
@@ -862,6 +925,7 @@ func _sync(pieces: int, new_phase: Phase, cut: float, wet: bool, op: int, stack:
 	if now != _operating_player:
 		if is_instance_valid(_operating_player) and _operating_player.operating == self:
 			_operating_player.operating = null
+			_operating_player.show_danger(0)
 		_operating_player = now
 		if now != null:
 			now.operating = self
@@ -1176,13 +1240,15 @@ func _build_guide() -> void:
 	add_child(_guide)
 
 
-## Onde fica a luva de quem opera (side 1 = direita, -1 = esquerda): nos lados da folha (ou da
-## pilha), em `hands_z`, com os dedos para dentro e o polegar para a lâmina (os braços vêm de fora
-## e não tapam a linha de corte). Em cima da folha, treme junto com ela.
+## Onde fica a luva aberta de quem opera (side 1 = direita, -1 = esquerda): nos lados da folha (ou
+## da pilha), em `hands_z`, a palma apoiada, com o braço vindo de quem opera na diagonal (ARM_YAW;
+## a mão dobra mais hand_bend() no pulso, ver player.gd). Em cima da folha, treme junto com ela;
+## andando sem ela, sobe um pouco.
 func hand_transform(side: int) -> Transform3D:
 	var z := hands_z + (_tremor() if _on_paper(feed, hands_z) else 0.0)
-	var local := Transform3D(Basis(Vector3.UP, side * PI / 2),
-			Vector3(_work_x() + side * maxf(_work_half_width() + 0.06, HANDS_MIN_SPREAD), SHEET_Y + 0.01, z))
+	var x := _work_x() + side * maxf(_work_half_width() + WRIST_OUT, HANDS_MIN_SPREAD)
+	var local := Transform3D(Basis(Vector3.UP, side * ARM_YAW),
+			Vector3(x, SHEET_Y + PALM_LIFT + _lift * HANDS_LIFT, z))
 	return global_transform * local
 
 

@@ -665,7 +665,7 @@ func _test_guillotine(kitnet: Node3D, player: CharacterBody3D) -> void:
 	_check(player.operating == g and g._sheet.visible, "pondo a folha, começa a operar")
 	await create_timer(player.STATION_CAMERA_TIME + 0.15).timeout
 	_check(root.get_camera_3d() == player._station_cam, "a câmera foi para cima da mesa")
-	var right: MeshInstance3D = player._hands[0]
+	var right: MeshInstance3D = player._press_hands[0]
 	_check(g._guide.visible, "a linha-guia da lâmina aparece")
 	_check(right.visible and right.global_position.distance_to(g._sheet.global_position) < 0.3,
 			"as luvas seguram a folha (%.2f m)" % right.global_position.distance_to(g._sheet.global_position))
@@ -727,7 +727,7 @@ func _test_guillotine(kitnet: Node3D, player: CharacterBody3D) -> void:
 			and g._stack.visible and not g._sheet.visible and g._pile_id == 0,
 			"acabaram as linhas: a pilha de %d tiras gira para o corte vertical" % g.stack_count)
 	var stack_x: float = (g.global_transform * Vector3(g.STACK_X, 0, 0)).x
-	_check(is_equal_approx(g._stack_shift, 0.0) and absf(g.hand_transform(1).origin.x - stack_x) < 0.15,
+	_check(is_equal_approx(g._stack_shift, 0.0) and absf(g.hand_transform(1).origin.x - stack_x) < 0.25,
 			"a pilha chegou na lâmina e as luvas seguram ela")
 	await _shot("18c_guilhotina_pilha_de_tiras")
 
@@ -804,7 +804,8 @@ func _test_guillotine(kitnet: Node3D, player: CharacterBody3D) -> void:
 	items.give(1, "ream")
 	await create_timer(0.3).timeout
 	_check(g._prompt(player) == "Needs a printed sheet", "a resma não entra na guilhotina")
-	player._drop_held()
+	# Some com ela (largada, ela cai em cima da mesa e tapa os prints da guilhotina).
+	items.consume(player.held_item())
 	await create_timer(0.3).timeout
 
 	# Pegar o montinho e carregar.
@@ -827,7 +828,7 @@ func _test_guillotine(kitnet: Node3D, player: CharacterBody3D) -> void:
 	await create_timer(0.3).timeout
 	g.zone.interact(player)
 	await physics_frame
-	_check(g._on_paper(g.feed, g.hands_z) and not g.hands_in_danger() and g.shake_now() > 0.002,
+	_check(g._on_paper(g.feed, g.hands_z) and not g.hands_in_danger() and g.shake_now() > 0.001,
 			"pega a folha pela borda de trás: seguro, mas ela treme (%.1f mm)" % (g.shake_now() * 1000.0))
 	var feed_before: float = g.feed
 	var hands_before: float = g.hands_z
@@ -860,7 +861,7 @@ func _test_guillotine(kitnet: Node3D, player: CharacterBody3D) -> void:
 			"pela ponta, a última linha chega na marca sem perigo, mas tremendo (%.1f mm)" % (g.shake_now() * 1000.0))
 	feed_before = g.feed
 	player._input(_right_button(true))
-	player._input(_mouse_motion(Vector2(0, (g.CUT_Z - 0.01 - g.HAND_FRONT - g.hands_z) / g.FEED_PER_PIXEL)))
+	player._input(_mouse_motion(Vector2(0, (g.CUT_Z - 0.01 - g.hands_front_offset() - g.hands_z) / g.FEED_PER_PIXEL)))
 	player._input(_right_button(false))
 	_check(g.feed == feed_before and g.shake_now() == 0.0 and not g.hands_in_danger(),
 			"as mãos voltam para perto da lâmina sem mexer a folha: firme")
@@ -868,8 +869,13 @@ func _test_guillotine(kitnet: Node3D, player: CharacterBody3D) -> void:
 	_check(player.fingers_missing() == 0 and g.phase == g.Phase.COLUMNS and g.stack_count == 3, "a última linha saiu sem susto")
 	# Corte vertical com o polegar e o indicador passando da linha: o golpe leva os dois, das duas mãos.
 	g.slide_to(g.ideal_cut() - g.cut_pos)
-	g.place_hands(-0.022)
-	_check(g.hands_in_danger(), "com os dedos passando da linha, a guilhotina avisa")
+	_check(_place_for(g, 0b11), "dá para pôr só o polegar e o indicador passando da linha")
+	await process_frame
+	await process_frame
+	var flat: MeshInstance3D = player._press_hands[0]
+	_check(g.hands_in_danger() and flat.get_node("HandFlat_R_Thumb").material_overlay != null
+			and flat.get_node("HandFlat_R_Middle").material_overlay == null,
+			"com os dedos passando da linha, a guilhotina avisa e eles ficam vermelhos")
 	await _shot("18d_guilhotina_dedos_na_linha")
 	await _cut_click(player, swing)
 	var kinds := preload("res://scripts/items/item_kinds.gd")
@@ -891,7 +897,7 @@ func _test_guillotine(kitnet: Node3D, player: CharacterBody3D) -> void:
 	await physics_frame
 	g.place_hands(0.01)
 	_check(is_equal_approx(g.shake_now(), 4 * g.FINGER_SHAKE), "sem dedos, a folha treme mesmo segurando perto")
-	g.place_hands(-0.06)
+	_check(_place_for(g, g.HAND_LOST), "dá para pôr o meio da palma passando da linha")
 	await _cut_click(player, swing)
 	var hands: Array = items.items.values().filter(func(it): return it.kind == "hand")
 	_check(player.hands_left() == 0 and hands.size() == 2 and g.pieces_left == stats.rows_per_sheet,
@@ -932,6 +938,16 @@ func _test_guillotine(kitnet: Node3D, player: CharacterBody3D) -> void:
 func _cut_click(player: CharacterBody3D, swing: float) -> void:
 	player._input(_left_click())
 	await create_timer(swing).timeout
+
+
+## Põe as mãos onde o golpe levaria exatamente `lost` (bits de player.DIGITS e HAND_LOST),
+## procurando de milímetro em milímetro a partir da linha da lâmina.
+func _place_for(g: Node3D, lost: int) -> bool:
+	for mm in 200:
+		g.place_hands(-mm * 0.001)
+		if g._chopped(g.hands_z) == lost:
+			return true
+	return false
 
 
 ## Põe a folha passando `amount` m da lâmina e as mãos firmes logo atrás dela (sem tremor).

@@ -134,8 +134,13 @@ var _camera_kick_vel := Vector2.ZERO
 var _tag: Label3D
 ## Zona em que o [E] está sendo segurado agora (só no jogador local).
 var _hold_zone: Node = null
-## Luvas: [direita, esquerda].
+## Luvas: [direita, esquerda]. As de segurar item e as abertas, apertando a folha na máquina que
+## o jogador opera (com o curativo do que perdeu nas duas).
 var _hands: Array[MeshInstance3D] = []
+var _press_hands: Array[MeshInstance3D] = []
+## Vermelho pulsando por cima dos dedos que o golpe da máquina levaria agora.
+var _danger_mat: StandardMaterial3D
+var _danger_lost := 0
 ## O que cada mão perdeu ([direita, esquerda]): um bit por dedo (DIGITS) e HAND_LOST.
 var injury: Array[int] = [0, 0]
 ## Botão direito segurado operando uma máquina: o mouse mexe as mãos.
@@ -513,13 +518,37 @@ func _update_hold_point(delta: float) -> void:
 func _update_hands() -> void:
 	var held := held_item()
 	for i in _hands.size():
-		var hand := _hands[i]
 		var side := 1 if i == 0 else -1
-		hand.visible = held != null or operating != null
+		_hands[i].visible = held != null and operating == null
+		_press_hands[i].visible = operating != null
 		if operating != null:
-			hand.global_transform = operating.hand_transform(side)
+			_press_hands[i].global_transform = operating.hand_transform(side)
+			# A mão (as peças filhas da manga, com a origem no pulso) dobra no pulso.
+			for piece: Node3D in _press_hands[i].get_children():
+				piece.rotation.y = side * operating.hand_bend()
 		elif held != null:
-			hand.global_transform = held.global_transform * ItemKinds.hand_offset(held.kind, side)
+			_hands[i].global_transform = held.global_transform * ItemKinds.hand_offset(held.kind, side)
+	if _danger_lost != 0:
+		_danger_mat.albedo_color.a = 0.5 + 0.35 * absf(sin(Time.get_ticks_msec() / 110.0))
+
+
+## As luvas que aparecem agora: as abertas operando uma máquina, senão as de segurar item.
+func active_hands() -> Array[MeshInstance3D]:
+	return _press_hands if operating != null else _hands
+
+
+## A máquina operada avisa o que o golpe levaria das mãos agora (bits de DIGITS e HAND_LOST):
+## essas peças das luvas abertas ficam vermelhas, pulsando, para todo mundo ver.
+func show_danger(lost: int) -> void:
+	if lost == _danger_lost:
+		return
+	_danger_lost = lost
+	for hand in _press_hands:
+		var whole := lost & HAND_LOST != 0
+		hand.get_node(NodePath(hand.name + "_Glove")).material_overlay = _danger_mat if whole else null
+		for d in DIGITS.size():
+			var piece: GeometryInstance3D = hand.get_node(NodePath(hand.name + "_" + DIGITS[d]))
+			piece.material_overlay = _danger_mat if whole or lost & (1 << d) else null
 
 
 ## O contorno preto do visual de desenho: um quadrado na frente da câmera que o shader estica
@@ -547,7 +576,7 @@ func _build_hands() -> void:
 	var cuff := StandardMaterial3D.new()
 	cuff.albedo_color = Net.PLAYER_COLORS[slot].darkened(0.25)
 	cuff.roughness = 0.95
-	for hand_name in ["Hand_R", "Hand_L"]:
+	for hand_name in ["Hand_R", "Hand_L", "HandFlat_R", "HandFlat_L"]:
 		var hand: MeshInstance3D = model.find_child(hand_name, true, false)
 		hand.get_parent().remove_child(hand)
 		hand.owner = null
@@ -559,12 +588,19 @@ func _build_hands() -> void:
 				hand.set_surface_override_material(i, sleeve)
 			elif mat_name == "M_SleeveCuff":
 				hand.set_surface_override_material(i, cuff)
-		if is_local():
+		var pressing: bool = hand_name.begins_with("HandFlat")
+		# As de segurar ficam na frente da câmera de quem joga: sem sombra. As abertas, na mesa da
+		# máquina, fazem sombra no papel (dá a noção de altura).
+		if is_local() and not pressing:
 			for part in [hand] + hand.get_children():
 				part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(hand)
-		_hands.append(hand)
+		(_press_hands if pressing else _hands).append(hand)
 	model.free()
+	_danger_mat = StandardMaterial3D.new()
+	_danger_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_danger_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_danger_mat.albedo_color = Color(0.95, 0.02, 0.02, 0.7)
 	_show_injury()
 
 
@@ -618,9 +654,9 @@ func _set_injury(hand: int, lost: int) -> void:
 ## As luvas sem o que foi perdido, com o curativo no lugar; sem a mão, o boneco também perde a
 ## luva dele.
 func _show_injury() -> void:
-	for i in _hands.size():
-		var hand := _hands[i]
-		var lost := injury[i]
+	for i in _hands.size() * 2:
+		var hand := _hands[i] if i < _hands.size() else _press_hands[i - _hands.size()]
+		var lost := injury[i % _hands.size()]
 		var hand_gone := lost & HAND_LOST != 0
 		hand.get_node(NodePath(hand.name + "_Glove")).visible = not hand_gone
 		hand.get_node(NodePath(hand.name + "_StumpWrist")).visible = hand_gone
@@ -814,7 +850,8 @@ func _animate_character(delta: float) -> void:
 	var airborne := absf(moved.y) > 0.6
 	var targets := []
 	if (held_item() != null or operating != null) and _hands.size() == 2:
-		targets = [_hands[0].global_position, _hands[1].global_position]
+		var hands := active_hands()
+		targets = [hands[0].global_position, hands[1].global_position]
 	character.animate(delta, moved, airborne, head.rotation.x, targets)
 	if is_local() and not fallen:
 		# Olhando para baixo, o corpo recua para trás da câmera: aparecem a barriga, as pernas e

@@ -160,4 +160,8 @@ estão (`send_injury_to`). Vale até sair da partida (`heal` só numa partida no
 
 O `hands.glb` sai do `art_source/blender/hands.py`: cada mão é a manga (`Hand_R`, a raiz) com a
 luva (`Hand_R_Glove`), os dedos (`Hand_R_Thumb`, `_Index`, `_Middle`, `_Ring`, `_Pinky`) e os
-curativos de filhos, todos com a origem no pulso.
+curativos de filhos, todos com a origem no pulso. São dois jogos, em duas poses (`POSES`): `Hand_*`
+segurando item (dedos dobrados, polegar em pinça) e `HandFlat_*` abertas, apertando a folha na
+guilhotina (dedos quase esticados e abertos, polegar para o lado). O jogador mostra as abertas
+enquanto opera uma máquina (`active_hands`), com a mão dobrada no pulso (as peças filhas giram em
+volta dele), e pinta de vermelho os dedos em perigo (`show_danger`, um `material_overlay`).
