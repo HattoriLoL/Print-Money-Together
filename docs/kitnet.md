@@ -41,7 +41,7 @@ cômodo sem travar.
 | Secagem | `MACHINE_ClothesLine`, `MACHINE_Fan` | varal de teto (só as cordas e os pregadores) e ventilador no serviço |
 | Corte | `MACHINE_Guillotine` | guilhotina de alavanca na mesa do meio |
 | Envelhecer | `MACHINE_Washer` | máquina de lavar no serviço |
-| Contar e cintar | `MACHINE_CashCounter` | contadora de cédulas na mesa |
+| Contar e cintar | `MACHINE_CashCounter` | contadora de cédulas na mesa (os maços cintados saem dela; a mesa não tem mais maços desenhados) |
 
 A cortina da janela (`Curtain_Main`) fica meio aberta: dá para ver a impressora de fora.
 
@@ -116,12 +116,15 @@ A kitnet fica no 3º andar. A rua passa 8,6 m abaixo, entre o nosso prédio e o 
 - O jogador local não vê o próprio boneco nem a sombra dele (com a lâmpada a meio metro da
   cabeça, a sombra cobria o cômodo). Os outros jogadores aparecem com sombra.
 - `KEEP_Door_*` viram portas (`scripts/door.gd`) que abrem sempre para dentro (-Z local) com [E].
-  `302`, `303` e `Stairs` estão trancadas.
+  `302`, `303` e `Stairs` estão trancadas. A `301` tranca por dentro, na tranca de barra.
+- `HIDE_*` e `KEEP_BathHatch` viram esconderijos (`scripts/machines/stash.gd`).
+- O vizinho do 303 sai pela porta dele quando o barulho passa da conta (ver `docs/vizinho.md`).
 - `LIGHT_<zona>_<n>` ganham alcance, energia e sombra por zona (`ZONE_LIGHT`).
 - Os jogadores nascem nos `SPAWN_<vaga + 1>`.
 
-As resmas, a impressora, o varal, a guilhotina e a máquina de lavar já funcionam (ver `docs/maquinas.md`), e o PC compra
-papel e tinta (ver `docs/loja.md`). As outras máquinas, os esconderijos e o fiscal ainda não.
+As resmas, a impressora, o varal, a guilhotina, a máquina de lavar e a contadora já funcionam (ver `docs/maquinas.md`), e o PC compra
+papel e tinta (ver `docs/loja.md`). O vizinho do 303, a polícia e os esconderijos estão em
+`docs/vizinho.md`. A panela de tinta ainda é decoração, e o fiscal ainda não existe.
 
 ## Rede
 

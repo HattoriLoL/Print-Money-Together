@@ -65,6 +65,9 @@ var gloves: Array[Node3D] = []
 ## A mão que o boneco perdeu na guilhotina (a luva dela não aparece mais).
 var glove_lost: Array[bool] = [false, false]
 var accessory: Node3D
+## As luvas do boneco continuam aparecendo com o braço no IK (o vizinho: ele não tem as luvas do
+## hands.glb na frente).
+var keep_gloves := false
 ## Último giro de cada coxa e joelho (radianos; para o teste e para quem quiser ler).
 var leg_angles := [0.0, 0.0]
 var knee_angles := [0.0, 0.0]
@@ -91,7 +94,8 @@ var _squash_vel := 0.0
 var _step_dir := Vector3(0, 0, 1)
 
 
-func setup(player_slot: int, color: Color) -> void:
+## `accessory_name` troca o acessório da vaga por outro (o vizinho usa "Acc_Neighbor").
+func setup(player_slot: int, color: Color, accessory_name := "") -> void:
 	name = "Character"
 	slot = player_slot
 	model = MODEL.instantiate()
@@ -106,12 +110,12 @@ func setup(player_slot: int, color: Color) -> void:
 		_rest_pos[i] = skeleton.get_bone_rest(i).origin
 	for side in ["R", "L"]:
 		gloves.append(model.find_child("Char_Glove_" + side, true, false))
-	for i in ACCESSORIES.size():
-		var acc: Node3D = model.find_child(ACCESSORIES[i], true, false)
-		if acc != null:
-			acc.visible = i == slot % ACCESSORIES.size()
-			if acc.visible:
-				accessory = acc
+	if accessory_name.is_empty():
+		accessory_name = ACCESSORIES[slot % ACCESSORIES.size()]
+	for acc: Node3D in model.find_children("Acc_*", "", true, false):
+		acc.visible = acc.name == accessory_name
+		if acc.visible:
+			accessory = acc
 	_paint(color)
 	_pose_arms(0.0, 0.0)
 
@@ -211,6 +215,12 @@ func animate(delta: float, velocity: Vector3, airborne: bool, pitch: float, hold
 	_squash_vel = r[1]
 	var tilt := _tilt(lean)
 
+	# Quadris (a raiz) no descanso: a animação não mexe neles, e sem isso, depois de levantar de um
+	# tombo, ficavam na pose de deitado (o levantar mistura a partir da pose de agora).
+	var hips: int = _bones["Hips"]
+	skeleton.set_bone_pose_position(hips, _rest_pos[hips])
+	skeleton.set_bone_pose_rotation(hips, skeleton.get_bone_rest(hips).basis.get_rotation_quaternion())
+
 	# Tronco: quica a cada passo, curva para frente e rebola; o peito respira parado.
 	var spine: int = _bones["Spine"]
 	skeleton.set_bone_pose_position(spine, _rest_pos[spine] + Vector3(0.0, absf(s) * BOUNCE * _swing + _air * 0.03, 0.0))
@@ -284,7 +294,7 @@ func _reach(i: int, target: Vector3) -> void:
 	var fore_dir := (hand_at - (shoulder + upper_dir * a)).normalized()
 	_aim(upper, upper_dir)
 	_aim(fore, fore_dir)
-	gloves[i].visible = false
+	gloves[i].visible = keep_gloves and not glove_lost[i]
 
 
 
@@ -373,6 +383,7 @@ func start_ragdoll(dir: Vector3, speed: float) -> void:
 	ragdolling = true
 	getup = 0.0
 	_snapshot.clear()
+	_sim.active = true
 	var to_world := skeleton.global_transform
 	for bone: int in _pbones:
 		var pb: PhysicalBone3D = _pbones[bone]
@@ -391,6 +402,16 @@ func start_ragdoll(dir: Vector3, speed: float) -> void:
 func ragdoll_hips() -> Vector3:
 	var pb: PhysicalBone3D = _pbones.get(_bones["Hips"])
 	return pb.global_position if pb != null and ragdolling else skeleton.to_global(skeleton.get_bone_global_pose(_bones["Hips"]).origin)
+
+
+## Caído: puxa o osso `bone_name` para `target` (no mundo) como uma mola (arrastar o vizinho pela
+## gola). O resto do corpo vem pendurado pelas juntas.
+func pull_bone(bone_name: String, target: Vector3, strength: float) -> void:
+	var pb: PhysicalBone3D = _pbones.get(_bones.get(bone_name, -1))
+	if pb == null or not ragdolling:
+		return
+	var vel := ((target - pb.global_position) * strength).limit_length(6.0)
+	pb.linear_velocity = pb.linear_velocity.lerp(vel, 0.5)
 
 
 ## Posição da cabeça do ragdoll no mundo (para a câmera de quem caiu ir junto).
@@ -420,6 +441,9 @@ func end_ragdoll() -> void:
 		_snapshot[bone] = local.orthonormalized()
 	_hips_world = skeleton.global_transform * globals[_bones["Hips"]]
 	_sim.physical_bones_stop_simulation()
+	# Parado, o simulador continuaria mandando nos ossos com a pose da física (os braços não
+	# chegavam mais no item depois do primeiro tombo): desligado, a animação volta a mandar.
+	_sim.active = false
 	ragdolling = false
 	getup = 0.0
 

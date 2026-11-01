@@ -10,7 +10,8 @@ Exporta assets/models/character.glb com um esqueleto (Armature) e:
   fundidas com o cotovelo e o joelho. Leva os pesos dos ossos: ombro, cotovelo, quadril e joelho
   dobram como pano, sem emendas;
 - peças rígidas presas nos ossos: a cabeça (Char_Head, com o rosto e os acessórios Acc_Cap,
-  Acc_Glasses, Acc_Quiff e Acc_Beanie; o jogo mostra só o da vaga), as luvas (Char_Glove_L/R),
+  Acc_Glasses, Acc_Quiff e Acc_Beanie; o jogo mostra só o da vaga; Acc_Neighbor, os bobes e o
+  bigode, é só do vizinho do 303), as luvas (Char_Glove_L/R),
   os tênis com a barra da calça (Char_Shoe_L/R), os punhos das mangas (Char_Cuff_L/R) e os
   detalhes do moletom (Char_Hood: capuz, gola e cordões; Char_Pocket: bolso canguru;
   Char_BackPockets: bolsos de trás da calça).
@@ -74,6 +75,12 @@ lib.MATERIALS.update({
     "M_Beanie": ((0.95, 0.48, 0.1), 0.95, 0.0, 0.0),
     "M_BeanieCuff": ((0.8, 0.35, 0.06), 0.95, 0.0, 0.0),
     "M_Pompom": ((0.97, 0.96, 0.92), 1.0, 0.0, 0.0),
+    # Vizinho do 303.
+    "M_Curler": ((0.95, 0.5, 0.68), 0.5, 0.0, 0.0),
+    "M_CurlerBlue": ((0.45, 0.68, 0.95), 0.5, 0.0, 0.0),
+    "M_CurlerPin": ((0.9, 0.9, 0.92), 0.3, 0.0, 0.0),
+    "M_HairGrey": ((0.62, 0.6, 0.58), 0.85, 0.0, 0.0),
+    "M_Mustache": ((0.3, 0.27, 0.26), 0.9, 0.0, 0.0),
 })
 
 # Juntas (no boneco em pé, pés em z = 0). Pernas compridas, olhos a 1,60 m. Só o lado esquerdo
@@ -298,6 +305,26 @@ def accessories(coll, parent):
     p.cyl((0, cy, top - 0.115), 0.06, hr.x * 1.07, "M_BeanieCuff", seg=28, radius2=hr.x * 1.06)
     blob(p, (0, cy, top + 0.08), (0.05, 0.05, 0.046), "M_Pompom", seg=(14, 10))
     p.finish("Acc_Beanie", coll, parent=parent)
+
+    # Vizinho do 303 (não é de vaga nenhuma: o jogo mostra só nele): bobes no cabelo ralo,
+    # costeletas grisalhas e um bigodão de taturana.
+    p = lib.Part(bevel=0.004)
+    for row, ang in enumerate((-0.75, -0.25, 0.25, 0.75)):
+        # Em volta do alto da cabeça, de trás (-) para a frente (+); a frente é -Y.
+        y = HEAD_C.y - math.sin(ang) * hr.y * 1.05
+        z = HEAD_C.z + math.cos(ang) * hr.z * 1.05
+        for col, x in enumerate((-0.05, 0.05)):
+            mat = "M_Curler" if (row + col) % 2 else "M_CurlerBlue"
+            p.cyl((x, y, z), 0.085, 0.028, mat, axis="X", seg=14)
+            p.cyl((x, y, z), 0.088, 0.012, "M_CurlerPin", axis="X", seg=8)
+    for s in (-1, 1):
+        blob(p, (s * 0.15, cy + 0.0, HEAD_C.z + 0.06), (0.03, 0.06, 0.07), "M_HairGrey", seg=(12, 8))
+    mz = 0.135
+    for s in (-1, 1):
+        m = Matrix.Rotation(s * 0.45, 4, "Y")
+        blob(p, (s * 0.045, head_front(s * 0.045, mz) - 0.03, mz - 0.006), (0.062, 0.034, 0.03),
+             "M_Mustache", rot=m, seg=(14, 8))
+    p.finish("Acc_Neighbor", coll, parent=parent)
 
 
 def glove(coll, rig, s, side, wrist):

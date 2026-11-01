@@ -21,6 +21,14 @@ extends SceneTree
 ##   no meio leva ela úmida, seca não borra na guilhotina, varal cheio não aceita mais;
 ## - máquina de lavar: os montinhos entram e saem do cesto, lava e centrifuga com a tampa travada,
 ##   solta ela anda e segurada fica parada, as notas saem usadas (valem mais), empurra de volta;
+## - contadora: conta o montinho do funil para a bandeja, a borrada emperra e segurando destrava (vai
+##   para as rejeitadas), com 20 para e cinta o maço com a nota de qualidade, pega as soltas;
+## - frigideira: nasce no fogão, bate com o clique (BONK! em quem está na frente, clang na parede), quem
+##   leva cai com as estrelinhas, solta o que segurava e levanta tonto;
+## - vizinho do 303: o barulho enche a paciência e ele vem; com a 301 trancada bate e vai embora;
+##   destrancada entra, vê as notas e corre ligando para a polícia; a frigideira derruba e corta a
+##   ligação; arrastado até o capacho dele, acorda achando que sonhou; o maço suborna; a polícia
+##   leva o que está à vista e cobra a multa, e o esconderijo salva o que está dentro;
 ## - etapa 3 do visual: prints da fita na impressora, jornal, retrato, geladeira, TV, pizza, trancas e lâmpada;
 ## - vida no cenário: ventilador girando, vento no varal e na cortina, chuvisco na TV, vapor na panela,
 ##   lâmpada piscando e balançando quando alguém passa perto;
@@ -87,6 +95,8 @@ func _run() -> void:
 		await process_frame
 		kitnet = get_first_node_in_group("kitnet")
 	var player: CharacterBody3D = kitnet.local_player()
+	# O vizinho só acorda no teste dele (as máquinas do teste fazem barulho de sobra).
+	kitnet.neighbor.enabled = false
 	await create_timer(1.0).timeout
 
 	# --- Montagem ---
@@ -234,6 +244,9 @@ func _run() -> void:
 	await _test_shop(kitnet, player)
 	await _test_clothesline(kitnet, player)
 	await _test_washer(kitnet, player)
+	await _test_counter(kitnet, player)
+	await _test_pan(kitnet, player)
+	await _test_neighbor(kitnet, player)
 	await _test_characters(kitnet, player)
 	await _test_first_person(kitnet, player)
 	await _test_push(kitnet, player)
@@ -1365,6 +1378,334 @@ func _test_washer(kitnet: Node3D, player: CharacterBody3D) -> void:
 		items.consume(worn)
 	w.lid_zone.interact(player)
 	await physics_frame
+
+
+## Contadora: o montinho entra no funil e ela conta sozinha para a bandeja; nota borrada emperra,
+## e segurar [E] destrava jogando ela nas rejeitadas do lado; com 20 na bandeja ela para e [E]
+## cinta o maço (com a nota de qualidade); antes disso, dá para pegar as contadas soltas.
+func _test_counter(kitnet: Node3D, player: CharacterBody3D) -> void:
+	var c: Node3D = kitnet.cash_counter
+	var items: Node = kitnet.items
+	_check(c != null and c.hopper.is_empty() and c.tray.is_empty() and not c.jammed, "contadora montada e vazia")
+	if c == null:
+		return
+	var table: MeshInstance3D = kitnet.model.find_child("Table", true, false)
+	_check(table != null and table.mesh.get_surface_count() <= 4, "a mesa não tem mais maços desenhados")
+	var spot := Vector3(3.0, 0.05, -2.9)
+	player.global_position = spot
+	await physics_frame
+	_check(c._screen.text == "000", "o visor começa no zero (%s)" % c._screen.text)
+	# Um montinho lavado: conta tudo para a bandeja.
+	items.give(1, "bills", {"count": 12, "worth": 12.0, "worn": 12, "top_worn": true})
+	await physics_frame
+	_check(c._hopper_prompt(player) == "[E] Feed 12 bills into the counter", "o funil aceita o montinho")
+	c.hopper_zone.interact(player)
+	await physics_frame
+	_check(player.held_item() == null and c.hopper.get("count", 0) == 12 and c.counting(), "as notas entraram e ela começou a contar")
+	_check(c.noise() > 0.0 and c._whirr.playing, "contando faz barulho")
+	await create_timer(0.5).timeout
+	var midway: int = c.tray.get("count", 0)
+	_check(midway > 0 and midway < 12, "conta uma por uma (%d na bandeja)" % midway)
+	await _look(player, spot, c.global_position + Vector3.UP * 0.08, "56_contadora")
+	await create_timer(1.2).timeout
+	_check(c.tray.get("count", 0) == 12 and c.hopper.is_empty() and c._screen.text == "012", "contou as 12 (%s)" % c._screen.text)
+	_check(c._tray_prompt(player) == "[E] Take the 12 counted bills (a bundle is 20)", "a bandeja diz quantas faltam para o maço")
+	# Notas borradas emperram; segurar destrava e elas vão para as rejeitadas.
+	items.give(1, "bills", {"count": 2, "worth": 2.0, "smudged": 2, "top_smudged": true, "worn": 2})
+	await physics_frame
+	c.hopper_zone.interact(player)
+	await create_timer(0.4).timeout
+	_check(c.jammed and c.tray.get("count", 0) == 12 and c.noise() == 0.0, "a borrada emperrou a máquina")
+	_check(c._body_prompt(player).begins_with("Hold [E] to clear the jam"), "pede para segurar e destravar")
+	c.body_zone.begin_hold(player)
+	await create_timer(c.JAM_CLEAR * 2.0 + 0.6).timeout
+	c.body_zone.end_hold(player)
+	_check(not c.jammed and c.hopper.is_empty(), "destravou as duas")
+	var reject: Node = items.items.get(c._reject_id)
+	_check(reject != null and reject.data.get("count", 0) == 2 and reject.data.get("smudged", 0) == 2,
+			"as borradas foram para as rejeitadas do lado (%s)" % (ItemKinds.label(reject) if reject else "nada"))
+	_check(reject != null and reject.global_position.distance_to(c.global_position) < 0.35 and reject.global_position.y > 0.7,
+			"em cima da mesa, do lado da máquina")
+	# Completa o maço: para com 20, e o resto espera no funil.
+	items.give(1, "bills", {"count": 10, "worth": 10.0, "worn": 10, "top_worn": true})
+	await physics_frame
+	c.hopper_zone.interact(player)
+	await create_timer(1.4).timeout
+	_check(c.tray.get("count", 0) == c.BUNDLE_SIZE and c.hopper.get("count", 0) == 2 and not c.counting(),
+			"parou com o maço completo (2 esperando no funil)")
+	_check(c._screen.text == "20 A", "o visor mostra o maço e a nota (%s)" % c._screen.text)
+	_check(c._tray_prompt(player) == "[E] Strap the bundle (20 bills, grade A)", "a bandeja oferece cintar")
+	c.tray_zone.interact(player)
+	await physics_frame
+	var bundle: Node = player.held_item()
+	_check(bundle != null and bundle.kind == "bundle" and ItemKinds.label(bundle) == "bundle of 20 bills (grade A)",
+			"cintou o maço (%s)" % (ItemKinds.label(bundle) if bundle else "nada"))
+	if bundle != null:
+		_check(is_equal_approx(ItemKinds.value(bundle.data), 20.0), "o maço lavado vale tudo (%.1f)" % ItemKinds.value(bundle.data))
+		_check(bundle.get_node("Mesh").get_node_or_null("Band") != null, "com a cinta de papel")
+	await create_timer(0.5).timeout
+	_check(c.tray.get("count", 0) == 2, "e voltou a contar o resto")
+	await _look(player, spot, c.global_position + Vector3.UP * 0.05, "57_maco_cintado")
+	# As notas de qualidade.
+	_check(ItemKinds.grade({"count": 20, "worth": 20.0}) == "C", "sem lavar, o maço perfeito é C")
+	_check(ItemKinds.grade({"count": 20, "worth": 12.0, "worn": 20}) == "C", "lavado mas com a cor errada, C")
+	_check(ItemKinds.grade({"count": 20, "worth": 12.0}) == "D", "cor errada e sem lavar, D")
+	_check(ItemKinds.grade({"count": 20, "worth": 17.0, "worn": 20}) == "B", "lavado com umas tortas, B")
+	# Mão cheia, a bandeja só conta; de mão vazia, pega as soltas.
+	_check(c._tray_prompt(player) == "2 counted bills", "de mão cheia a bandeja só mostra")
+	if bundle != null:
+		items.consume(bundle)
+	await physics_frame
+	c.tray_zone.interact(player)
+	await physics_frame
+	var loose: Node = player.held_item()
+	_check(loose != null and loose.kind == "bills" and loose.data.get("count", 0) == 2 and c.tray.is_empty(),
+			"pegou as 2 contadas soltas")
+	for item in [loose, reject]:
+		if item != null:
+			items.consume(item)
+	await physics_frame
+
+
+## Frigideira: nasce no fogão, pega na mão, o clique bate (a frigideira levanta e desce); acertando
+## alguém sai o "BONK!", e quem levou cai com as estrelinhas, solta o que segurava e levanta depois;
+## errando na parede, "clang".
+func _test_pan(kitnet: Node3D, player: CharacterBody3D) -> void:
+	var items: Node = kitnet.items
+	var pans: Array = items.items.values().filter(func(i): return i.kind == "pan")
+	_check(pans.size() == 1, "tem uma frigideira no mapa")
+	if pans.is_empty():
+		return
+	var pan: Node = pans[0]
+	_check(pan.global_position.distance_to(kitnet.PAN_START.origin) < 0.05 and pan.freeze, "parada em cima do fogão")
+	_check(ItemKinds.label(pan) == "frying pan", "chama frying pan")
+	await _look(player, Vector3(2.8, 0, -1.25), pan.global_position, "58_frigideira_no_fogao")
+	items.request_pickup(pan.id)
+	await create_timer(0.4).timeout
+	_check(player.held_item() == pan, "pegou a frigideira")
+	# Alguém parado na frente para levar o bonk.
+	var victim: CharacterBody3D = load("res://scenes/player.tscn").instantiate()
+	victim.setup(5555, "Victim", 2, Transform3D(Basis(Vector3.UP, -PI / 2.0), Vector3(3.15, 0.05, -3.4)))
+	kitnet.get_node("Players").add_child(victim)
+	await physics_frame
+	player.global_position = Vector3(3.9, 0.05, -3.4)
+	player.rotation.y = PI / 2.0
+	player.head.rotation.x = -0.05
+	await create_timer(0.5).timeout
+	var rest: Transform3D = pan.global_transform
+	player.swing()
+	await create_timer(0.09).timeout
+	_check(player.swinging() and pan.global_transform.origin.distance_to(rest.origin) > 0.03, "o golpe mexe a frigideira (levanta)")
+	await create_timer(0.08).timeout
+	await _shot("59_golpe")
+	await create_timer(0.1).timeout
+	_check(player.last_swing == "bonk" and player.last_bonked == victim, "acertou quem estava na frente")
+	_check(kitnet.get_children().any(func(n): return n is Label3D and n.text == "BONK!"), "apareceu o BONK!")
+	await _shot("60_bonk")
+	# Quem levou (aqui de mentira, porque o dono dele não está na sala): cai com as estrelinhas.
+	victim._begin_fall(Vector3.FORWARD, player.BONK_SPEED)
+	victim._stars_left = player.STARS_TIME
+	await create_timer(0.6).timeout
+	_check(victim.fallen and victim._stars.visible, "a vítima caiu com as estrelinhas")
+	await _look(player, player.global_position - Vector3.UP * 0.05, victim.bonk_point(), "61_estrelinhas")
+	await create_timer(player.SWING_TIME).timeout
+	_check(not player.swinging(), "o golpe acaba e a frigideira volta")
+	_check(pan.global_transform.origin.distance_to(player.hold_point.global_transform * ItemKinds.hold_offset("pan").origin) < 0.05,
+			"de volta na mão, parada")
+	# Na parede: clang.
+	player.global_position = Vector3(4.2, 0.05, -4.4)
+	player.rotation.y = 0.0
+	player.head.rotation.x = 0.0
+	await create_timer(0.3).timeout
+	player.swing()
+	await create_timer(player.SWING_TIME + 0.1).timeout
+	_check(player.last_swing == "clang", "na parede faz clang (%s)" % player.last_swing)
+	player.global_position = Vector3(4.0, 0.05, -3.4)
+	player.rotation.y = -PI / 2.0
+	await create_timer(0.3).timeout
+	player.swing()
+	await create_timer(player.SWING_TIME + 0.1).timeout
+	_check(player.last_swing == "miss", "no vazio, não acerta nada")
+	# Levar o bonk: solta o que segura, cai por mais tempo e levanta com as estrelinhas ainda girando.
+	player._get_bonked(Vector3.RIGHT)
+	await physics_frame
+	_check(player.fallen and player.dazed() and player.held_item() == null, "levou o bonk: caiu, soltou a frigideira e ficou tonto")
+	await create_timer(1.5).timeout
+	await _shot("62_tonto_primeira_pessoa")
+	var waited := 1.5
+	while player.fallen and waited < 6.0:
+		await physics_frame
+		waited += 1.0 / Engine.physics_ticks_per_second
+	_check(waited > player.BONK_TIME - 0.2 and waited < player.BONK_TIME + 0.5, "fica caído uns %.1f s" % waited)
+	_check(player.dazed(), "levanta ainda com as estrelinhas")
+	await create_timer(player.STARS_TIME - player.BONK_TIME + 0.3).timeout
+	_check(not player.dazed() and not player._stars.visible, "as estrelinhas passam")
+	await create_timer(1.0).timeout
+	victim.queue_free()
+	items.consume(pan)
+	items.spawn("pan", kitnet.PAN_START, {"resting": true})
+	await physics_frame
+
+
+func _test_neighbor(kitnet: Node3D, player: CharacterBody3D) -> void:
+	var n: CharacterBody3D = kitnet.neighbor
+	var S = n.State
+	var items: Node = kitnet.items
+	var door: AnimatableBody3D = kitnet.doors["301"]
+	_check(not n.visible and n.state == S.HOME, "o vizinho começa em casa (escondido)")
+	_check(kitnet.stashes.size() == 4, "4 esconderijos (%d)" % kitnet.stashes.size())
+	# Barulho enche a paciência: uma fonte de barulho alto de mentira.
+	var loud_script := GDScript.new()
+	loud_script.source_code = "extends Node
+func noise() -> float:
+	return 0.8
+"
+	loud_script.reload()
+	var loud := Node.new()
+	loud.set_script(loud_script)
+	loud.add_to_group("noise_source")
+	kitnet.add_child(loud)
+	n.enabled = true
+	n.annoyance = n.BANG_AT - 0.002
+	await create_timer(1.0).timeout
+	_check(n.noise >= 0.8, "o barulho das máquinas soma (%.2f)" % n.noise)
+	_check(n.annoyance > n.BANG_AT and n._banged, "a paciência vai acabando, e ele bate na parede (%.3f)" % n.annoyance)
+	loud.queue_free()
+	if kitnet.fan.powered:
+		kitnet.fan._toggle(1)
+	kitnet.printer.powered = false
+	await create_timer(0.5).timeout
+	var calm: float = n.annoyance
+	await create_timer(1.0).timeout
+	_check(n.annoyance < calm, "em silêncio, ele vai se acalmando")
+	n.enabled = false
+	n.annoyance = 0.0
+
+	# Trancar a porta por dentro: a zona da tranca de barra.
+	player.global_position = Vector3(4.1, 0.05, -1.0)
+	await physics_frame
+	door.lock_zone.press_fn.call(1)
+	_check(door.locked, "a 301 tranca por dentro")
+	_check(door.get_prompt(player) == "[E] Unlock", "de dentro, a porta trancada destranca")
+	# 1. Trancada: bate e vai embora.
+	n.visit()
+	await create_timer(0.3).timeout
+	_check(n.visible and kitnet.doors["303"].is_open, "ele sai do 303")
+	var got := await _wait_neighbor(n, [S.KNOCK], 8.0)
+	_check(got, "vem bater na 301")
+	await create_timer(0.5).timeout
+	await _look(player, Vector3(5.6, 0, 0.9), n.global_position + Vector3.UP * 1.4, "63_vizinho_batendo")
+	player.global_position = Vector3(4.1, 0.05, -1.6)
+	got = await _wait_neighbor(n, [S.LEAVE], 15.0)
+	_check(got and not door.is_open, "com a porta trancada, ele desiste e volta para casa")
+	got = await _wait_neighbor(n, [S.HOME], 10.0)
+	_check(got and not n.visible and not kitnet.doors["303"].is_open, "e some no 303 com a porta fechada")
+	_check(n.visits == 1, "a visita conta (a próxima vem mais cedo)")
+
+	# 2. Destrancada e notas na mesa: entra, vê e corre ligando.
+	door.interact(player)
+	_check(not door.locked, "[E] na porta destranca")
+	var bills_id: int = items.spawn("bills", Transform3D(Basis.IDENTITY, Vector3(3.6, 0.8, -1.9)), {"count": 6}).id
+	player.global_position = Vector3(1.0, 0.05, -2.5)
+	n.visit()
+	got = await _wait_neighbor(n, [S.CALL], 30.0)
+	_check(got and n.alarmed and n.calling, "entrou, viu as notas e foi ligar para a polícia")
+	_check(n.global_position.distance_to(n.DOORMAT) < 0.4, "liga parado no capacho dele")
+	await _look(player, Vector3(4.1, 0, 0.2), n.global_position + Vector3.UP * 1.5, "64_vizinho_ligando")
+	# 3. Frigideira: corta a ligação e derruba.
+	var pan: Node = items.items.values().filter(func(i): return i.kind == "pan")[0]
+	pan.global_position = player.global_position + Vector3.UP * 0.9
+	items.request_pickup(pan.id)
+	await create_timer(0.3).timeout
+	var to: Vector3 = n.global_position - player.global_position
+	to.y = 0.0
+	player.global_position = n.global_position - to.normalized() * 0.75 + Vector3.UP * 0.05
+	player.rotation.y = atan2(-to.x, -to.z)
+	player.head.rotation.x = -0.05
+	await create_timer(0.2).timeout
+	player.swing()
+	await create_timer(0.6).timeout
+	_check(player.last_bonked == n and n.knocked_out() and not n.calling, "BONK: caiu e a ligação caiu")
+	await create_timer(1.0).timeout
+	_check(n.bonk_point().y < 0.6 and n._stars.visible, "desmaiado no chão com as estrelinhas")
+	player._drop_held()
+	await create_timer(0.3).timeout
+	# 4. Arrastar até o capacho: acorda achando que sonhou.
+	n._press(1)
+	_check(player.dragging() and n.zone.get_prompt(player) == "[E] Let go", "arrasta pela gola")
+	var start: Vector3 = n.body_position()
+	var target := Vector3(3.4, 0.05, 0.35)
+	for i in 240:
+		var d: Vector3 = target - player.global_position
+		d.y = 0.0
+		if d.length() < 0.05:
+			break
+		player.global_position += d.normalized() * minf(1.5 / 60.0, d.length())
+		player.rotation.y = PI
+		await physics_frame
+	await create_timer(1.2).timeout
+	_check(n.body_position().distance_to(start) > 0.3, "o corpo vem junto (%.2f m)" % n.body_position().distance_to(start))
+	_check(n.body_position().distance_to(n.DOORMAT) < n.HOME_RADIUS, "largado no capacho dele")
+	await _look(player, player.global_position, n.body_position(), "65_vizinho_arrastado")
+	player._update_interaction(0.016)
+	n.request_let_go()
+	_check(not player.dragging(), "solta")
+	n._ko_left = 0.05
+	await create_timer(0.4).timeout
+	_check(not n.alarmed, "acorda no capacho achando que sonhou")
+	got = await _wait_neighbor(n, [S.HOME], 12.0)
+	_check(got, "e volta a dormir")
+
+	# 5. Suborno: um maço e ele não viu nada.
+	n.visit()
+	await _wait_neighbor(n, [S.KNOCK], 8.0)
+	n._alarm()
+	await create_timer(0.3).timeout
+	var bundle: Node = items.spawn("bundle", Transform3D(Basis.IDENTITY, player.global_position + Vector3.UP), {"count": 20, "worth": 20.0})
+	var bundle_id: int = bundle.id
+	items._set_holder(bundle_id, 1, bundle.global_transform, Vector3.ZERO, Vector3.ZERO)
+	player.global_position = n.global_position + Vector3(0.6, 0.05, -0.3)
+	_check(n.zone.get_prompt(player) == "[E] Bribe him with the bundle", "com o maço na mão, dá para subornar")
+	n._press(1)
+	_check(not n.calling and not n.alarmed and not items.items.has(bundle_id), "subornado: desliga e fica com o maço")
+	await _wait_neighbor(n, [S.HOME], 12.0)
+
+	# 6. Polícia: leva as notas da mesa e multa; o esconderijo salva o maço.
+	var stash: Node = kitnet.stashes.filter(func(s): return s.spot_name == "the wardrobe")[0]
+	var hidden: Node = items.spawn("bundle", Transform3D(Basis.IDENTITY, player.global_position + Vector3.UP), {"count": 20, "worth": 20.0})
+	items._set_holder(hidden.id, 1, hidden.global_transform, Vector3.ZERO, Vector3.ZERO)
+	player.global_position = Vector3(1.2, 0.05, -1.8)
+	_check(stash.zone.get_prompt(player).begins_with("[E] Hide the bundle"), "o guarda-roupa esconde o que está na mão")
+	stash._use(1)
+	_check(stash.contents.size() == 1 and player.held_item() == null, "escondido no guarda-roupa")
+	door.set_locked(true)
+	var cash_before: int = kitnet.wallet.cash
+	kitnet.police.call_cops()
+	_check(kitnet.police.coming() and kitnet.police.alert_text() != "", "a polícia está a caminho (aviso no HUD)")
+	kitnet.police.time_left = 1.0
+	await create_timer(1.5).timeout
+	var raid: Dictionary = kitnet.police.last_raid
+	_check(not items.items.has(bills_id) and raid.get("bills", 0) >= 6, "a batida levou as notas da mesa e o que mais estava à vista (%s)" % raid)
+	_check(door.is_open and not door.locked, "entraram mesmo com a porta trancada")
+	_check(kitnet.wallet.cash == cash_before - mini(kitnet.police.FINE, cash_before), "multa paga ($%d)" % kitnet.wallet.cash)
+	_check(stash.contents.size() == 1, "o que estava escondido ficou")
+	await create_timer(0.5).timeout
+	await _look(player, Vector3(4.1, 0, -1.6), Vector3(4.1, 1.4, 0.5), "66_batida_policial")
+	stash._use(1)
+	_check(player.held_item() != null and player.held_item().kind == "bundle", "tira o maço do esconderijo")
+	items.consume(player.held_item())
+	kitnet.wallet.earn(cash_before - kitnet.wallet.cash)
+	door.set_open(false)
+	n.visits = 0
+	await create_timer(1.0).timeout
+
+
+func _wait_neighbor(n: Node, states: Array, limit: float) -> bool:
+	var t := 0.0
+	while n.state not in states and t < limit:
+		await physics_frame
+		t += 1.0 / Engine.physics_ticks_per_second
+	return n.state in states
 
 
 ## Clique de quem opera (desce a alavanca) e espera ela voltar.

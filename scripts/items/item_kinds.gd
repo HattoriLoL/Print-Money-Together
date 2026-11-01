@@ -14,6 +14,10 @@ extends RefCounted
 ##            virou a nota de cima, se ela saiu torta (Rect2 na textura da folha; vazio = reta),
 ##            data.worn = quantas já passaram na máquina de lavar (parecem usadas),
 ##            data.top_worn = se a de cima passou (muda a textura); ver value()
+##   "bundle" maço cintado que sai da contadora (scripts/machines/cash_counter.gd): as mesmas
+##            chaves do montinho (count, worth, crooked, offcolor, worn, top_offcolor, top_worn),
+##            sem notas borradas (a contadora separa); grade() dá a nota de qualidade
+##   "pan"    frigideira de ferro da cozinha: arma de pastelão (clique para bater; player.gd)
 ##   "finger" um dedo que a guilhotina levou (a peça da luva do hands.glb); data.owner = de quem,
 ##            data.side = 0 direita / 1 esquerda, data.digit = qual (player.DIGITS)
 ##   "hand"   a mão inteira que a guilhotina levou: a luva com os dedos que ainda tinha;
@@ -51,6 +55,14 @@ const HANDS_MODEL := preload("res://assets/models/hands.glb")
 const DIGITS := ["Thumb", "Index", "Middle", "Ring", "Pinky"]
 ## Pedaços de luva: o tamanho sai da malha.
 const GLOVE_PIECES := ["finger", "hand"]
+## Dá para bater com eles (clique esquerdo na mão).
+const WEAPONS := ["pan"]
+## Frigideira: o centro do fundo dela e o comprimento do cabo, no referencial do item (o cabo
+## vai para +Z, e o meio da caixa de colisão fica entre os dois).
+const PAN_CENTER := Vector3(0.0, 0.0, -0.1)
+const PAN_RADIUS := 0.135
+## Pilhas de notas (o montinho e o maço): a mesma malha, esticada até a altura delas.
+const STACKS := ["bills", "bundle"]
 ## Só dá para carregar com as duas mãos.
 const TWO_HANDED := ["ream"]
 ## Não dá para pegar: [E] usa (a caixa da entrega abre).
@@ -59,6 +71,11 @@ const NOT_CARRIED := ["parcel"]
 const OFFCOLOR_WORTH := 0.6
 ## Nota que nunca foi lavada é nova demais (lisinha, sem dobra): vale isso perto de uma usada.
 const CRISP_WORTH := 0.7
+## Cinta de papel do maço.
+const BUNDLE_BAND := Color(0.9, 0.75, 0.2)
+## Nota de qualidade do maço pelo quanto cada nota vale, em média (value / count): a partir de
+## cada limite, a letra.
+const GRADES := [[0.9, "A"], [0.75, "B"], [0.55, "C"], [0.0, "D"]]
 ## Faixa do rótulo do cartucho de cada marca.
 const CARTRIDGE_COLORS := {"original": Color(0.15, 0.7, 0.3), "generic": Color(0.85, 0.25, 0.65)}
 
@@ -66,19 +83,23 @@ const SIZES := {
 	"ream": Vector3(0.3, 0.052, 0.21),
 	"sheet": Vector3(0.297, 0.003, 0.21),
 	"bills": Vector3(0.139, 0.002, 0.063),
+	"bundle": Vector3(0.139, 0.008, 0.063),
+	"pan": Vector3(0.27, 0.05, 0.47),
 	"cartridge": Vector3(0.11, 0.075, 0.05),
 	"parcel": Vector3(0.44, 0.26, 0.34),
 }
 ## Espessura de cada nota no montinho (bem mais que o papel de verdade, para o monte aparecer).
 const BILL_THICKNESS := 0.0004
 ## Uma resma de 500 folhas pesa uns 2,5 kg; uma folha A4 de 75 g/m², 5 g.
-const MASS := {"ream": 2.5, "sheet": 0.005, "bills": 0.001, "finger": 0.02, "hand": 0.35, "cartridge": 0.08,
+const MASS := {"ream": 2.5, "sheet": 0.005, "bills": 0.001, "bundle": 0.001, "pan": 1.2, "finger": 0.02, "hand": 0.35, "cartridge": 0.08,
 		"parcel": 3.0}
 ## Atrito, quique e amortecimento do giro de cada tipo.
 const PHYSICS := {
 	"ream": {"friction": 0.8, "bounce": 0.12, "angular_damp": 0.6},
 	"sheet": {"friction": 0.9, "bounce": 0.0, "angular_damp": 1.0},
 	"bills": {"friction": 0.85, "bounce": 0.02, "angular_damp": 0.8},
+	"bundle": {"friction": 0.85, "bounce": 0.05, "angular_damp": 0.8},
+	"pan": {"friction": 0.6, "bounce": 0.3, "angular_damp": 0.4},
 	"finger": {"friction": 0.7, "bounce": 0.3, "angular_damp": 0.3},
 	"hand": {"friction": 0.75, "bounce": 0.25, "angular_damp": 0.4},
 	"cartridge": {"friction": 0.6, "bounce": 0.2, "angular_damp": 0.4},
@@ -138,6 +159,10 @@ static func label_of(kind: String, data: Dictionary) -> String:
 			elif worn > 0:
 				notes.append("%d worn" % worn)
 			return text + (" (%s)" % ", ".join(notes) if not notes.is_empty() else "")
+		"bundle":
+			return "bundle of %d bills (grade %s)" % [data.get("count", 0), grade(data)]
+		"pan":
+			return "frying pan"
 		"finger":
 			return "%s's %s" % [data.get("owner", "Someone"), String(data.get("digit", "finger")).to_lower()]
 		"hand":
@@ -158,6 +183,16 @@ static func value(data: Dictionary) -> float:
 	var worth: float = data.get("worth", float(count))
 	var worn := clampi(data.get("worn", 0), 0, count)
 	return worth * (worn + (count - worn) * CRISP_WORTH) / count
+
+
+## A nota de qualidade (A a D) de um monte ou maço: quanto cada nota vale em média (value).
+static func grade(data: Dictionary) -> String:
+	var count: int = data.get("count", 0)
+	var each := value(data) / count if count > 0 else 0.0
+	for g in GRADES:
+		if each >= g[0] - 0.0001:
+			return g[1]
+	return "D"
 
 
 ## Quanto a tinta da folha ainda está molhada, de 0 a 1 (o brilho do shader).
@@ -183,10 +218,14 @@ static func hold_offset(kind: String) -> Transform3D:
 			return Transform3D(Basis(Vector3.RIGHT, 0.95), Vector3(0.0, 0.06, 0.0))
 		"ream":
 			return Transform3D(Basis(Vector3.RIGHT, 0.25), Vector3(0.0, -0.05, -0.06))
-		"bills":
+		"bills", "bundle":
 			return Transform3D(Basis(Vector3.RIGHT, 0.95), Vector3(0.0, 0.05, 0.0))
 		"cartridge":
 			return Transform3D(Basis(Vector3.RIGHT, 0.6), Vector3(0.0, 0.1, -0.06))
+		"pan":
+			# Em pé do lado direito, de perfil como uma raquete (a face virada para a esquerda, para
+			# o golpe de lado acertar com ela), e o cabo nas mãos.
+			return Transform3D(Basis(Vector3.RIGHT, 1.15) * Basis(Vector3.BACK, 1.2), Vector3(0.27, -0.04, 0.02))
 	return Transform3D.IDENTITY
 
 
@@ -200,10 +239,13 @@ static func hand_offset(kind: String, side: int) -> Transform3D:
 			return Transform3D(basis, Vector3(side * 0.135, -0.03, 0.17))
 		"ream":
 			return Transform3D(basis, Vector3(side * 0.176, -0.02, 0.11))
-		"bills":
+		"bills", "bundle":
 			return Transform3D(basis, Vector3(side * 0.112, -0.025, 0.075))
 		"cartridge":
 			return Transform3D(basis, Vector3(side * 0.07, -0.01, 0.03))
+		"pan":
+			# As duas no cabo, uma atrás da outra, como num taco.
+			return Transform3D(basis, Vector3(side * 0.022, 0.0, 0.2 if side == 1 else 0.12))
 	return Transform3D(basis, Vector3(side * 0.15, 0.0, 0.1))
 
 
@@ -235,9 +277,18 @@ static func build(item: RigidBody3D) -> void:
 		item.continuous_cd = true
 		mesh = sheet_mesh_instance(item.data.get("wet", false), item.data.get("offcolor", false))
 		mesh.set_instance_shader_parameter("wet", wet_amount(item.data))
-	elif item.kind == "bills":
+	elif item.kind in STACKS:
 		mesh = MeshInstance3D.new()
 		mesh.name = "Mesh"
+		if item.kind == "bundle":
+			# A cinta de papel em volta do meio (filha da malha: estica junto com o maço).
+			var band := MeshInstance3D.new()
+			band.name = "Band"
+			var band_box := BoxMesh.new()
+			band_box.size = Vector3(0.03, 1.12, SIZES["bundle"].z + 0.002)
+			band_box.material = _flat_material(BUNDLE_BAND, 0.6)
+			band.mesh = band_box
+			mesh.add_child(band)
 	else:
 		mesh = MeshInstance3D.new()
 		mesh.name = "Mesh"
@@ -249,12 +300,16 @@ static func build(item: RigidBody3D) -> void:
 			_cartridge(mesh, item.data.get("brand", "generic"))
 		elif item.kind == "parcel":
 			_parcel(mesh, item.data.get("from", ""))
+		elif item.kind == "pan":
+			# Pesada e rápida no arremesso: sem isso atravessava a parede.
+			item.continuous_cd = true
+			_pan(mesh)
 		else:
 			var box := BoxMesh.new()
 			box.size = size
 			mesh.mesh = box
 	item.add_child(mesh)
-	if item.kind == "bills":
+	if item.kind in STACKS:
 		refresh(item)
 
 
@@ -294,7 +349,7 @@ static func refresh(item: RigidBody3D) -> void:
 	if item.kind == "sheet" and mesh:
 		mesh.set_instance_shader_parameter("wet", wet_amount(item.data))
 		mesh.set_instance_shader_parameter("offcolor", 1.0 if item.data.get("offcolor", false) else 0.0)
-	elif item.kind == "bills" and mesh:
+	elif item.kind in STACKS and mesh:
 		# Uma malha de 1 de altura, esticada até a altura do monte; a colisão acompanha.
 		var count: int = maxi(item.data.get("count", 1), 1)
 		var height := maxf(count * BILL_THICKNESS, 0.0015)
@@ -304,7 +359,7 @@ static func refresh(item: RigidBody3D) -> void:
 		mesh.scale = Vector3(1.0, height, 1.0)
 		var col: CollisionShape3D = item.get_child(0)
 		(col.shape as BoxShape3D).size = Vector3(SIZES["bills"].x, height, SIZES["bills"].z)
-		item.mass = MASS["bills"] * count
+		item.mass = MASS[item.kind] * count
 
 
 ## Uma folha (a do item e a que a impressora mostra saindo pela fenda).
@@ -351,6 +406,46 @@ static func _cartridge(mesh: MeshInstance3D, brand: String) -> void:
 	nozzle.mesh = nozzle_box
 	nozzle.position.y = -size.y / 2.0 - 0.004
 	mesh.add_child(nozzle)
+
+
+## Frigideira de ferro: o fundo (mais largo em cima), a face de dentro um pouco mais clara e o
+## cabo com a ponta de madeira.
+static func _pan(mesh: MeshInstance3D) -> void:
+	var iron := _flat_material(Color(0.12, 0.12, 0.13), 0.45)
+	var body := CylinderMesh.new()
+	body.top_radius = PAN_RADIUS
+	body.bottom_radius = PAN_RADIUS - 0.025
+	body.height = 0.045
+	body.radial_segments = 28
+	body.material = iron
+	mesh.mesh = body
+	mesh.position = PAN_CENTER
+	var face := MeshInstance3D.new()
+	var face_mesh := CylinderMesh.new()
+	face_mesh.top_radius = PAN_RADIUS - 0.012
+	face_mesh.bottom_radius = PAN_RADIUS - 0.012
+	face_mesh.height = 0.002
+	face_mesh.radial_segments = 28
+	face_mesh.material = _flat_material(Color(0.22, 0.22, 0.24), 0.3)
+	face.mesh = face_mesh
+	face.position.y = 0.0235
+	mesh.add_child(face)
+	var handle := MeshInstance3D.new()
+	var handle_box := BoxMesh.new()
+	handle_box.size = Vector3(0.028, 0.02, 0.13)
+	handle_box.material = iron
+	handle.mesh = handle_box
+	handle.position = Vector3(0.0, 0.012, PAN_RADIUS + 0.06)
+	handle.rotation.x = -0.12
+	mesh.add_child(handle)
+	var grip := MeshInstance3D.new()
+	var grip_box := BoxMesh.new()
+	grip_box.size = Vector3(0.034, 0.026, 0.1)
+	grip_box.material = _flat_material(Color(0.42, 0.25, 0.12), 0.8)
+	grip.mesh = grip_box
+	grip.position = Vector3(0.0, 0.025, PAN_RADIUS + 0.17)
+	grip.rotation.x = -0.12
+	mesh.add_child(grip)
 
 
 ## Caixa de papelão da entrega: a fita em cima e o nome da loja escrito dos dois lados.

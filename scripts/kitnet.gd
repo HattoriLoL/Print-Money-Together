@@ -20,16 +20,24 @@ const Computer := preload("res://scripts/machines/computer.gd")
 const ClothesLine := preload("res://scripts/machines/clothesline.gd")
 const Fan := preload("res://scripts/machines/fan.gd")
 const Washer := preload("res://scripts/machines/washer.gd")
+const CashCounter := preload("res://scripts/machines/cash_counter.gd")
+const Stash := preload("res://scripts/machines/stash.gd")
+const Neighbor := preload("res://scripts/neighbor.gd")
+const Police := preload("res://scripts/police.gd")
 const Wallet := preload("res://scripts/wallet.gd")
 const Deliveries := preload("res://scripts/shop/deliveries.gd")
 const Toon := preload("res://scripts/toon.gd")
 const Ambience := preload("res://scripts/ambience.gd")
 
-## Portas que os jogadores não abrem (vizinhos e a escada, por onde o fiscal vai chegar).
+## Portas que os jogadores não abrem (vizinhos e a escada, por onde o fiscal vai chegar). A 301
+## tranca por dentro (door.gd, make_lockable).
 const LOCKED_DOORS := ["302", "303", "Stairs"]
 ## Malhas sem colisão: luminárias (e o fio da lâmpada pelada), panos, o varal (acima da cabeça), as pás do ventilador,
 ## as manchas e tudo lá fora.
 const NO_COLLISION := ["LAMP_", "Cord_", "Curtain_", "MACHINE_ClothesLine", "MACHINE_Fan_Blades", "Decal_", "Newspaper_", "Outside_"]
+## Frigideira em cima da boca livre do cooktop (a de trás à direita), com o cabo para fora da
+## bancada: o fundo em cima da trempe (art_source/blender/furniture.py, kitchen).
+const PAN_START := Transform3D(Basis(Vector3.UP, PI), Vector3(2.8, 0.964, -0.5))
 ## Malhas que não fazem sombra (as manchas ficam a 3 mm da parede; lá fora é só fundo).
 const NO_SHADOW := ["LAMP_", "Decal_", "Outside_"]
 ## Luz de cada zona (LIGHT_<zona>_<n> do modelo): alcance (m), energia e sombra.
@@ -63,6 +71,13 @@ var clothesline: Node3D
 var fan: Node3D
 ## A máquina de lavar (as notas saem com cara de usadas).
 var washer: Node3D
+## A contadora (junta os montinhos em maços cintados).
+var cash_counter: Node3D
+## Os esconderijos (HIDE_* e o alçapão do banheiro).
+var stashes: Array[Node3D] = []
+## O vizinho do 303 (o perigo da kitnet) e a polícia que ele chama.
+var neighbor: CharacterBody3D
+var police: Node
 ## Dinheiro do grupo e as entregas a caminho.
 var wallet: Node
 var deliveries: Node
@@ -88,6 +103,12 @@ func _ready() -> void:
 	model.name = "Model"
 	add_child(model)
 	_setup_model()
+	if multiplayer.is_server():
+		items.spawn("pan", PAN_START, {"resting": true})
+	police = Police.new()
+	add_child(police)
+	neighbor = Neighbor.new()
+	add_child(neighbor)
 	_players_root = Node3D.new()
 	_players_root.name = "Players"
 	add_child(_players_root)
@@ -122,8 +143,7 @@ func _client_ready(player_name: String) -> void:
 	for other: int in roster:
 		_add_player.rpc_id(id, other, roster[other]["name"], roster[other]["slot"])
 	for key in doors:
-		if doors[key].is_open:
-			doors[key].send_state_to(id)
+		doors[key].send_state_to(id)
 	items.send_all_to(id)
 	for station in get_tree().get_nodes_in_group("station"):
 		station.send_state_to(id)
@@ -219,7 +239,9 @@ func _on_node_added(node: Node) -> void:
 		_toon_later.call_deferred(node)
 
 
-func _toon_later(node: GeometryInstance3D) -> void:
+## Sem tipo no argumento: o nó pode ter sido liberado antes do quadro (um item que nasce e some
+## no mesmo quadro), e a conversão falharia antes do is_instance_valid.
+func _toon_later(node) -> void:
 	if is_instance_valid(node):
 		Toon.apply_one(node)
 
@@ -240,6 +262,16 @@ func _add_stations() -> void:
 	model.find_child("MACHINE_ClothesLine", true, false).add_child(clothesline)
 	washer = Washer.new()
 	model.find_child("MACHINE_Washer", true, false).add_child(washer)
+	cash_counter = CashCounter.new()
+	model.find_child("MACHINE_CashCounter", true, false).add_child(cash_counter)
+	for key: String in Stash.SPOTS:
+		var holder: Node3D = model.find_child(key, true, false)
+		if holder == null:
+			continue
+		var stash := Stash.new()
+		stash.setup(key)
+		holder.add_child(stash)
+		stashes.append(stash)
 
 
 func _setup_light(light: Light3D) -> void:
@@ -255,6 +287,8 @@ func _add_door(leaf: MeshInstance3D) -> void:
 	var door := Door.new()
 	door.adopt(leaf)
 	door.locked = door.key in LOCKED_DOORS
+	if door.key == "301":
+		door.make_lockable()
 	doors[door.key] = door
 
 

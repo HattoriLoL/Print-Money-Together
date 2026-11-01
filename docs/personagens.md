@@ -20,6 +20,10 @@ Todos usam o mesmo boneco. A vaga muda a cor do moletom (`Net.PLAYER_COLORS`) e 
 | 3 | amarelo | topete (`Acc_Quiff`) |
 | 4 | roxo | gorro com pompom (`Acc_Beanie`) |
 
+O vizinho do 303 usa o mesmo boneco, com o roupão na cor do moletom, as mãos de pele e o
+acessório `Acc_Neighbor`: bobes, costeletas grisalhas e bigodão. O `setup` do rig aceita o nome
+do acessório, e `keep_gloves` deixa as mãos dele aparecendo no IK. Ver `docs/vizinho.md`.
+
 ## Modelo
 
 `art_source/blender/character.py` monta o boneco e exporta `assets/models/character.glb` (e salva
@@ -128,6 +132,26 @@ Os bonecos não travam um no outro como blocos: a colisão dos jogadores é só 
     voltam para a posição do dono.
   - No Godot 4.7 o ragdoll é um modificador aplicado na hora de desenhar: a pose de pano não
     aparece em `get_bone_global_pose`; para ler, use os próprios ossos de física.
+  - Ao levantar, o simulador é desligado (`_sim.active = false`), e a animação recoloca os
+    quadris no descanso a cada quadro antes de misturar a pose de pano. Sem isso, depois do
+    primeiro tombo os quadris ficavam na pose de deitado e os braços não chegavam mais no item.
+- **Frigideira (bonk):** com a frigideira na mão (`ItemKinds.WEAPONS`), o clique esquerdo bate.
+  O golpe (`SWING_TIME`, 0,5 s) arma para a direita e passa para a esquerda com a face na frente;
+  todo mundo vê, porque o item usa a `swing_pose()` de quem segura entre a mão e ele. Quem bate
+  procura, no meio do golpe (`SWING_HIT`), alguém numa bola de `SWING_RADIUS` a `SWING_REACH` na
+  frente da câmera:
+  - **Acertou:** "BONK!" de gibi em cima da cabeça e o som de ferro para todos
+    (`scripts/bonk.gd`), um tranquinho na câmera de quem bateu, e o dono de quem levou decide
+    (`take_bonk`): solta o que segura e cai como na trombada, só que por `BONK_TIME` (3 s), com
+    as **estrelinhas** girando na cabeça (`STARS_TIME`, passam um pouco do levantar). Já caído,
+    o tempo recomeça.
+  - **Errou** e pegou parede ou móvel: "clang". No vazio, só o vento do golpe.
+  - Quem leva o bonk em primeira pessoa vê o mundo do chão, com as estrelas passando na frente.
+  - O alvo é qualquer corpo com `take_bonk(dir)` e `bonk_point()` na camada dos jogadores: o
+    vizinho do 303 também (`docs/vizinho.md`).
+- **Arrastar o vizinho:** desmaiado, ele é puxado pela gola. Quem arrasta anda a `DRAG_SPEED`
+  e os braços do boneco dele vão até a gola. No rig, `pull_bone` puxa um osso do ragdoll como
+  uma mola.
 - Teleporte (nascer, voltar de fora do mapa) não conta como corrida: acima de `TELEPORT_SPEED` a
   velocidade vira zero, senão quem nascesse do lado de alguém o derrubaria.
 - A velocidade de cada boneco (`body_velocity`) é medida no passo de física: o quadro de desenho

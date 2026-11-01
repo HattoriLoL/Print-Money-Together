@@ -2,8 +2,8 @@
 
 A linha de produção planejada é: papel → tinta → impressora → varal → guilhotina → máquina de
 lavar → contadora → esconderijo. Até agora funcionam o **papel**, a **impressora** (com o
-**cartucho de tinta**), o **varal** (com o **ventilador**), a **guilhotina** e a **máquina de
-lavar**. As outras máquinas ainda são só o modelo.
+**cartucho de tinta**), o **varal** (com o **ventilador**), a **guilhotina**, a **máquina de
+lavar** e a **contadora**. Os esconderijos ainda não.
 
 Papel e cartucho se compram no PC e chegam numa caixa na porta: ver `docs/loja.md`.
 
@@ -17,6 +17,8 @@ frente do jogador, ou rente à parede se ela estiver no caminho).
 | `ream` | Resma de papel embrulhada (marca fictícia OFFICE+). Na impressora, vira `sheets_per_ream` folhas. |
 | `sheet` | Folha A4 impressa com 2 x 3 notas, frente e verso. `data.wet` = tinta ainda fresca: mais escura e brilhando. `data.offcolor` = impressa com cartucho genérico: o que tem cor sai azul-petróleo. |
 | `bills` | Montinho de notas cortadas. `data.count` = quantas, `data.smudged` = quantas saíram borradas, `data.top_smudged` = se a de cima está borrada (muda a textura), `data.offcolor` e `data.top_offcolor` = o mesmo para a cor errada do cartucho genérico. A altura e o peso crescem com o monte. |
+| `bundle` | Maço cintado que sai da contadora: as mesmas chaves do montinho, sem notas borradas, com a cinta amarela em volta do meio. Ver a contadora. |
+| `pan` | Frigideira de ferro, que começa em cima do fogão (na boca livre, com o cabo para fora da bancada). Na mão, o clique bate (`ItemKinds.WEAPONS`; ver `docs/personagens.md`). Fica de perfil do lado direito, como uma raquete. |
 | `finger` | Um dedo que a guilhotina levou: a peça da luva do `hands.glb`. `data.owner` = de quem ("Tester's thumb"), `data.side` = 0 direita / 1 esquerda, `data.digit` = qual. |
 | `hand` | A mão inteira que a guilhotina levou: a luva com os dedos que ela ainda tinha. `data.owner`, `data.side` e `data.lost` = os dedos que já tinham ido antes. |
 | `cartridge` | Cartucho de tinta da impressora: plástico preto com a faixa da marca (verde o original, rosa o genérico). `data.ink` = quanto ainda tem (0 a 1), `data.brand` = `original` ou `generic`. |
@@ -262,7 +264,7 @@ O host guarda o estado (a fase, `cut_pos`, quantas peças faltam, a pilha e quem
 ### Montinho
 
 - O montinho é um item `bills`: os cortes seguintes somam no mesmo enquanto ele estiver parado lá (até `pile_max` notas). Se alguém pegou, ou se ele encheu, nasce outro do lado.
-- Folha cortada molhada dá notas borradas (`smudged`). Por enquanto elas só ficam marcadas; depois vão valer menos ou ser recusadas.
+- Folha cortada molhada dá notas borradas (`smudged`). Elas emperram a contadora e ficam fora dos maços.
 - Folha do cartucho genérico dá notas com a cor errada (`offcolor`): valem `ItemKinds.OFFCOLOR_WORTH` no `worth`, e os pedaços de papel na mesa usam a textura com a cor errada.
 - `data.crooked` conta as tortas e `data.worth` guarda quanto o monte vale em notas perfeitas. O nome mostra as duas marcas: "10 bills (6 smudged, 6 crooked)". O valor de verdade, contando se já foram lavadas, é `ItemKinds.value()` (ver a máquina de lavar).
 - `noise()` é o golpe da lâmina, por um instante.
@@ -309,6 +311,40 @@ O código é `scripts/machines/washer.gd`. O cesto fica nas mesmas medidas do Bl
 
 Peças do modelo que o Godot mexe: `MACHINE_Washer_Lid` (gira no X local, na dobradiça de trás; a
 zona da tampa vai junto), `MACHINE_Washer_Knob` (gira no Z do Godot) e `MACHINE_Washer_Led`.
+
+## Contadora (`MACHINE_CashCounter`)
+
+Junta os montinhos da guilhotina em **maços cintados** de `BUNDLE_SIZE` (20) notas, com a nota
+de qualidade. O maço é o que a venda vai usar.
+
+O código é `scripts/machines/cash_counter.gd`. O funil fica nas mesmas medidas do Blender
+(`COUNTER_HOPPER` em `art_source/blender/machines.py`, `HOPPER_*` no Godot).
+
+| Onde | [E] |
+|---|---|
+| Funil (em cima) | Com um montinho na mão, joga as notas dentro (até `HOPPER_MAX`, 120). De mão vazia, pega de volta as que ainda não foram contadas. |
+| Bandeja da frente | Com 20 notas, cinta o maço e ele vem para a mão. Antes disso, de mão vazia, pega as contadas soltas (um montinho). |
+| Gabinete | Segurar [E] com a máquina emperrada: destrava em `JAM_CLEAR` (1,2 s). |
+
+- **Contando:** sozinha, `BILLS_PER_SECOND` (10) notas por segundo, do funil para a bandeja. Cada
+  nota escorrega da fenda para a pilha, e o visor conta (`012`). Com 20 na bandeja ela para, apita
+  e o visor mostra o maço e a nota (`20 A`). O resto espera no funil até alguém cintar.
+- **Totais:** o funil e a bandeja guardam só os totais (quantas, quanto valem, quantas borradas,
+  tortas, de cor errada e usadas). Cada nota que passa é sorteada dos totais do funil.
+- **Nota borrada emperra:** a tinta grudenta trava a máquina (o visor pisca `JAM`). Segurando
+  [E], ela destrava, e a nota vai para um montinho de **rejeitadas** do lado (`REJECT_SPOT`, em cima
+  da mesa); as próximas somam no mesmo enquanto ele estiver lá. Por isso o maço nunca tem
+  borradas.
+- **Nota de qualidade** (`ItemKinds.grade`): pelo quanto cada nota vale em média
+  (`ItemKinds.value / count`): A a partir de 90%, B de 75%, C de 55%, D abaixo disso. Sem lavar, o
+  maço perfeito fica em C (70%); lavado, chega no A.
+- **Maço** (item `bundle`): a mesma pilha de notas, com a cinta amarela em volta do meio. Nome:
+  "bundle of 20 bills (grade A)".
+- **Barulho** (`noise()`): `NOISE` contando.
+- **Sons**, feitos no próprio código: o motor com o estalo de cada nota, o tranco (emperrou,
+  notas no funil, maço cintado) e dois bipes com o maço completo.
+- **Rede:** o host conta e repassa o estado para todos a cada nota (o funil, a bandeja, se está
+  emperrada e quanto já destravou). Quem entra no meio recebe tudo.
 
 ## Teste
 

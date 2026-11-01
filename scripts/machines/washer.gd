@@ -251,6 +251,20 @@ func _start(_peer: int) -> void:
 	_send_now("press")
 
 
+## Host: a polícia leva as notas lá de dentro (para no meio do ciclo). Devolve o que levou.
+func confiscate() -> Dictionary:
+	var bills := 0
+	for data: Dictionary in contents:
+		bills += int(data.get("count", 0))
+	if contents.is_empty():
+		return {}
+	contents.clear()
+	phase = Phase.IDLE
+	time_left = 0.0
+	_send_now()
+	return {"bills": bills}
+
+
 ## Fim da centrifugação: as notas saem usadas.
 func _finish() -> void:
 	for data: Dictionary in contents:

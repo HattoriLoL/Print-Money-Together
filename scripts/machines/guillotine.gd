@@ -643,6 +643,22 @@ func drop_peer(peer: int) -> void:
 		_send_state()
 
 
+## Host: a polícia leva a folha (e as tiras) que está na mesa; quem operava sai. Devolve o que
+## levou.
+func confiscate() -> Dictionary:
+	if not has_sheet():
+		return {}
+	operator = 0
+	feed = 0.0
+	phase = Phase.ROWS
+	pieces_left = 0
+	cut_pos = 0.0
+	_rows.clear()
+	stack_count = 0
+	_send_state()
+	return {"sheets": 1}
+
+
 ## Host: a lâmina pegou as mãos de quem opera (as duas na mesma altura da folha: perdem as mesmas
 ## partes, `lost`). O que elas ainda tinham cai na mesa, na frente da lâmina, como item. Devolve o
 ## aviso para quem opera.

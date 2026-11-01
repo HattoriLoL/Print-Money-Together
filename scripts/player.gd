@@ -20,6 +20,15 @@ extends CharacterBody3D
 ## Quem leva uma trombada de alguém correndo cai (ragdoll parcial, RAGDOLL_*): solta o que
 ## segura, tomba e rola com o tranco, e depois levanta onde caiu. O dono decide e avisa os outros.
 ##
+## Frigideira (ItemKinds.WEAPONS): com ela na mão, o clique esquerdo bate (SWING_*; todos veem o
+## golpe pela swing_pose, que o item usa entre a mão e ele). Quem bate procura alguém na frente
+## no meio do golpe: acertou, "BONK!" e o som para todos (Bonk) e avisa o dono de quem levou
+## (take_bonk), que cai como na trombada, só que por mais tempo (BONK_TIME), com as estrelinhas
+## girando na cabeça (todos veem). Errou e pegou parede ou móvel, "clang".
+##
+## Arrastando o vizinho desmaiado pela gola (neighbor.gd): anda devagar (DRAG_SPEED, sem correr),
+## os braços do boneco vão até a gola dele, e [G] (ou [E] nele) solta.
+##
 ## Operando uma máquina de perto (`operating`: a guilhotina, o PC): o boneco fica parado na frente dela,
 ## as luvas vão para onde a máquina manda (todos veem), e no jogador local a câmera vai para a
 ## vista da máquina (outra câmera, que sai da de primeira pessoa e volta para ela), o mouse e o
@@ -38,6 +47,7 @@ extends CharacterBody3D
 const Hud := preload("res://scripts/hud.gd")
 const ItemKinds := preload("res://scripts/items/item_kinds.gd")
 const HandsModel := preload("res://assets/models/hands.glb")
+const Bonk := preload("res://scripts/bonk.gd")
 const OutlineShader := preload("res://shaders/outline.gdshader")
 const CharacterRig := preload("res://scripts/character_rig.gd")
 ## Onde o item fica na frente da câmera, parado.
@@ -79,6 +89,8 @@ const CAMERA_KICK := 0.02
 const TELEPORT_SPEED := 9.0
 ## Quanto tempo (s) a câmera leva para ir até a vista da máquina operada e voltar.
 const STATION_CAMERA_TIME := 0.35
+## Arrastando o vizinho: velocidade máxima (m/s).
+const DRAG_SPEED := 1.7
 ## Balanço do tronco: quanto o boneco ganha de giro (rad/s, por segundo encostado) por unidade de
 ## empurrão.
 const PUSH_WOBBLE := 10.0
@@ -189,6 +201,8 @@ func _ready() -> void:
 	_build_hands()
 	hold_point.position = HOLD_REST
 	_fall_camera_ball.radius = FALL_CAMERA_RADIUS
+	_stars = Bonk.make_stars()
+	add_child(_stars)
 	if is_local():
 		_setup_input()
 		camera.make_current()
@@ -223,6 +237,11 @@ func _input(event: InputEvent) -> void:
 		elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			operating.request_cut()
 		return
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT \
+			and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and _has_control():
+		var held := held_item()
+		if held != null and held.kind in ItemKinds.WEAPONS:
+			swing()
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and _has_control():
 		rotate_y(-event.relative.x * mouse_sensitivity)
 		head.rotation.x = clampf(head.rotation.x - event.relative.y * mouse_sensitivity, -1.5, 1.5)
@@ -232,6 +251,8 @@ func _input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	if is_local():
 		_update_hold_point(delta)
+	_update_swing(delta)
+	_update_stars(delta)
 	_update_hands()
 	_animate_character(delta)
 	if is_local():
@@ -293,6 +314,8 @@ func _physics_process(delta: float) -> void:
 		target_speed = crouch_speed
 	elif sprinting:
 		target_speed = sprint_speed
+	if dragging():
+		target_speed = minf(target_speed, DRAG_SPEED)
 
 	var control := 1.0 if is_on_floor() else air_control
 	var horizontal := Vector3(velocity.x, 0, velocity.z)
@@ -429,6 +452,215 @@ func _update_fall_camera() -> void:
 	camera.global_position = from + move * safe[0]
 
 
+# --- Frigideira (bonk) --------------------------------------------------------
+
+## Golpe: dura SWING_TIME e passa na frente dos olhos em SWING_HIT, quando quem bate procura o
+## acerto numa bola de SWING_RADIUS a SWING_REACH na frente da câmera.
+const SWING_TIME := 0.5
+const SWING_HIT := 0.2
+const SWING_REACH := 0.85
+const SWING_RADIUS := 0.4
+## Pose do golpe, de lado como uma raquete: quanto vai para a direita armando e quanto passa
+## para a esquerda batendo (rad), e quanto avança (m).
+const SWING_WINDUP := 0.9
+const SWING_FOLLOW := 1.4
+const SWING_LUNGE := 0.18
+## Caído depois do bonk (s), o tranco do tombo (m/s) e quanto as estrelinhas duram (passam um
+## pouco do levantar).
+const BONK_TIME := 3.0
+const BONK_SPEED := 3.0
+const STARS_TIME := 4.2
+
+## Segundos desde o começo do golpe (-1 = parado). Todas as máquinas animam.
+var _swing_time := -1.0
+var _swing_checked := false
+var _stars: Node3D
+var _stars_left := 0.0
+## Quem esta frigideira acertou por último e como foi o último golpe: "bonk", "clang" ou "miss"
+## (só em quem bateu).
+var last_bonked: Node = null
+var last_swing := ""
+
+
+## Jogador local: bate com o que tem na mão (um golpe por vez).
+func swing() -> void:
+	if _swing_time >= 0.0:
+		return
+	_start_swing()
+	var kitnet := get_tree().get_first_node_in_group("kitnet")
+	if kitnet != null:
+		kitnet.rpc_roster(self, &"_remote_swing")
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _remote_swing() -> void:
+	if multiplayer.get_remote_sender_id() == get_multiplayer_authority():
+		_start_swing()
+
+
+func _start_swing() -> void:
+	_swing_time = 0.0
+	_swing_checked = false
+	Bonk.play(self, "swoosh", hold_point.global_position)
+
+
+func swinging() -> bool:
+	return _swing_time >= 0.0
+
+
+func _update_swing(delta: float) -> void:
+	if _swing_time < 0.0:
+		return
+	_swing_time += delta
+	if is_local() and not _swing_checked and _swing_time >= SWING_HIT:
+		_swing_checked = true
+		_swing_hit()
+	if _swing_time >= SWING_TIME:
+		_swing_time = -1.0
+
+
+## A pose do golpe em volta do ponto Hold (o item usa entre a mão e ele): arma para a direita,
+## passa rápido para a esquerda atravessando a vista (com a face da frigideira na frente) e volta.
+## Parado, a identidade.
+func swing_pose() -> Transform3D:
+	if _swing_time < 0.0:
+		return Transform3D.IDENTITY
+	var up := 0.12
+	var down := 0.22
+	var angle: float
+	var lunge: float
+	if _swing_time < up:
+		angle = SWING_WINDUP * sin(_swing_time / up * PI / 2.0)
+		lunge = 0.0
+	elif _swing_time < down:
+		var k := (_swing_time - up) / (down - up)
+		angle = lerpf(SWING_WINDUP, -SWING_FOLLOW, k * k)
+		lunge = SWING_LUNGE * k
+	else:
+		var k := smoothstep(0.0, 1.0, (_swing_time - down) / (SWING_TIME - down))
+		angle = lerpf(-SWING_FOLLOW, 0.0, k)
+		lunge = SWING_LUNGE * (1.0 - k)
+	# Ângulo positivo gira para a direita (em volta do -Y), um pouco inclinado.
+	var axis := Vector3(-0.25, -1.0, 0.0).normalized()
+	return Transform3D(Basis(axis, angle), Vector3(-lunge * 0.6, 0.0, -lunge))
+
+
+## Jogador local, no meio do golpe: acertou alguém na frente? Senão, a frigideira pegou parede ou
+## móvel?
+func _swing_hit() -> void:
+	var kitnet := get_tree().get_first_node_in_group("kitnet")
+	var space := get_world_3d().direct_space_state
+	var center := camera.global_position - camera.global_basis.z * SWING_REACH
+	var ball := SphereShape3D.new()
+	ball.radius = SWING_RADIUS
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = ball
+	query.transform = Transform3D(Basis.IDENTITY, center)
+	query.collision_mask = 2
+	query.exclude = [get_rid()]
+	# Sem tipo: o alvo pode ser um jogador ou, depois, o vizinho (os dois têm take_bonk e bonk_point).
+	var target = null
+	var nearest := INF
+	for hit in space.intersect_shape(query, 8):
+		var body: Object = hit["collider"]
+		if body != self and body is Node3D and body.has_method("take_bonk"):
+			var d: float = (body as Node3D).global_position.distance_to(center)
+			if d < nearest:
+				nearest = d
+				target = body
+	if target != null:
+		var dir: Vector3 = target.global_position - global_position
+		dir.y = 0.0
+		dir = dir.normalized() if dir.length() > 0.01 else -global_basis.z
+		var at: Vector3 = target.bonk_point()
+		last_bonked = target
+		last_swing = "bonk"
+		_bonk_fx(at, "bonk")
+		if kitnet != null:
+			kitnet.rpc_roster(self, &"_remote_bonk_fx", [at, "bonk"])
+		kick_camera(0.35)
+		target.take_bonk(dir)
+		return
+	var ray := PhysicsRayQueryParameters3D.create(camera.global_position, center - camera.global_basis.z * 0.25, 1 | 4)
+	ray.exclude = [get_rid()]
+	var wall := space.intersect_ray(ray)
+	last_swing = "miss"
+	if not wall.is_empty():
+		last_swing = "clang"
+		_bonk_fx(wall.position, "clang")
+		if kitnet != null:
+			kitnet.rpc_roster(self, &"_remote_bonk_fx", [wall.position, "clang"])
+		kick_camera(0.2)
+
+
+func _bonk_fx(pos: Vector3, sound: String) -> void:
+	Bonk.play(self, sound, pos)
+	if sound == "bonk":
+		var kitnet := get_tree().get_first_node_in_group("kitnet")
+		Bonk.popup(kitnet if kitnet != null else self, pos)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _remote_bonk_fx(pos: Vector3, sound: String) -> void:
+	if multiplayer.get_remote_sender_id() == get_multiplayer_authority():
+		_bonk_fx(pos, sound)
+
+
+## Onde a pancada pega (a cabeça) e onde as estrelinhas giram.
+func bonk_point() -> Vector3:
+	return character.ragdoll_head() if fallen else head.global_position + Vector3.UP * 0.08
+
+
+## Alguém bateu com a frigideira neste boneco (chamado na máquina de quem bateu): quem decide é
+## o dono dele.
+func take_bonk(dir: Vector3) -> void:
+	if is_local():
+		_get_bonked(dir)
+	elif multiplayer.get_peers().has(get_multiplayer_authority()):
+		_rpc_bonked.rpc_id(get_multiplayer_authority(), dir)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_bonked(dir: Vector3) -> void:
+	if is_local():
+		_get_bonked(dir)
+
+
+## Só o dono: levou o bonk. Solta o que segura e cai por BONK_TIME (mesmo já caído, o tempo
+## recomeça), com as estrelinhas.
+func _get_bonked(dir: Vector3) -> void:
+	if held_item() != null:
+		_drop_held()
+	if not fallen:
+		_begin_fall(dir, BONK_SPEED)
+	_fallen_time = BONK_TIME
+	_stars_left = STARS_TIME
+	kick_camera(1.0)
+	var kitnet := get_tree().get_first_node_in_group("kitnet")
+	if kitnet != null:
+		kitnet.rpc_roster(self, &"_remote_bonked", [dir])
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _remote_bonked(dir: Vector3) -> void:
+	if multiplayer.get_remote_sender_id() != get_multiplayer_authority():
+		return
+	if not fallen:
+		_begin_fall(dir, BONK_SPEED)
+	_stars_left = STARS_TIME
+
+
+func dazed() -> bool:
+	return _stars_left > 0.0
+
+
+func _update_stars(delta: float) -> void:
+	_stars_left = maxf(0.0, _stars_left - delta)
+	_stars.visible = _stars_left > 0.0
+	if _stars.visible:
+		Bonk.place_stars(_stars, bonk_point(), Time.get_ticks_msec() / 1000.0)
+
+
 # --- Rede ---------------------------------------------------------------------
 
 func _send_state(delta: float) -> void:
@@ -460,6 +692,18 @@ func _follow_remote(delta: float) -> void:
 
 # --- Interação ----------------------------------------------------------------
 
+## O vizinho do 303 (ou null fora da kitnet).
+func _neighbor() -> Node:
+	var kitnet := get_tree().get_first_node_in_group("kitnet")
+	return kitnet.get("neighbor") if kitnet != null else null
+
+
+## Arrastando o vizinho desmaiado agora (vale em todas as máquinas).
+func dragging() -> bool:
+	var neighbor := _neighbor()
+	return neighbor != null and neighbor.dragged_by(name.to_int())
+
+
 ## Item que este jogador está segurando, ou null.
 func held_item() -> Node:
 	var kitnet := get_tree().get_first_node_in_group("kitnet")
@@ -487,6 +731,8 @@ func _update_interaction(delta: float) -> void:
 		target.interact(self)
 
 	var held := held_item()
+	if dragging() and _has_control() and Input.is_action_just_pressed("drop"):
+		_neighbor().request_let_go()
 	if not _has_control() or held == null:
 		_throw_charge = -1.0
 	elif Input.is_action_just_pressed("drop"):
@@ -498,7 +744,13 @@ func _update_interaction(delta: float) -> void:
 			_drop_held(_throw_charge)
 			_throw_charge = -1.0
 	hud.set_throw(_throw_charge if _throw_charge >= THROW_MIN_CHARGE else -1.0)
-	hud.set_carry("" if held == null else "%s   [G] drop · hold [G] to throw" % ItemKinds.label(held).capitalize())
+	var carry := ""
+	if dragging():
+		carry = "Dragging the neighbor   [G] let go"
+	elif held != null:
+		carry = "%s   %s[G] drop · hold [G] to throw" % [ItemKinds.label(held).capitalize(),
+				"Click to swing · " if held.kind in ItemKinds.WEAPONS else ""]
+	hud.set_carry(carry)
 
 
 ## Ponto Hold do jogador local: vem atrasado quando a câmera vira (o item "pesa") e recua
@@ -860,6 +1112,11 @@ func _animate_character(delta: float) -> void:
 	if (held_item() != null or operating != null) and _hands.size() == 2:
 		var hands := active_hands()
 		targets = [hands[0].global_position, hands[1].global_position]
+	elif dragging():
+		# As duas mãos na gola do vizinho.
+		var grip: Vector3 = _neighbor().grip_point()
+		var side := global_basis.x * 0.1
+		targets = [grip + side, grip - side]
 	character.animate(delta, moved, airborne, head.rotation.x, targets)
 	if is_local() and not fallen:
 		# Olhando para baixo, o corpo recua para trás da câmera: aparecem a barriga, as pernas e

@@ -49,6 +49,12 @@ guilhotina e do cartucho vira uma decisão na hora de vender.
    fiscal também.
 3. Encomendas e reputação por cima dos dois.
 
+## O vizinho do 303
+
+Feito: ver `docs/vizinho.md`. A polícia leva o que está à vista, e os esconderijos salvam o resto.
+Ainda falta esconder ele desmaiado (acordado, ele grita abafado), os policiais como bonecos, e a
+noite e a janela aberta deixando ele mais irritado.
+
 ## Outras ideias (inspiradas no gênero)
 
 - **Amostra grátis → cliente novo:** dar umas notas a alguém que conhece outro comprador, e a rede

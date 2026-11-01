@@ -104,7 +104,8 @@ func _process(delta: float) -> void:
 		return
 	var hold: Transform3D = _holder_node.hold_point.global_transform
 	_held_local = _held_local.interpolate_with(ItemKinds.hold_offset(kind), clampf(HOLD_FOLLOW * delta, 0.0, 1.0))
-	global_transform = hold * _held_local
+	# Batendo com ele (a frigideira), a pose do golpe entra entre a mão e o item.
+	global_transform = hold * _holder_node.swing_pose() * _held_local
 	if kind == "sheet" and _mesh and delta > 0.0:
 		# A folha tremula mais quanto mais rápido quem segura anda.
 		var speed := hold.origin.distance_to(_last_hold_pos) / delta

@@ -1,6 +1,8 @@
 extends CanvasLayer
 ## Interface do jogador local: mira, aviso de interação, quem está na sala, mensagens, dicas
-## de controle e o menu do Esc (o jogo não pausa: é multiplayer).
+## de controle e o menu do Esc (o jogo não pausa: é multiplayer). Em cima, no meio, o alerta da
+## hora (o vizinho ligando, a polícia chegando); embaixo à direita, o barulho da kitnet agora (o
+## que incomoda o vizinho do 303).
 
 var _prompt: Label
 var _message: Label
@@ -10,6 +12,9 @@ var _pause: Control
 var _capture_hint: Label
 var _carry: Label
 var _money: Label
+var _alert: Label
+var _noise_back: ColorRect
+var _noise_bar: ColorRect
 var _throw_back: ColorRect
 var _throw_bar: ColorRect
 var _message_tween: Tween
@@ -62,6 +67,26 @@ func _ready() -> void:
 	_money.add_theme_color_override("font_color", Color(0.55, 1.0, 0.55))
 	_place(_money, Vector2(1.0, 0.0), Rect2(-220, 14, 200, 30))
 
+	_alert = _label(24)
+	_alert.add_theme_color_override("font_color", Color(1.0, 0.4, 0.35))
+	_place(_alert, Vector2(0.5, 0.0), Rect2(-500, 14, 1000, 34))
+
+	# Barulho agora (cheio = bem alto), embaixo à direita.
+	var noise_label := _label(13)
+	noise_label.text = "NOISE"
+	noise_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	noise_label.modulate.a = 0.75
+	_place(noise_label, Vector2(1.0, 1.0), Rect2(-232, -50, 60, 20))
+	_noise_back = ColorRect.new()
+	_noise_back.color = Color(0, 0, 0, 0.45)
+	_noise_back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_place(_noise_back, Vector2(1.0, 1.0), Rect2(-166, -45, 146, 10))
+	_noise_bar = ColorRect.new()
+	_noise_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_noise_bar.position = Vector2(1, 1)
+	_noise_bar.size = Vector2(0, 8)
+	_noise_back.add_child(_noise_bar)
+
 	_roster = VBoxContainer.new()
 	_roster.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_place(_roster, Vector2(0.0, 0.0), Rect2(16, 14, 260, 120))
@@ -78,6 +103,25 @@ func _process(delta: float) -> void:
 	var kitnet := get_tree().get_first_node_in_group("kitnet")
 	if kitnet != null and kitnet.wallet != null:
 		_money.text = "$%d" % kitnet.wallet.cash
+	_update_threat(kitnet)
+
+
+## O alerta de cima e o medidor de barulho.
+func _update_threat(kitnet: Node) -> void:
+	var neighbor: Node = kitnet.get("neighbor") if kitnet != null else null
+	var police: Node = kitnet.get("police") if kitnet != null else null
+	var alert := ""
+	if police != null:
+		alert = police.alert_text()
+	if alert.is_empty() and neighbor != null and neighbor.calling:
+		alert = "The neighbor is calling the police: %d%%" % roundi(neighbor.call_fraction() * 100.0)
+	_alert.text = alert
+	if alert != "":
+		_alert.modulate.a = 0.6 + 0.4 * absf(sin(Time.get_ticks_msec() / 250.0))
+	var level: float = clampf(neighbor.noise if neighbor != null else 0.0, 0.0, 1.0)
+	_noise_bar.size.x = 144.0 * level
+	_noise_bar.color = Color(0.4, 0.9, 0.4).lerp(Color(1.0, 0.85, 0.2), clampf(level * 2.0, 0.0, 1.0)).lerp(
+			Color(1.0, 0.25, 0.2), clampf(level * 2.0 - 1.0, 0.0, 1.0))
 
 
 func _unhandled_input(event: InputEvent) -> void:

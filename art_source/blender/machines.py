@@ -359,20 +359,31 @@ def guillotine(coll):
     ob.rotation_euler.y = -GUILLOTINE_OPEN
 
 
+# Contadora de cédulas na ponta direita da mesa do meio, de frente para a janela. O funil (centro
+# e inclinação), a bandeja e o visor ficam nas mesmas medidas no Godot
+# (scripts/machines/cash_counter.gd).
+COUNTER_LOC = (2.95, 2.15, 0.76)
+COUNTER_HOPPER = ((0, 0.06, 0.17), -0.6)
+
+
 def cash_counter(coll):
-    """Contadora de cédulas com o visor marcando 100."""
+    """Contadora de cédulas: as notas entram pelo funil de cima, passam pela fenda da frente e
+    empilham na bandeja. O visor é desenhado pelo Godot (os números mudam)."""
     p = Part(bevel=0.004)
     p.box(-0.13, -0.12, 0, 0.13, 0.12, 0.13, "M_PlasticWhite", bevel=0.012)
     p.box(-0.13, -0.12, 0, 0.13, 0.12, 0.015, "M_PlasticBlack")
-    m = Matrix.Translation((0, 0.06, 0.17)) @ Matrix.Rotation(-0.6, 4, "X")
+    center, tilt = COUNTER_HOPPER
+    m = Matrix.Translation(center) @ Matrix.Rotation(tilt, 4, "X")
     p.box_m((0.2, 0.14, 0.01), m, "M_PlasticBlack")            # funil de cima
+    for side in (-1, 1):                                       # guias dos lados do funil
+        p.box_m((0.008, 0.14, 0.035), m @ Matrix.Translation((side * 0.104, 0, 0.017)), "M_PlasticBlack")
     p.box(-0.09, -0.2, 0.02, 0.09, -0.12, 0.03, "M_PlasticBlack")  # bandeja da frente
-    p.box(-0.08, -0.18, 0.03, 0.08, -0.13, 0.05, "M_Money")
-    p.box(-0.1, -0.125, 0.08, 0.03, -0.12, 0.12, "M_PlasticBlack")
-    digits(p, "100", -0.035, 0.088, 0.025, -0.125, "M_Screen", depth=0.002)
+    p.box(-0.09, -0.205, 0.02, 0.09, -0.195, 0.045, "M_PlasticBlack")  # beirada da bandeja
+    p.box(-0.078, -0.122, 0.034, 0.078, -0.118, 0.05, "M_Rubber")  # fenda por onde as notas saem
+    p.box(-0.1, -0.125, 0.08, 0.03, -0.12, 0.12, "M_PlasticBlack")  # visor
     for i in range(3):
         p.box(0.05 + i * 0.025, -0.125, 0.09, 0.065 + i * 0.025, -0.115, 0.1, "M_PlasticBlue")
-    p.finish("MACHINE_CashCounter", coll, loc=(2.95, 2.15, 0.76), rot_z=facing("+y") - 0.3)
+    p.finish("MACHINE_CashCounter", coll, loc=COUNTER_LOC, rot_z=facing("+y") - 0.3)
 
 
 # Máquina de lavar: onde fica no serviço (encostada na parede do fundo, de frente para o
