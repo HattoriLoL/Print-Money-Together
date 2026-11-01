@@ -80,6 +80,8 @@ até `SIGHT` metros e sem parede nem porta fechada no meio:
     longe). Pega e volta a fugir ligando; se tinham desligado, liga de novo do começo.
   - Com o telefone na mão de alguém, ele grita e foge sem ele: lá fora, liga do orelhão.
   - A cada visita nova ele tem outro telefone. O que ficou com os jogadores para de chamar.
+  - Ele levanta no chão embaixo de onde o corpo parou. Se o corpo atravessar o chão e cair para
+    fora do mapa (`FELL_OUT_Y`), ele volta para o ponto do caminho mais perto.
 - **Frigideira:** o mesmo `take_bonk` dos jogadores. Ele cai desmaiado por `KO_TIME` (20 s), com
   as estrelinhas, e a ligação cai (se o telefone estava na mão dele; caído no chão, continua
   chamando). Outra pancada recomeça o tempo.

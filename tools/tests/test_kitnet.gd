@@ -61,7 +61,10 @@ extends SceneTree
 ## - com --client, abre uma segunda janela que entra na sala e confere que ela aparece e se mexe.
 ## Prints de alguns pontos de vista na pasta --out (rode com janela, sem --headless).
 ##
-##   godot --path . --resolution 1280x720 --script res://tools/tests/test_kitnet.gd -- --out=<pasta> [--solo | --client]
+##   godot --path . --resolution 1280x720 --script res://tools/tests/test_kitnet.gd -- --out=<pasta> [--solo | --client] [--only=<partes>]
+##
+## --only=vizinho,escada roda só essas partes (vírgula entre elas; ver PARTS). Inteira, a suíte leva
+## uns 12 minutos; a perseguição do vizinho sozinha, uns 2.
 ##
 ## Termina com "TESTE OK" ou com a lista do que falhou.
 
@@ -72,6 +75,12 @@ var _with_client := false
 var _solo := false
 var _started := false
 var _failures: Array[String] = []
+## As partes do teste, na ordem em que rodam. Com --only=vizinho,escada roda só essas (na ordem
+## daqui). Algumas usam o que a anterior deixou: "batida" confere o saco de lixo fechado que o "saco"
+## guarda na geladeira.
+const PARTS := ["base", "escada", "impressora", "queda", "guilhotina", "loja", "varal", "lavar", "contadora",
+		"luz", "frigideira", "vizinho", "saco", "batida", "bonecos", "primeira-pessoa", "empurrao", "ragdoll"]
+var _only: Array[String] = []
 ## Prende o mouse de volta se a janela perder o foco no meio do teste (alguém usando o PC): o
 ## Windows solta o mouse, e o HUD gastaria o próximo clique do teste só para prender de novo.
 var _keep_mouse := true
@@ -85,6 +94,10 @@ func _init() -> void:
 			_with_client = true
 		elif arg == "--solo":
 			_solo = true
+		elif arg.begins_with("--only="):
+			# Vírgula ou espaço entre as partes.
+			for part in arg.get_slice("=", 1).replace(" ", ",").split(",", false):
+				_only.append(part.strip_edges())
 	if _out.is_empty():
 		_out = OS.get_user_data_dir()
 	DirAccess.make_dir_recursive_absolute(_out)
@@ -100,6 +113,11 @@ func _process(_delta: float) -> bool:
 
 
 func _run() -> void:
+	var unknown := _only.filter(func(part): return part not in PARTS)
+	if not unknown.is_empty():
+		_check(false, "partes que não existem: %s (as partes: %s)" % [", ".join(unknown), ", ".join(PARTS)])
+		_finish()
+		return
 	var net: Node = root.get_node_or_null("Net")
 	_check(net != null, "autoload Net existe")
 	if net == null:
@@ -120,6 +138,41 @@ func _run() -> void:
 	kitnet.neighbor.enabled = false
 	await create_timer(1.0).timeout
 
+	for part: String in PARTS:
+		if _only.is_empty() or part in _only:
+			print("--- parte: %s" % part)
+			await _run_part(part, kitnet, player)
+
+	if _with_client:
+		await _test_client(kitnet)
+	_finish()
+
+
+## Uma parte do teste (PARTS).
+func _run_part(part: String, kitnet: Node3D, player: CharacterBody3D) -> void:
+	match part:
+		"base": await _test_base(kitnet, player)
+		"escada": await _test_stairs(kitnet, player)
+		"impressora": await _test_printer(kitnet, player)
+		"queda": await _test_drop_physics(kitnet, player)
+		"guilhotina": await _test_guillotine(kitnet, player)
+		"loja": await _test_shop(kitnet, player)
+		"varal": await _test_clothesline(kitnet, player)
+		"lavar": await _test_washer(kitnet, player)
+		"contadora": await _test_counter(kitnet, player)
+		"luz": await _test_power(kitnet, player)
+		"frigideira": await _test_pan(kitnet, player)
+		"vizinho": await _test_neighbor(kitnet, player)
+		"saco": await _test_trashbag(kitnet, player)
+		"batida": await _test_raid(kitnet, player)
+		"bonecos": await _test_characters(kitnet, player)
+		"primeira-pessoa": await _test_first_person(kitnet, player)
+		"empurrao": await _test_push(kitnet, player)
+		"ragdoll": await _test_ragdoll(kitnet, player)
+
+
+## A montagem do mapa, o jogador no chão, o mouse, as vistas, a vida no cenário e as portas.
+func _test_base(kitnet: Node3D, player: CharacterBody3D) -> void:
 	# --- Montagem ---
 	_check(kitnet.doors.size() == 6, "6 portas (%d)" % kitnet.doors.size())
 	for key in ["302", "303", "Street"]:
@@ -261,28 +314,6 @@ func _run() -> void:
 	door.interact(player)
 	await create_timer(0.8).timeout
 	_check(not door.is_open, "a 301 fechou")
-
-	await _test_stairs(kitnet, player)
-	await _test_printer(kitnet, player)
-	await _test_drop_physics(kitnet, player)
-	await _test_guillotine(kitnet, player)
-	await _test_shop(kitnet, player)
-	await _test_clothesline(kitnet, player)
-	await _test_washer(kitnet, player)
-	await _test_counter(kitnet, player)
-	await _test_power(kitnet, player)
-	await _test_pan(kitnet, player)
-	await _test_neighbor(kitnet, player)
-	await _test_trashbag(kitnet, player)
-	await _test_raid(kitnet, player)
-	await _test_characters(kitnet, player)
-	await _test_first_person(kitnet, player)
-	await _test_push(kitnet, player)
-	await _test_ragdoll(kitnet, player)
-
-	if _with_client:
-		await _test_client(kitnet)
-	_finish()
 
 
 ## A luz da kitnet (power.gd): o consumo e o disjuntor.

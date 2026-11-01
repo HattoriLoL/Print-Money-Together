@@ -31,6 +31,7 @@ const Power := preload("res://scripts/power.gd")
 const Deliveries := preload("res://scripts/shop/deliveries.gd")
 const Toon := preload("res://scripts/toon.gd")
 const Ambience := preload("res://scripts/ambience.gd")
+const Scenarios := preload("res://scripts/scenarios.gd")
 
 ## Portas que os jogadores não abrem: as dos vizinhos e a da rua, lá no térreo (a rua vem depois;
 ## o vizinho foge por ela). A da escada abre. A 301 tranca por dentro (door.gd, make_lockable).
@@ -134,6 +135,10 @@ func _ready() -> void:
 	if multiplayer.is_server():
 		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 		_register(1, Net.player_name)
+		# Cenário de teste pedido na linha de comando (scripts/scenarios.gd, tools/play.ps1).
+		var scenario := Scenarios.requested()
+		if not scenario.is_empty():
+			Scenarios.start.call_deferred(self, scenario)
 	else:
 		_client_ready.rpc_id(1, Net.player_name)
 

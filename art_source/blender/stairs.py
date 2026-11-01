@@ -36,7 +36,8 @@ LOBBY_H = 2.6
 # Quanto a rampa passa abaixo das quinas dos degraus. Zero: baixada, ela ficava abaixo da borda do
 # patamar de cima, e o jogador subindo batia nessa quina e travava.
 RAMP_DROP = 0.0
-RAMP_THICK = 0.12
+# Grossa: um corpo caído (ragdoll) começando com o pé enfiado numa rampa fina atravessava ela.
+RAMP_THICK = 0.35
 WEST = (X0, SPLIT0)    # lance que desce do andar para o patamar do meio
 EAST = (SPLIT1, X1)    # lance que volta do meio para o andar de baixo
 

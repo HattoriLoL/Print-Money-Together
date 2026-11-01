@@ -164,12 +164,58 @@ godot --path . -- --host --name=Ana
 godot --path . -- --join=127.0.0.1 --name=Bia
 ```
 
+## Cenários para testar jogando
+
+`--scenario=<nome>` começa a partida numa situação pronta (`scripts/scenarios.gd`; só o host
+monta). No PowerShell, o `tools\play.ps1` abre o jogo com o Godot da Steam:
+
+```
+.\tools\play.ps1 fuga
+.\tools\play.ps1 fuga -Online
+```
+
+| Cenário | Como começa |
+|---|---|
+| `fuga` | Notas e maços na mesa, folhas no chão e a 301 destrancada. 2 s depois o vizinho sai do 303, bate na porta, entra, vê tudo e foge pela escada ligando para a polícia (uns 12 s depois de carregar). |
+
+Com `-Online`, a partida é hospedada e os amigos entram pelo IP.
+
 ## Teste
 
 ```
-godot --path . --resolution 1280x720 --script res://tools/tests/test_kitnet.gd -- --out=<pasta> [--client]
+godot --path . --resolution 1280x720 --script res://tools/tests/test_kitnet.gd -- --out=<pasta> [--client] [--only=<partes>]
 ```
 
 Hospeda uma sala e confere portas, spawns, luzes, o jogador no chão, a parede segurando e a 301
 abrindo para dentro. Com `--client`, abre uma segunda janela que entra como "Bot" e confere que
 ela aparece no SPAWN_2 e sai da lista quando fecha. Tira prints na pasta `--out`.
+
+Inteira, a suíte leva uns 12 minutos. `--only` roda só as partes pedidas, separadas por vírgula, na
+ordem da suíte (`PARTS` no começo do teste):
+
+| Parte | O que confere |
+|---|---|
+| `base` | Montagem do mapa, o jogador no chão, o mouse, as vistas, a vida no cenário e as portas |
+| `escada` | A porta da escada, descer até o térreo e subir de volta, a porta da rua trancada |
+| `impressora`, `queda`, `guilhotina`, `loja`, `varal`, `lavar`, `contadora`, `luz` | A linha de produção e o disjuntor |
+| `frigideira` | O BONK nos jogadores |
+| `vizinho` | A visita, a fuga pela escada com a trombada e o telefone, a frigideira, o arrasto e o suborno |
+| `saco`, `batida` | O saco de lixo e a batida policial (a `batida` confere o saco que o `saco` guarda na geladeira) |
+| `bonecos`, `primeira-pessoa`, `empurrao`, `ragdoll` | Os bonecos e a física entre os jogadores |
+
+Por exemplo, a perseguição do vizinho (uns 2 minutos):
+
+```
+godot --path . --resolution 1280x720 --script res://tools/tests/test_kitnet.gd -- --out=<pasta> --only=escada,vizinho
+```
+
+Uma parte com nome errado falha na hora e lista as que existem.
+
+No PowerShell, o `tools\test.ps1` já chama o Godot da Steam (o `godot` não está no PATH) e mostra
+só os resultados. Os prints vão para `%TEMP%\print_money_test`.
+
+```
+.\tools\test.ps1 escada,vizinho
+.\tools\test.ps1 escada,vizinho -Client
+.\tools\test.ps1
+```

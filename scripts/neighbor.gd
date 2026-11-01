@@ -59,6 +59,8 @@ const STREET_IN := Vector3(-3.15, -8.45, 4.4)
 const OUTSIDE := Vector3(-3.15, -8.45, 5.4)
 const STAIR_FLOORS := 3
 const STAIR_FLOOR_H := 8.45 / 3.0
+## Abaixo disso ele caiu para fora do mapa (o térreo da escada fica em -8,45): volta para o caminho.
+const FELL_OUT_Y := -9.5
 ## Portas que ele abre sozinho quando chega perto (a 301 do jeito de antes).
 const ROUTE_DOORS := ["Stairs", "Street"]
 const DOOR_OPEN_REACH := 1.4
@@ -308,6 +310,8 @@ func _physics_process(delta: float) -> void:
 
 func _server_tick(delta: float) -> void:
 	noise = _total_noise()
+	if global_position.y < FELL_OUT_Y and not character.ragdolling:
+		global_position = _back_on_route(global_position)
 	if calling:
 		call_left -= delta
 		if call_left <= 0.0:
@@ -672,6 +676,12 @@ func _nearest_spine(pos: Vector3) -> int:
 	return best
 
 
+## O ponto do caminho mais perto de `pos`, para quem caiu para fora do mapa.
+func _back_on_route(pos: Vector3) -> Vector3:
+	velocity = Vector3.ZERO
+	return _spine[_nearest_spine(pos)]
+
+
 static func _inside_kitnet(pos: Vector3) -> bool:
 	return pos.z < 0.25 and pos.x > -0.2 and pos.y > -0.5
 
@@ -784,8 +794,9 @@ func _get_bonked(dir: Vector3) -> void:
 func body_position() -> Vector3:
 	if character.ragdolling:
 		var hips: Vector3 = character.ragdoll_hips()
-		# A altura do chão embaixo dos quadris (na escada ele pode rolar um lance inteiro).
-		var query := PhysicsRayQueryParameters3D.create(hips + Vector3.UP * 0.3, hips + Vector3.DOWN * 2.5, 1)
+		# A altura do chão embaixo dos quadris (na escada ele pode rolar um lance inteiro). Começa
+		# um pouco acima: se o corpo afundou na rampa, o raio ainda acha a rampa por cima.
+		var query := PhysicsRayQueryParameters3D.create(hips + Vector3.UP * 1.2, hips + Vector3.DOWN * 2.5, 1)
 		var hit := get_world_3d().direct_space_state.intersect_ray(query)
 		var y: float = (hit.position as Vector3).y if not hit.is_empty() else global_position.y
 		return Vector3(hips.x, y, hips.z)
@@ -905,6 +916,8 @@ func _tackled(dir: Vector3, speed: float) -> void:
 ## Host: levanta da trombada onde o corpo parou e continua (atrás do telefone ou para a rua).
 func _get_up() -> void:
 	var at := body_position()
+	if at.y < FELL_OUT_Y:
+		at = _back_on_route(Vector3(at.x, global_position.y, at.z))
 	state = State.WAIT
 	_broadcast_event("getup", [at])
 	global_position = at
