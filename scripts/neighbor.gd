@@ -9,12 +9,19 @@ extends CharacterBody3D
 ##      porta aberta. Ninguém abre e a porta está trancada (door.gd): ameaça e volta para casa.
 ##      Destrancada: ele entra e olha em volta.
 ##   2. Viu prova (`_sees_evidence`: notas, folhas e maços à vista, a impressora imprimindo, a
-##      contadora ou a guilhotina com dinheiro): grita e corre para o capacho dele ligando para a
-##      polícia (CALL_TIME). Completou: police.gd vem dar a batida.
-##   3. Para parar: a frigideira (take_bonk, como nos jogadores) derruba ele por KO_TIME, com as
-##      estrelinhas, e a ligação cai. Desmaiado, [E] arrasta pela gola (só um por vez, devagar).
-##      Acorda no capacho dele: acha que sonhou e vai dormir. Em qualquer outro lugar: lembra de
-##      tudo e liga de novo. Ou o suborno: um maço na mão e [E] nele, e ele não viu nada.
+##      contadora ou a guilhotina com dinheiro): grita e foge do prédio ligando para a polícia
+##      (CALL_TIME): pelo corredor, a escada até o térreo e a porta da rua (SPINE). Saiu do prédio
+##      ou a ligação completou: police.gd vem dar a batida.
+##   3. Para parar:
+##      - a trombada: quem chega correndo (TACKLE_SPEED) derruba ele por TACKLE_DOWN, e o telefone
+##        voa e cai no chão como um item ("phone"). A ligação continua até alguém pegar o telefone
+##        (pegar desliga). Levantando, ele corre atrás do telefone; na mão de alguém, foge sem ele
+##        (lá fora ele liga do orelhão);
+##      - a frigideira (take_bonk, como nos jogadores) derruba ele por KO_TIME, com as estrelinhas,
+##        e a ligação cai (se o telefone estava na mão dele). Desmaiado, [E] arrasta pela gola (só
+##        um por vez, devagar). Acorda no capacho dele: acha que sonhou e vai dormir. Em qualquer
+##        outro lugar: lembra de tudo e foge de novo;
+##      - o suborno: um maço na mão e [E] nele, e ele não viu nada.
 ##
 ## Rede: o host decide tudo e manda posição, giro, pose, quem arrasta, a ligação e o barulho
 ## (_sync, 15 vezes por segundo); as falas, as batidas e o desmaio vão como eventos (_event).
@@ -24,7 +31,7 @@ const InteractZone := preload("res://scripts/interact_zone.gd")
 const ItemKinds := preload("res://scripts/items/item_kinds.gd")
 const Bonk := preload("res://scripts/bonk.gd")
 
-enum State {HOME, WALK, LEAVE, WAIT, KNOCK, COMPLAIN, INSPECT, CALL, KO}
+enum State {HOME, WALK, LEAVE, WAIT, KNOCK, COMPLAIN, INSPECT, KO, FLEE, DOWN}
 
 ## Pontos do corredor e da entrada (Godot; ver art_source/blender/plan.py, o +Y do Blender vira
 ## -Z): no vão da porta do 303, no capacho dele, na frente da 301 e logo depois da entrada.
@@ -37,9 +44,24 @@ const HOME_RADIUS := 1.1
 ## Roupão (cor do moletom) e a pele das mãos (no lugar das luvas amarelas).
 const ROBE := Color(0.55, 0.32, 0.42)
 const SKIN := Color(0.96, 0.72, 0.56)
-## Andando, bravo, e correndo para ligar (m/s).
+## Andando, bravo, e fugindo (m/s): no plano e nos lances da escada. O jogador anda a 2,8 e corre
+## a 4,8: andando não alcança, correndo alcança.
 const WALK_SPEED := 1.3
-const RUN_SPEED := 2.4
+const FLEE_SPEED := 3.4
+const STAIRS_SPEED := 2.7
+## A fuga, do capacho dele até lá fora (Godot; ver art_source/blender/stairs.py): o corredor, a
+## porta da escada, os três andares de lances (`_flight_points`), o hall do térreo e a porta da
+## rua. Para casa, o mesmo caminho ao contrário.
+const HALL_WEST := Vector3(-0.9, 0.0, 0.85)
+const STAIRS_IN := Vector3(-2.3, 0.0, 0.85)
+const LOBBY := Vector3(-3.15, -8.45, 3.3)
+const STREET_IN := Vector3(-3.15, -8.45, 4.4)
+const OUTSIDE := Vector3(-3.15, -8.45, 5.4)
+const STAIR_FLOORS := 3
+const STAIR_FLOOR_H := 8.45 / 3.0
+## Portas que ele abre sozinho quando chega perto (a 301 do jeito de antes).
+const ROUTE_DOORS := ["Stairs", "Street"]
+const DOOR_OPEN_REACH := 1.4
 const TURN_SPEED := 8.0
 
 ## Barulho: abaixo disso não incomoda; quanto a irritação sobe por unidade de barulho acima
@@ -62,9 +84,18 @@ const SIGHT := 7.0
 const SIGHT_HALF_ANGLE := 1.2
 ## Tipos de item que entregam o esquema.
 const EVIDENCE := ["sheet", "bills", "bundle"]
-## Ligação para a polícia (s) e quanto tempo ele fica desmaiado (s).
-const CALL_TIME := 12.0
+## Ligação para a polícia (s; correndo e sem fôlego, ele erra os números) e quanto tempo ele
+## fica desmaiado (s).
+const CALL_TIME := 30.0
 const KO_TIME := 20.0
+## Trombada: quem vem correndo para cima dele, mais rápido que isso (m/s, na direção dele), a menos
+## disso (m), derruba. Caído por TACKLE_DOWN (s); o telefone voa com essa força.
+const TACKLE_SPEED := 3.5
+const TACKLE_REACH := 0.75
+const TACKLE_DOWN := 2.4
+const PHONE_THROW := Vector2(0.7, 2.2)
+## Levantado, ele procura o telefone caído até tantas vezes (alguém pode chutar para longe).
+const FETCH_TRIES := 4
 ## Arrastando pela gola: onde vão os quadris e o peito, na frente de quem arrasta (m), e a força.
 const DRAG_HIPS := Vector2(0.95, 0.3)
 const DRAG_CHEST := Vector2(0.6, 0.85)
@@ -90,6 +121,8 @@ var call_left := 0.0
 var pose := ""
 ## Só no host: viu o esquema (desmaiado, acorda lembrando).
 var alarmed := false
+## O telefone dele caído no mundo (id do item "phone"; 0 = na mão dele).
+var phone_id := 0
 var character: Node3D
 var zone: Area3D
 
@@ -106,6 +139,8 @@ var _banged := false
 var _yelled := false
 var _ko_left := 0.0
 var _stuck := 0.0
+var _spine: Array[Vector3] = []
+var _fetch_tries := 0
 var _send_timer := 0.0
 var _target_pos := Vector3.ZERO
 var _target_yaw := 0.0
@@ -129,6 +164,11 @@ func _ready() -> void:
 	_kitnet = get_parent()
 	collision_layer = 2
 	collision_mask = 1
+	# Nos lances da escada ele desce colado na rampa, sem sair voando.
+	floor_snap_length = 0.35
+	_spine = _build_spine()
+	if multiplayer.is_server():
+		_kitnet.items.picked.connect(_on_item_picked)
 	var capsule := CapsuleShape3D.new()
 	capsule.radius = 0.3
 	capsule.height = 1.75
@@ -156,7 +196,8 @@ func _ready() -> void:
 	_show(false)
 
 
-## Mãos de pele no lugar das luvas amarelas, e o celular (aparece ligando).
+## Mãos de pele no lugar das luvas amarelas, e o telefone sem fio (aparece ligando; o mesmo bege do
+## item "phone", que voa na trombada).
 func _dress() -> void:
 	var skin := StandardMaterial3D.new()
 	skin.albedo_color = SKIN
@@ -170,7 +211,7 @@ func _dress() -> void:
 	var box := BoxMesh.new()
 	box.size = Vector3(0.055, 0.13, 0.026)
 	var black := StandardMaterial3D.new()
-	black.albedo_color = Color(0.22, 0.23, 0.26)
+	black.albedo_color = Color(0.78, 0.74, 0.62)
 	box.material = black
 	_phone.mesh = box
 	_phone.top_level = true
@@ -196,7 +237,8 @@ func _build_labels() -> void:
 	_call_label.pixel_size = 0.002
 	_call_label.outline_size = 10
 	_call_label.modulate = Color(1.0, 0.35, 0.3)
-	_call_label.position.y = 2.0
+	# Vai em cima dele ou do telefone caído (_process).
+	_call_label.top_level = true
 	_call_label.visible = false
 	add_child(_call_label)
 
@@ -230,7 +272,12 @@ func grip_point() -> Vector3:
 
 ## Dá para subornar: está aqui incomodando (não voltando para casa nem desmaiado).
 func bribable() -> bool:
-	return state in [State.WALK, State.WAIT, State.KNOCK, State.COMPLAIN, State.INSPECT, State.CALL]
+	return state in [State.WALK, State.WAIT, State.KNOCK, State.COMPLAIN, State.INSPECT, State.FLEE]
+
+
+## Fugindo do prédio (o HUD avisa): correndo para a rua, atrás do telefone ou caído da trombada.
+func escaping() -> bool:
+	return state in [State.FLEE, State.DOWN]
 
 
 ## Fração da ligação já feita (0 a 1).
@@ -270,6 +317,14 @@ func _server_tick(delta: float) -> void:
 			_tick_home(delta)
 		State.WALK, State.LEAVE:
 			_tick_walk(delta)
+		State.FLEE:
+			_tick_walk(delta)
+			if state == State.FLEE:
+				_check_tackle()
+		State.DOWN:
+			_timer -= delta
+			if _timer <= 0.0:
+				_get_up()
 		State.WAIT:
 			_timer -= delta
 			if _timer <= 0.0:
@@ -292,8 +347,6 @@ func _server_tick(delta: float) -> void:
 			elif _timer <= 0.0:
 				_say("Hmph. Smells like paint in here.")
 				_go_home(true)
-		State.CALL:
-			_face(KNOCK_SPOT, delta)
 		State.KO:
 			_tick_ko(delta)
 
@@ -326,6 +379,8 @@ func visit() -> void:
 	if out():
 		return
 	annoyance = 1.0
+	# Um telefone de visita anterior que ficou com os jogadores: ele tem outro em casa.
+	_forget_phone()
 	global_position = DOORWAY
 	rotation.y = 0.0
 	_door("303").set_open(true)
@@ -394,34 +449,106 @@ func _start_inspect() -> void:
 	_target_yaw = rotation.y
 
 
-## Viu o esquema: grita e corre para o capacho dele ligando para a polícia.
+## Viu o esquema: grita e foge do prédio ligando para a polícia.
 func _alarm() -> void:
 	alarmed = true
-	calling = true
-	call_left = CALL_TIME
 	_say("COUNTERFEIT MONEY?! I'm calling the cops!")
 	_broadcast_event("alarm", [])
-	_set_pose("phone")
+	if phone_id == 0 and not calling:
+		calling = true
+		call_left = CALL_TIME
+	_resume()
+
+
+## De pé e alarmado: o telefone dele está no chão? Vai buscar. Na mão de alguém? Foge sem ele (lá
+## fora ele liga do orelhão). Na mão dele: foge ligando.
+func _resume() -> void:
+	var police: Node = _kitnet.get("police")
+	if police != null and police.coming():
+		_go_home(false)
+		return
+	var phone := _phone_item()
+	if phone != null and phone.holder == 0 and _fetch_tries < FETCH_TRIES:
+		_fetch_tries += 1
+		_set_pose("")
+		_say("My PHONE!")
+		var route: Array[Vector3] = [phone.global_position]
+		_walk(route, FLEE_SPEED, _grab_phone, State.FLEE)
+		return
+	if phone != null:
+		_set_pose("fist")
+		_say("Give me back my phone! ...Fine, I'll call from the street!")
+	else:
+		_set_pose("phone")
+	_flee()
+
+
+## Foge para a rua pelo caminho mais curto daqui.
+func _flee() -> void:
 	var route: Array[Vector3] = []
-	if global_position.z < 0.25:
+	var from := _nearest_spine(global_position)
+	# Já passou do ponto mais perto (está no meio do trecho até o próximo): segue dali.
+	if from + 1 < _spine.size() and global_position.distance_to(_spine[from + 1]) < _spine[from].distance_to(_spine[from + 1]):
+		from += 1
+	if _inside_kitnet(global_position):
 		route.append(KNOCK_SPOT)
 		_door("301").set_open(true)
-	route.append(DOORMAT)
-	_walk(route, RUN_SPEED, _start_call)
+		from = 1
+	route.append_array(_spine.slice(maxi(from, 1)))
+	route.append(OUTSIDE)
+	_walk(route, FLEE_SPEED, _escaped, State.FLEE)
 
 
-func _start_call() -> void:
-	state = State.CALL
+## Chegou no telefone caído: pega e volta a fugir ligando (desligado, liga de novo do começo).
+func _grab_phone() -> void:
+	var phone := _phone_item()
+	if phone == null or phone.holder != 0 or phone.global_position.distance_to(global_position) > 0.9:
+		_resume()
+		return
+	var still_calling: bool = phone.data.get("calling", false)
+	_kitnet.items.consume(phone)
+	phone_id = 0
+	_fetch_tries = 0
+	if not still_calling:
+		calling = true
+		call_left = CALL_TIME
+		_say("Hello? Police? We got cut off!")
+	_set_pose("phone")
+	_broadcast_event("phone", [true])
+	_flee()
+
+
+## Saiu pela porta da rua: liga de lá (com ou sem o telefone) e some.
+func _escaped() -> void:
+	_door("Street").set_open(false)
+	calling = false
+	alarmed = false
+	visits += 1
+	annoyance = 0.0
+	_forget_phone()
+	_set_pose("")
+	var police: Node = _kitnet.get("police")
+	if police != null:
+		police.call_cops()
+	state = State.HOME
+	global_position = DOORWAY
+	_show(false)
+	_broadcast_event("escaped", [])
+	_broadcast_event("show", [false, global_position])
 
 
 func _call_done() -> void:
 	calling = false
 	alarmed = false
+	var phone := _phone_item()
+	if phone != null:
+		_kitnet.items.set_data(phone, "calling", false)
 	_say("Yes, officer. Apartment 301. HURRY!")
 	var police: Node = _kitnet.get("police")
 	if police != null:
 		police.call_cops()
-	if state != State.KO:
+	# Caído ou desmaiado, ele volta para casa quando levantar (_resume, _wake).
+	if state not in [State.KO, State.DOWN]:
 		_wait(1.5, _go_home.bind(false))
 
 
@@ -433,9 +560,14 @@ func _go_home(annoyed: bool) -> void:
 	_banged = false
 	_yelled = false
 	var route: Array[Vector3] = []
-	if global_position.z < 0.25:
+	if _inside_kitnet(global_position):
 		route.append(KNOCK_SPOT)
-	route.append(DOORMAT)
+		route.append(DOORMAT)
+	else:
+		# Da escada (ou do corredor): o caminho da fuga ao contrário, até o capacho dele.
+		var from := _nearest_spine(global_position)
+		for i in range(from, -1, -1):
+			route.append(_spine[i])
 	route.append(DOORWAY)
 	_set_pose("")
 	_door("303").set_open(true)
@@ -457,7 +589,7 @@ func _walk(route: Array[Vector3], speed: float, then: Callable, walk_state := St
 	_speed = speed
 	_then = then
 	# Atravessando a porta de entrada fechada (ia sair de dentro), ele abre.
-	if _route.size() > 0 and (global_position.z < 0.0) != (_route[-1].z < 0.0):
+	if _route.size() > 0 and _inside_kitnet(global_position) != _inside_kitnet(_route[-1]):
 		_door("301").set_open(true)
 
 
@@ -466,18 +598,26 @@ func _tick_walk(delta: float) -> void:
 		_continue()
 		return
 	var to := _route[0] - global_position
+	var rise := to.y
 	to.y = 0.0
-	if to.length() < 0.12:
+	if to.length() < 0.15 and absf(rise) < 1.0:
 		_route.pop_front()
 		return
 	_face(_route[0], delta)
+	_open_route_doors()
 	var before := global_position
-	velocity = to.normalized() * _speed
-	velocity.y = -1.0
+	# Nos lances (chão inclinado) ele vai mais devagar.
+	var speed := _speed
+	if is_on_floor() and get_floor_normal().y < 0.97:
+		speed = minf(speed, STAIRS_SPEED)
+	var flat := to.normalized() * speed
+	velocity.x = flat.x
+	velocity.z = flat.z
+	velocity.y = -0.5 if is_on_floor() else velocity.y - 9.8 * delta
 	move_and_slide()
 	# Travou (alguém fechou a porta na cara dele, um móvel no caminho): abre a 301 se estiver
 	# perto dela e, preso de vez, passa direto para o próximo ponto.
-	if before.distance_to(global_position) < _speed * delta * 0.3:
+	if before.distance_to(global_position) < speed * delta * 0.3:
 		_stuck += delta
 		if _stuck > 1.0 and global_position.distance_to(_door("301").global_position) < 1.6:
 			_door("301").set_open(true)
@@ -486,6 +626,54 @@ func _tick_walk(delta: float) -> void:
 			_stuck = 0.0
 	else:
 		_stuck = 0.0
+
+
+## Abre a porta da escada e a da rua quando chega perto delas (o host abre trancada ou não).
+func _open_route_doors() -> void:
+	for key: String in ROUTE_DOORS:
+		var door: Node = _door(key)
+		if not door.is_open and door.global_position.distance_to(global_position + Vector3.UP) < DOOR_OPEN_REACH:
+			door.set_open(true)
+
+
+func _build_spine() -> Array[Vector3]:
+	var points: Array[Vector3] = [DOORMAT, HALL_WEST, STAIRS_IN]
+	points.append_array(_flight_points())
+	points.append(LOBBY)
+	points.append(STREET_IN)
+	return points
+
+
+## Os pontos de cada andar da escada, de cima para baixo: o patamar (lado oeste), o patamar do meio
+## (dos dois lados da parede do meio) e o patamar do andar de baixo (lado leste).
+static func _flight_points() -> Array[Vector3]:
+	var points: Array[Vector3] = []
+	for k in range(STAIR_FLOORS, 0, -1):
+		var top := -8.45 + k * STAIR_FLOOR_H
+		var mid := top - STAIR_FLOOR_H / 2.0
+		points.append(Vector3(-3.85, top, 0.9))
+		points.append(Vector3(-3.85, mid, -2.45))
+		points.append(Vector3(-2.4, mid, -2.45))
+		points.append(Vector3(-2.4, top - STAIR_FLOOR_H, 0.9))
+	return points
+
+
+## O ponto do caminho da fuga mais perto daqui (a altura pesa mais: os patamares se repetem a
+## cada andar).
+func _nearest_spine(pos: Vector3) -> int:
+	var best := 0
+	var best_cost := INF
+	for i in _spine.size():
+		var d := _spine[i] - pos
+		var cost := Vector2(d.x, d.z).length() + absf(d.y) * 3.0
+		if cost < best_cost:
+			best_cost = cost
+			best = i
+	return best
+
+
+static func _inside_kitnet(pos: Vector3) -> bool:
+	return pos.z < 0.25 and pos.x > -0.2 and pos.y > -0.5
 
 
 func _wait(seconds: float, then: Callable) -> void:
@@ -579,13 +767,16 @@ func _get_bonked(dir: Vector3) -> void:
 	if state == State.KO:
 		_broadcast_event("stars", [])
 		return
-	var cut := calling
-	calling = false
+	var was_down := state == State.DOWN
+	# A ligação cai se o telefone estava na mão dele (caído no chão, continua chamando).
+	var cut := calling and phone_id == 0
+	if cut:
+		calling = false
 	state = State.KO
 	_then = Callable()
 	_route.clear()
 	_set_pose("")
-	_broadcast_event("ko", [dir, cut])
+	_broadcast_event("ko", [dir, cut, was_down])
 
 
 ## Onde o corpo está agora (caído, os quadris do ragdoll; o nó fica parado enquanto ele está no
@@ -593,7 +784,11 @@ func _get_bonked(dir: Vector3) -> void:
 func body_position() -> Vector3:
 	if character.ragdolling:
 		var hips: Vector3 = character.ragdoll_hips()
-		return Vector3(hips.x, global_position.y, hips.z)
+		# A altura do chão embaixo dos quadris (na escada ele pode rolar um lance inteiro).
+		var query := PhysicsRayQueryParameters3D.create(hips + Vector3.UP * 0.3, hips + Vector3.DOWN * 2.5, 1)
+		var hit := get_world_3d().direct_space_state.intersect_ray(query)
+		var y: float = (hit.position as Vector3).y if not hit.is_empty() else global_position.y
+		return Vector3(hips.x, y, hips.z)
 	return global_position
 
 
@@ -657,10 +852,91 @@ func _press(peer: int) -> void:
 		var cut := calling
 		calling = false
 		alarmed = false
+		_forget_phone()
 		visits = maxi(0, visits - 1)
 		_broadcast_event("bribe", [cut])
 		_say("...I didn't see anything. Goodnight.")
 		_wait(1.2, _go_home.bind(false))
+
+
+# --- Trombada e o telefone -------------------------------------------------------------------
+
+## Host: alguém vem correndo para cima dele?
+func _check_tackle() -> void:
+	if character.ragdolling:
+		return
+	for id: int in _kitnet.players:
+		var player: Node3D = _kitnet.players[id]
+		if player.get("fallen") or not player.present():
+			continue
+		var away := global_position - player.global_position
+		if absf(away.y) > 1.0:
+			continue
+		away.y = 0.0
+		if away.length() > TACKLE_REACH:
+			continue
+		var dir := away.normalized() if away.length() > 0.01 else -player.global_basis.z
+		var run: Vector3 = player.get("body_velocity")
+		run.y = 0.0
+		if run.dot(dir) >= TACKLE_SPEED:
+			_tackled(dir, run.length())
+			return
+
+
+## Host: derrubado na trombada. O telefone (se estava na mão) voa para a frente.
+func _tackled(dir: Vector3, speed: float) -> void:
+	state = State.DOWN
+	_timer = TACKLE_DOWN
+	_route.clear()
+	_then = Callable()
+	var flew := pose == "phone" and phone_id == 0
+	_set_pose("")
+	_broadcast_event("tackle", [dir, speed, flew])
+	if flew:
+		var hand: Vector3 = character.hand_position(0)
+		var xform := Transform3D(Basis(Vector3.UP, randf() * TAU), hand)
+		var phone: Node = _kitnet.items.spawn("phone", xform, {"calling": calling})
+		phone_id = phone.id
+		var throw := dir * PHONE_THROW.y + Vector3.UP * PHONE_THROW.x * 2.0
+		_kitnet.items._release(phone, xform, throw, Vector3(randf_range(-9, 9), randf_range(-9, 9), randf_range(-9, 9)))
+		_fetch_tries = 0
+
+
+## Host: levanta da trombada onde o corpo parou e continua (atrás do telefone ou para a rua).
+func _get_up() -> void:
+	var at := body_position()
+	state = State.WAIT
+	_broadcast_event("getup", [at])
+	global_position = at
+	_wait(0.4, _resume if alarmed else _go_home.bind(false))
+
+
+## O item do telefone dele no mundo (null: na mão dele, ou ninguém sabe onde).
+func _phone_item() -> Node:
+	if phone_id == 0:
+		return null
+	var item: Node = _kitnet.items.items.get(phone_id)
+	if item == null:
+		phone_id = 0
+	return item
+
+
+## Esquece o telefone caído (ele tem outro): o que ficou no mundo para de chamar.
+func _forget_phone() -> void:
+	var phone := _phone_item()
+	if phone != null and phone.data.get("calling", false):
+		_kitnet.items.set_data(phone, "calling", false)
+	phone_id = 0
+	_fetch_tries = 0
+
+
+## Host: alguém pegou o telefone caído chamando: desligou.
+func _on_item_picked(item: Node) -> void:
+	if not multiplayer.is_server() or item.id != phone_id or not item.data.get("calling", false):
+		return
+	_kitnet.items.set_data(item, "calling", false)
+	calling = false
+	_broadcast_event("hangup", [])
 
 
 ## Quem arrasta solta (o [G] do jogador também).
@@ -771,15 +1047,37 @@ func _event(event: String, args: Array) -> void:
 		"alarm":
 			Bonk.popup(_kitnet, bonk_point() + Vector3.UP * 0.2, "!!")
 			if me != null:
-				me.hud.show_message("The neighbor saw everything!\nStop him before he calls the police!", 4.0)
+				me.hud.show_message("The neighbor saw everything!\nHe's running for the street. Catch him before he calls the cops!", 4.0)
 		"ko":
 			if not visible:
 				_show(true)
 			state = State.KO
-			character.start_ragdoll(args[0], 3.0)
+			# Já no chão da trombada (args[2]): o corpo continua caído como está.
+			if not (args.size() > 2 and args[2] and character.ragdolling):
+				character.start_ragdoll(args[0], 3.0)
 			_stars_left = KO_TIME + 1.0
 			if args[1] and me != null:
 				me.hud.show_message("The call got cut off!", 2.5)
+		"tackle":
+			state = State.DOWN
+			character.start_ragdoll(args[0], args[1])
+			Bonk.popup(_kitnet, global_position + Vector3.UP * 1.9, "OOF!")
+			if me != null:
+				me.hud.show_message("TACKLED!" + ("\nHis phone went flying! Grab it to hang up!" if args[2] else ""), 3.0)
+		"getup":
+			character.end_ragdoll()
+			state = State.WAIT
+			global_position = args[0]
+			_target_pos = args[0]
+			_last_pos = args[0]
+		"hangup":
+			if me != null:
+				me.hud.show_message("*click* You hung up on the police!", 3.0)
+		"phone":
+			pass
+		"escaped":
+			if me != null:
+				me.hud.show_message("The neighbor got out of the building!\nHe's calling the cops from the street.", 5.0)
 		"stars":
 			_stars_left = maxf(_stars_left, KO_TIME + 1.0)
 		"wake":
@@ -831,14 +1129,27 @@ func _process(delta: float) -> void:
 	else:
 		zone.position = Vector3(0.0, 1.0, 0.0)
 		_collision.position = Vector3(0.0, 0.875, 0.0)
-	_call_label.visible = calling and not down
+	# A ligação: em cima da cabeça dele, ou em cima do telefone caído chamando.
+	var phone := _ringing_phone()
+	_call_label.visible = calling and (phone != null or not down)
 	if _call_label.visible:
 		var dots := ".".repeat(int(_anim_time * 3.0) % 4)
 		_call_label.text = "Calling the police%s %d%%" % [dots, roundi(call_fraction() * 100.0)]
+		var at: Vector3 = phone.global_position + Vector3.UP * 0.45 if phone != null else global_position + Vector3.UP * 2.0
+		_call_label.global_position = at
+		_ring_sound.global_position = at
 		if not _ring_sound.playing:
 			_ring_sound.play()
 	elif _ring_sound.playing:
 		_ring_sound.stop()
+
+
+## O telefone dele caído chamando (em qualquer máquina: o item marca `calling`).
+func _ringing_phone() -> Node:
+	for item in _kitnet.items.items.values():
+		if item.kind == "phone" and item.data.get("calling", false) and item.holder == 0:
+			return item
+	return null
 
 
 ## Arrastado: os quadris e o peito vão para a frente de quem arrasta; o resto vem pendurado.
@@ -898,9 +1209,7 @@ func _build_sounds() -> void:
 	_knock_sound = _player("Knock", _thuds(3, 0.17, 110.0, 0.9), 5.0)
 	_bang_sound = _player("Bang", _thuds(3, 0.3, 70.0, 1.0), 10.0)
 	_ring_sound = _player("Ring", _ringback(), 3.0)
-	# O toque vai junto com ele.
-	_ring_sound.top_level = false
-	_ring_sound.position = Vector3(0.0, 1.6, 0.0)
+	# O toque vai junto com a ligação: com ele ou com o telefone caído (_process).
 
 
 ## `count` pancadas surdas de madeira, de `gap` em `gap` segundos.

@@ -123,8 +123,12 @@ func _update_threat(kitnet: Node) -> void:
 	var alert := ""
 	if police != null:
 		alert = police.alert_text()
-	if alert.is_empty() and neighbor != null and neighbor.calling:
-		alert = "The neighbor is calling the police: %d%%" % roundi(neighbor.call_fraction() * 100.0)
+	if alert.is_empty() and neighbor != null and neighbor.escaping():
+		alert = "Catch the neighbor before he gets out of the building!"
+		if neighbor.calling:
+			alert += " Calling the police: %d%%" % roundi(neighbor.call_fraction() * 100.0)
+	elif alert.is_empty() and neighbor != null and neighbor.calling:
+		alert = "The neighbor's phone is calling the police: %d%%" % roundi(neighbor.call_fraction() * 100.0)
 	_alert.text = alert
 	if alert != "":
 		_alert.modulate.a = 0.6 + 0.4 * absf(sin(Time.get_ticks_msec() / 250.0))

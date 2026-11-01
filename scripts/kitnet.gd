@@ -32,12 +32,15 @@ const Deliveries := preload("res://scripts/shop/deliveries.gd")
 const Toon := preload("res://scripts/toon.gd")
 const Ambience := preload("res://scripts/ambience.gd")
 
-## Portas que os jogadores não abrem (vizinhos e a escada, por onde o fiscal vai chegar). A 301
-## tranca por dentro (door.gd, make_lockable).
-const LOCKED_DOORS := ["302", "303", "Stairs"]
+## Portas que os jogadores não abrem: as dos vizinhos e a da rua, lá no térreo (a rua vem depois;
+## o vizinho foge por ela). A da escada abre. A 301 tranca por dentro (door.gd, make_lockable).
+const LOCKED_DOORS := ["302", "303", "Street"]
 ## Malhas sem colisão: luminárias (e o fio da lâmpada pelada), panos, o varal (acima da cabeça), as pás do ventilador,
-## as manchas e tudo lá fora.
-const NO_COLLISION := ["LAMP_", "Cord_", "Curtain_", "MACHINE_ClothesLine", "MACHINE_Fan_Blades", "Decal_", "Newspaper_", "Outside_"]
+## as manchas, tudo lá fora e os degraus da escada (quem pisa é a rampa invisível, COLLIDER_).
+const NO_COLLISION := ["LAMP_", "Cord_", "Curtain_", "MACHINE_ClothesLine", "MACHINE_Fan_Blades", "Decal_", "Newspaper_", "Outside_",
+		"Stairs_Steps"]
+## Malhas só de colisão (a rampa de cada lance da escada): ganham colisão e ficam invisíveis.
+const COLLIDER_PREFIX := "COLLIDER_"
 ## Frigideira em cima da boca livre do cooktop (a de trás à direita), com o cabo para fora da
 ## bancada: o fundo em cima da trempe (art_source/blender/furniture.py, kitchen).
 const PAN_START := Transform3D(Basis(Vector3.UP, PI), Vector3(2.8, 0.964, -0.5))
@@ -50,6 +53,7 @@ const ZONE_LIGHT := {
 	"bath": [3.5, 0.8, true],
 	"service": [4.0, 0.8, true],
 	"hall": [5.0, 0.45, true],
+	"stairs": [4.5, 0.5, false],
 }
 
 var model: Node3D
@@ -241,6 +245,9 @@ func _setup_model() -> void:
 			mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		if mesh_name.begins_with("KEEP_Door_"):
 			_add_door(mesh)
+		elif mesh_name.begins_with(COLLIDER_PREFIX):
+			_add_collision(mesh)
+			mesh.visible = false
 		elif not NO_COLLISION.any(func(p: String): return mesh_name.begins_with(p)):
 			_add_collision(mesh)
 	for i in Net.MAX_PLAYERS:
@@ -338,7 +345,8 @@ func _add_ledge() -> void:
 
 
 ## Host: a malha de navegação dos policiais (cop.gd), feita na hora a partir da colisão do modelo:
-## a kitnet, o banheiro, o serviço e o corredor. As portas ficam de fora (eles abrem no caminho).
+## a kitnet, o banheiro, o serviço, o corredor e a escada até o térreo. As portas ficam de fora
+## (eles abrem no caminho).
 func _bake_navigation() -> void:
 	var nav := NavigationMesh.new()
 	nav.agent_radius = 0.3
@@ -348,7 +356,7 @@ func _bake_navigation() -> void:
 	nav.cell_height = 0.05
 	nav.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
 	nav.geometry_collision_mask = 1
-	nav.filter_baking_aabb = AABB(Vector3(-1.6, -0.3, -5.1), Vector3(11.7, 2.5, 6.7))
+	nav.filter_baking_aabb = AABB(Vector3(-4.7, -8.8, -5.1), Vector3(14.8, 11.0, 10.0))
 	var map := get_world_3d().navigation_map
 	NavigationServer3D.map_set_cell_size(map, nav.cell_size)
 	NavigationServer3D.map_set_cell_height(map, nav.cell_height)

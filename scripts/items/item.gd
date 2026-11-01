@@ -22,6 +22,10 @@ const MASK := 1 | 2 | 4
 const DROP_GRACE := 0.5
 ## Abaixo disso o item caiu para fora do mapa (pela janela, atravessou o chão) e volta para dentro.
 const FLOOR_LIMIT := -3.0
+## A caixa da escada do prédio, que desce até o térreo (8,45 m abaixo; art_source/blender/stairs.py):
+## dentro dela, o limite é embaixo do térreo.
+const STAIRS_BOX := AABB(Vector3(-4.8, -9.0, -3.4), Vector3(3.3, 12.0, 8.3))
+const STAIRS_FLOOR_LIMIT := -9.5
 const RESCUE_POINT := Vector3(2.5, 0.4, -2.5)
 const SEND_RATE := 20.0
 ## Quão rápido o item na mão alcança a pose (por segundo); menor = mais solto.
@@ -337,7 +341,7 @@ func _physics_process(delta: float) -> void:
 		_spill(delta)
 	if holder != 0:
 		return
-	if multiplayer.is_server() and global_position.y < FLOOR_LIMIT:
+	if multiplayer.is_server() and _fell_out():
 		_rescue()
 	if not multiplayer.is_server():
 		global_transform = global_transform.interpolate_with(_target, clampf(20.0 * delta, 0.0, 1.0))
@@ -358,6 +362,13 @@ func _on_sleeping_changed() -> void:
 @rpc("authority", "call_remote", "unreliable_ordered")
 func _remote_xform(xform: Transform3D) -> void:
 	_target = xform
+
+
+## Caiu para fora do mapa (na escada, só abaixo do térreo).
+func _fell_out() -> bool:
+	if STAIRS_BOX.has_point(global_position):
+		return global_position.y < STAIRS_FLOOR_LIMIT
+	return global_position.y < FLOOR_LIMIT
 
 
 ## Host: o item caiu para fora do mapa; volta para o meio da kitnet.

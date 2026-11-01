@@ -34,7 +34,7 @@ const PUSH_STRENGTH := 1.2
 ## Vapor: onde fica a superfície da tinta na panela (local da MACHINE_InkPot no Godot).
 const STEAM_OFFSET := Vector3(0, 0.135, 0)
 ## Zonas de luz que não são da kitnet (não apagam com o disjuntor).
-const BUILDING_ZONES := ["hall"]
+const BUILDING_ZONES := ["hall", "stairs"]
 const TV_BRIGHTNESS := 0.9
 
 var fan_blades: Node3D

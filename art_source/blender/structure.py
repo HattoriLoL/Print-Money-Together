@@ -61,10 +61,10 @@ def walls(coll):
     wall(p, "x", -P.EXT_T - 0.006, -P.EXT_T, HX0, HX1, "M_WallHallLow", 1.1,
          [door(P.ENTRANCE), door(P.DOOR_302)])
     wall(p, "x", HY0, HY0 + 0.006, HX0, HX1, "M_WallHallLow", 1.1, [door(P.DOOR_303)])
-    # Atrás das portas fechadas dos vizinhos e da escada: escuro.
+    # Atrás das portas fechadas dos vizinhos: escuro (atrás da porta da escada fica a escada,
+    # stairs.py).
     p.box(P.DOOR_302[0], 0.0, 0, P.DOOR_302[1], 0.3, P.DOOR_H, "M_Void")
     p.box(P.DOOR_303[0], HY0 - P.EXT_T - 0.3, 0, P.DOOR_303[1], HY0 - P.EXT_T, P.DOOR_H, "M_Void")
-    p.box(HX0 - P.EXT_T - 0.3, P.STAIRS_DOOR[0], 0, HX0 - P.EXT_T, P.STAIRS_DOOR[1], P.DOOR_H, "M_Void")
     # Extintor e o número do andar.
     p.box(HX1 - 1.2, HY0, 1.05, HX1 - 0.9, HY0 + 0.04, 1.65, "M_Red")
     p.cyl((HX1 - 1.05, HY0 + 0.15, 0.62), 0.5, 0.08, "M_Red", seg=12)

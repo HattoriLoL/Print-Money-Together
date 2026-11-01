@@ -25,7 +25,14 @@ Medidas em `art_source/blender/plan.py` (coordenadas do Blender; no Godot o +Y d
 - Área de serviço (x 5,12 a 7, y 2,32 a 5), aberta para o cômodo por um vão sem porta: máquina de
   lavar, tanque e varal de teto.
 - Corredor do prédio na frente: o 303 fica bem em frente à porta, o 302 ao lado, e a porta
-  corta-fogo da escada fica no fim oeste (é por onde o fiscal chega).
+  corta-fogo da escada fica no fim oeste.
+- Escada do prédio (`art_source/blender/stairs.py`), atrás da porta corta-fogo: desce os três
+  andares até o térreo (8,45 m, na altura da calçada) em lances de ida e volta. Em cada andar: o
+  patamar na frente da porta, o lance que desce pelo lado oeste, o patamar do meio e o lance que
+  volta pelo lado leste até o andar de baixo, com uma parede no meio separando os dois. No 3º
+  andar, um guarda-corpo segura quem está no patamar em cima do vão. Os outros andares têm a porta
+  fechada e a placa do número. No térreo fica o hall de entrada, com as caixas de correio e a porta
+  da rua (é por ela que o vizinho foge).
 
 Os corredores entre os móveis têm pelo menos 0,8 m, e os 4 jogadores andam juntos pelo meio do
 cômodo sem travar.
@@ -57,9 +64,11 @@ A cortina da janela (`Curtain_Main`) fica meio aberta: dá para ver a impressora
 | `MACHINE_Fan_Blades` | Pás do ventilador, giram no Y local (o `ambience.gd` gira com o ventilador ligado). |
 | `HIDE_*` | Esconderijos: `HIDE_SofaBed` (vão de 12 cm embaixo), `HIDE_Wardrobe` (e a mala em cima), `HIDE_Fridge`. |
 | `KEEP_BathHatch` | Tampa do alçapão do forro do banheiro (o pacote vai entre o forro e a laje). |
-| `KEEP_Door_<n>` | Porta com a origem na dobradiça, folha para +X local, face de fora para -Y local: `301` (entrada, com olho mágico), `302`, `303`, `Stairs`, `Bath`. |
+| `KEEP_Door_<n>` | Porta com a origem na dobradiça, folha para +X local, face de fora para -Y local: `301` (entrada, com olho mágico), `302`, `303`, `Stairs`, `Bath` e `Street` (a da rua, no térreo). |
+| `Stairs_*` | A escada e o hall do térreo. Os degraus (`Stairs_Steps`) não têm colisão. |
+| `COLLIDER_*` | Só colisão, invisível no jogo: a rampa de cada lance da escada (passa nas quinas dos degraus; o jogador do Godot não sobe degrau de 17 cm) e o maciço embaixo do primeiro lance. |
 | `KEEP_Breaker` | Quadro de luz ao lado da entrada: o disjuntor geral (`docs/energia.md`). |
-| `LAMP_<zona>_<n>` e `M_Lamp_<zona>` | Luminária e o material que brilha com a zona ligada. Zonas: `main`, `kitchen`, `bath`, `service`, `hall`. |
+| `LAMP_<zona>_<n>` e `M_Lamp_<zona>` | Luminária e o material que brilha com a zona ligada. Zonas: `main`, `kitchen`, `bath`, `service`, `hall`, `stairs` (as duas últimas são do prédio: não apagam com o disjuntor). |
 | `Cord_Lamp_<zona>_<n>` | Canopla, fio e bocal da lâmpada pelada: sem colisão, mas fazem sombra (a rodela escura no teto). |
 | `LIGHT_<zona>_<n>` | Luz pontual de prévia (vai no .glb e pode servir de base). |
 | `SPAWN_1` a `SPAWN_4` | Onde os jogadores nascem. |
@@ -109,20 +118,22 @@ A kitnet fica no 3º andar. A rua passa 8,6 m abaixo, entre o nosso prédio e o 
 `scenes/kitnet.tscn` + `scripts/kitnet.gd` carregam o `.glb` e dão vida a ele:
 
 - Colisão do formato exato da malha em tudo, menos `LAMP_*`, `Curtain_*`, o varal, as pás do
-  ventilador, `Decal_*` e `Outside_*`. Os pisos (`Floor_*`) colidem como uma caixa sólida: na
-  malha de triângulos, uma resma parada às vezes afundava devagar e caía do mapa.
+  ventilador, `Decal_*`, `Outside_*` e os degraus da escada. Os pisos (`Floor_*`) colidem como uma
+  caixa sólida: na malha de triângulos, uma resma parada às vezes afundava devagar e caía do mapa.
+  Os `COLLIDER_*` colidem e ficam invisíveis.
 - Ambiente noturno de desenho animado: céu escuro com o horizonte alaranjado de cidade, sombra
   arroxeada chapada e um pouco de oclusão (SSAO). Ver `docs/visual.md`.
 - O jogador local não vê o próprio boneco nem a sombra dele (com a lâmpada a meio metro da
   cabeça, a sombra cobria o cômodo). Os outros jogadores aparecem com sombra.
 - `KEEP_Door_*` viram portas (`scripts/door.gd`) que abrem sempre para dentro (-Z local) com [E].
-  `302`, `303` e `Stairs` estão trancadas. A `301` tranca por dentro, na tranca de barra.
+  `302`, `303` e `Street` estão trancadas (a rua vem depois). A da escada abre. A `301` tranca por
+  dentro, na tranca de barra.
 - `HIDE_*` e `KEEP_BathHatch` viram esconderijos de dinheiro (`scripts/machines/stash.gd`).
 - O guarda-roupa, o sofá-cama, o box, o parapeito da janela (uma laje criada no código, do lado de
   fora) e o canto do lixo do 302 viram esconderijos de gente para a batida
   (`scripts/hideout.gd`).
-- No host, a colisão do modelo vira a malha de navegação dos policiais (`_bake_navigation`), sem
-  as portas.
+- No host, a colisão do modelo vira a malha de navegação dos policiais (`_bake_navigation`), da
+  kitnet até o térreo, sem as portas.
 - O vizinho do 303 sai pela porta dele quando o barulho passa da conta (ver `docs/vizinho.md`).
 - `LIGHT_<zona>_<n>` ganham alcance, energia e sombra por zona (`ZONE_LIGHT`).
 - Os jogadores nascem nos `SPAWN_<vaga + 1>`.

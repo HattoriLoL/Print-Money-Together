@@ -33,6 +33,8 @@ extends RefCounted
 ##   "parcel" caixa de papelão da entrega (scripts/shop/deliveries.gd); não dá para carregar,
 ##            [E] abre ali mesmo; data.from = a loja, data.order = o número do pedido,
 ##            data.contents = [[kind, data], ...] o que vem dentro
+##   "phone"  o telefone sem fio do vizinho, que voa da mão dele na trombada (scripts/neighbor.gd);
+##            data.calling = ainda chamando a polícia (pegar desliga)
 ##
 ## As texturas saem do art_source/paper_textures.py (assets/textures/).
 
@@ -135,12 +137,13 @@ const SIZES := {
 	"cartridge": Vector3(0.11, 0.075, 0.05),
 	"parcel": Vector3(0.44, 0.26, 0.34),
 	"trashbag": Vector3(0.2, 0.014, 0.28),
+	"phone": Vector3(0.055, 0.03, 0.17),
 }
 ## Espessura de cada nota no montinho (bem mais que o papel de verdade, para o monte aparecer).
 const BILL_THICKNESS := 0.0004
 ## Uma resma de 500 folhas pesa uns 2,5 kg; uma folha A4 de 75 g/m², 5 g.
 const MASS := {"ream": 2.5, "sheet": 0.005, "bills": 0.001, "bundle": 0.001, "pan": 1.2, "finger": 0.02, "hand": 0.35, "cartridge": 0.08,
-		"parcel": 3.0, "trashbag": 0.05}
+		"parcel": 3.0, "trashbag": 0.05, "phone": 0.15}
 ## Quanto cada coisa dentro do saco pesa a mais (kg; um maço de verdade não pesa isso, mas o saco
 ## cheio tem que parecer pesado quando cai).
 const BAG_ITEM_MASS := 0.25
@@ -156,6 +159,7 @@ const PHYSICS := {
 	"cartridge": {"friction": 0.6, "bounce": 0.2, "angular_damp": 0.4},
 	"parcel": {"friction": 0.9, "bounce": 0.05, "angular_damp": 0.8},
 	"trashbag": {"friction": 0.95, "bounce": 0.0, "angular_damp": 3.0},
+	"phone": {"friction": 0.55, "bounce": 0.35, "angular_damp": 0.4},
 }
 ## Ar na folha (ver item.gd, _paper_air). Arrasto da face: 0,5 · ρ · Cd · área (1,2 · 1,2 · 0,062 / 2),
 ## o que dá ~1 m/s de velocidade final caindo deitada. O de lado (pela borda) é bem menor.
@@ -223,6 +227,8 @@ static func label_of(kind: String, data: Dictionary) -> String:
 			return "%s (%s)" % [cartridge_name(data.get("brand", "generic")), ink_text(data.get("ink", 0.0))]
 		"parcel":
 			return "parcel from %s" % data.get("from", "somewhere")
+		"phone":
+			return "the neighbor's phone (CALLING THE POLICE!)" if data.get("calling", false) else "the neighbor's phone"
 		"trashbag":
 			var contents: Array = data.get("contents", [])
 			var open := "open " if data.get("open", false) else ""
@@ -303,6 +309,9 @@ static func hold_offset(kind: String, data := {}) -> Transform3D:
 			return Transform3D(Basis(Vector3.RIGHT, 0.95), Vector3(0.0, 0.05, 0.0))
 		"cartridge":
 			return Transform3D(Basis(Vector3.RIGHT, 0.6), Vector3(0.0, 0.1, -0.06))
+		"phone":
+			# Em pé na mão, com o visor virado para quem segura.
+			return Transform3D(Basis(Vector3.RIGHT, 1.1), Vector3(0.0, 0.08, -0.04))
 		"pan":
 			# Em pé do lado direito, de perfil como uma raquete (a face virada para a esquerda, para
 			# o golpe de lado acertar com ela), e o cabo nas mãos.
@@ -334,6 +343,8 @@ static func hand_offset(kind: String, side: int, data := {}) -> Transform3D:
 			return Transform3D(basis, Vector3(side * 0.112, -0.025, 0.075))
 		"cartridge":
 			return Transform3D(basis, Vector3(side * 0.07, -0.01, 0.03))
+		"phone":
+			return Transform3D(basis, Vector3(side * 0.045, -0.005, 0.05))
 		"pan":
 			# As duas no cabo, uma atrás da outra, como num taco.
 			return Transform3D(basis, Vector3(side * 0.022, 0.0, 0.2 if side == 1 else 0.12))
@@ -386,6 +397,10 @@ static func build(item: RigidBody3D) -> void:
 			# Pesada e rápida no arremesso: sem isso atravessava a parede.
 			item.continuous_cd = true
 			_pan(mesh)
+		elif item.kind == "phone":
+			# Pequeno e voando da mão do vizinho: sem isso atravessava o chão.
+			item.continuous_cd = true
+			_phone(mesh)
 		else:
 			var box := BoxMesh.new()
 			box.size = size
@@ -506,6 +521,46 @@ static func _cartridge(mesh: MeshInstance3D, brand: String) -> void:
 	nozzle.mesh = nozzle_box
 	nozzle.position.y = -size.y / 2.0 - 0.004
 	mesh.add_child(nozzle)
+
+
+## Telefone sem fio de casa, dos antigos: corpo bege, teclado cinza, o visorzinho verde aceso e a
+## antena na ponta de cima (-Z).
+static func _phone(mesh: MeshInstance3D) -> void:
+	var size: Vector3 = SIZES["phone"]
+	var body := BoxMesh.new()
+	body.size = size
+	body.material = _flat_material(Color(0.78, 0.74, 0.62), 0.5)
+	mesh.mesh = body
+	var keypad := MeshInstance3D.new()
+	var keys := BoxMesh.new()
+	keys.size = Vector3(size.x * 0.75, 0.004, size.z * 0.45)
+	keys.material = _flat_material(Color(0.32, 0.32, 0.34), 0.6)
+	keypad.mesh = keys
+	keypad.position = Vector3(0.0, size.y / 2.0, size.z * 0.15)
+	mesh.add_child(keypad)
+	var screen := MeshInstance3D.new()
+	var glass := BoxMesh.new()
+	glass.size = Vector3(size.x * 0.7, 0.004, size.z * 0.2)
+	var lit := StandardMaterial3D.new()
+	lit.albedo_color = Color(0.45, 0.85, 0.45)
+	lit.emission_enabled = true
+	lit.emission = Color(0.35, 0.9, 0.4)
+	lit.emission_energy_multiplier = 1.2
+	glass.material = lit
+	screen.mesh = glass
+	screen.position = Vector3(0.0, size.y / 2.0, -size.z * 0.25)
+	mesh.add_child(screen)
+	var antenna := MeshInstance3D.new()
+	var rod := CylinderMesh.new()
+	rod.top_radius = 0.006
+	rod.bottom_radius = 0.008
+	rod.height = 0.06
+	rod.radial_segments = 8
+	rod.material = _flat_material(Color(0.12, 0.12, 0.13), 0.4)
+	antenna.mesh = rod
+	antenna.rotation.x = PI / 2.0
+	antenna.position = Vector3(size.x * 0.3, 0.0, -size.z / 2.0 - 0.025)
+	mesh.add_child(antenna)
 
 
 ## Frigideira de ferro: o fundo (mais largo em cima), a face de dentro um pouco mais clara e o

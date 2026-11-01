@@ -55,3 +55,18 @@ STAIRS_DOOR = (-1.2, -0.4)              # y, fim oeste do corredor (porta corta-
 
 # Onde os 4 jogadores nascem (x, y), longe dos móveis.
 SPAWNS = [(1.5, 3.4), (3.7, 3.3), (4.2, 1.4), (1.4, 1.2)]
+
+# Escada do prédio, atrás da porta corta-fogo no fim oeste do corredor: desce do 3º andar até o
+# térreo em lances de ida e volta (dois por andar, com um patamar no meio). O térreo fica na altura
+# da calçada (exterior.STREET_Z + 0,15), com o hall de entrada e a porta da rua.
+STAIR_FLOORS = 3
+STAIR_FLOOR_H = 8.45 / STAIR_FLOORS
+STAIR_X = (-4.6, -1.7)            # vão livre (a parede leste é a do fim do corredor)
+STAIR_SPLIT = (-3.15, -3.05)      # parede do meio, entre o lance de descer (oeste) e o de voltar
+STAIR_LANDING_Y = (-1.7, -0.2)    # patamar de cada andar, na frente da porta
+STAIR_STEPS = 8                   # espelhos por lance
+STAIR_TREAD = 0.28
+STAIR_MID_Y = (STAIR_LANDING_Y[1] + (STAIR_STEPS - 1) * STAIR_TREAD,
+               STAIR_LANDING_Y[1] + (STAIR_STEPS - 1) * STAIR_TREAD + 1.4)   # patamar do meio
+LOBBY_Y = (-4.7, -1.7)            # hall do térreo, na frente do patamar
+STREET_DOOR = (-3.7, -2.6)        # x, parede norte do hall do térreo

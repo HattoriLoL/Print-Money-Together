@@ -18,6 +18,7 @@ frente do jogador, ou rente à parede se ela estiver no caminho).
 | `sheet` | Folha A4 impressa com 2 x 3 notas, frente e verso. `data.wet` = tinta ainda fresca: mais escura e brilhando. `data.offcolor` = impressa com cartucho genérico: o que tem cor sai azul-petróleo. |
 | `bills` | Montinho de notas cortadas. `data.count` = quantas, `data.smudged` = quantas saíram borradas, `data.top_smudged` = se a de cima está borrada (muda a textura), `data.offcolor` e `data.top_offcolor` = o mesmo para a cor errada do cartucho genérico. A altura e o peso crescem com o monte. |
 | `bundle` | Maço cintado que sai da contadora: as mesmas chaves do montinho, sem notas borradas, com a cinta em volta do meio na cor da nota de qualidade. Ver a contadora. |
+| `phone` | O telefone sem fio do vizinho, que voa da mão dele na trombada. Chamando a polícia, o nome avisa; pegar desliga (`docs/vizinho.md`). |
 | `pan` | Frigideira de ferro, que começa em cima do fogão (na boca livre, com o cabo para fora da bancada). Na mão, o clique bate (`ItemKinds.WEAPONS`; ver `docs/personagens.md`). Fica de perfil do lado direito, como uma raquete. |
 | `finger` | Um dedo que a guilhotina levou: a peça da luva do `hands.glb`. `data.owner` = de quem ("Tester's thumb"), `data.side` = 0 direita / 1 esquerda, `data.digit` = qual. |
 | `hand` | A mão inteira que a guilhotina levou: a luva com os dedos que ela ainda tinha. `data.owner`, `data.side` e `data.lost` = os dedos que já tinham ido antes. |

@@ -33,10 +33,10 @@ COLLECTIONS = {
 
 
 def _reload():
-    import textures, lib, plan, structure, furniture, machines, props, exterior, wonky
-    for m in (plan, textures, lib, structure, furniture, machines, props, exterior, wonky):
+    import textures, lib, plan, structure, stairs, furniture, machines, props, exterior, wonky
+    for m in (plan, textures, lib, structure, stairs, furniture, machines, props, exterior, wonky):
         importlib.reload(m)
-    return textures, wonky, (structure, furniture, machines, props, exterior)
+    return textures, wonky, (structure, stairs, furniture, machines, props, exterior)
 
 
 def clear():

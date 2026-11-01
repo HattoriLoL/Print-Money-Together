@@ -1,6 +1,8 @@
 extends SceneTree
 ## Teste da kitnet (scenes/kitnet.tscn) com o jogador de verdade, hospedando uma sala:
-## - o modelo carrega com 5 portas (3 trancadas), 4 spawns e as luzes das zonas;
+## - o modelo carrega com 6 portas (3 trancadas), 4 spawns e as luzes das zonas;
+## - escada do prédio: a porta corta-fogo abre, o jogador desce os lances até o térreo e sobe de
+##   volta (a rampa invisível de cada lance), e a porta da rua fica trancada;
 ## - visual de desenho: o mapa com o material toon e a câmera com o contorno;
 ## - o jogador nasce em pé no chão e a colisão segura (andar até a parede do fundo);
 ## - a porta 301 abre com interact e a trancada não;
@@ -26,9 +28,11 @@ extends SceneTree
 ## - frigideira: nasce no fogão, bate com o clique (BONK! em quem está na frente, clang na parede), quem
 ##   leva cai com as estrelinhas, solta o que segurava e levanta tonto;
 ## - vizinho do 303: o barulho enche a paciência e ele vem; com a 301 trancada bate e vai embora;
-##   destrancada entra, vê as notas e corre ligando para a polícia; a frigideira derruba e corta a
-##   ligação; arrastado até o capacho dele, acorda achando que sonhou; o maço suborna; a polícia
-##   leva o que está à vista e cobra a multa, e o esconderijo salva o que está dentro;
+##   destrancada entra, vê as notas e foge pela escada ligando para a polícia; a trombada derruba e
+##   o telefone voa (pegar desliga), e ele foge sem ele até a rua, de onde chama a polícia; a
+##   frigideira derruba e corta a ligação; arrastado até o capacho dele, acorda achando que sonhou;
+##   o maço suborna; a polícia leva o que está à vista e cobra a multa, e o esconderijo salva o que
+##   está dentro;
 ## - saco de lixo: sai do rolo da cozinha, recebe maços e montinhos (estufa e não afunda no chão),
 ##   o clique tira o último, carrega cheio e cabe no esconderijo; o vizinho não vê o que está dentro;
 ##   na mão, o clique abre: o que cai na boca (largado ou arremessado) entra, e aberto o vizinho vê;
@@ -68,6 +72,9 @@ var _with_client := false
 var _solo := false
 var _started := false
 var _failures: Array[String] = []
+## Prende o mouse de volta se a janela perder o foco no meio do teste (alguém usando o PC): o
+## Windows solta o mouse, e o HUD gastaria o próximo clique do teste só para prender de novo.
+var _keep_mouse := true
 
 
 func _init() -> void:
@@ -87,6 +94,8 @@ func _process(_delta: float) -> bool:
 	if not _started:
 		_started = true
 		_run()
+	if _keep_mouse and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	return false
 
 
@@ -112,13 +121,14 @@ func _run() -> void:
 	await create_timer(1.0).timeout
 
 	# --- Montagem ---
-	_check(kitnet.doors.size() == 5, "5 portas (%d)" % kitnet.doors.size())
-	for key in ["302", "303", "Stairs"]:
+	_check(kitnet.doors.size() == 6, "6 portas (%d)" % kitnet.doors.size())
+	for key in ["302", "303", "Street"]:
 		_check(kitnet.doors.has(key) and kitnet.doors[key].locked, "porta %s trancada" % key)
-	_check(not kitnet.doors["301"].locked and not kitnet.doors["Bath"].locked, "301 e banheiro abrem")
+	_check(not kitnet.doors["301"].locked and not kitnet.doors["Bath"].locked and not kitnet.doors["Stairs"].locked,
+			"301, banheiro e escada abrem")
 	_check(kitnet.spawns.size() == 4, "4 spawns")
 	var lights: Array = kitnet.model.find_children("LIGHT_*", "Light3D", true, false)
-	_check(lights.size() == 6, "6 luzes (%d)" % lights.size())
+	_check(lights.size() == 11, "11 luzes: 6 da kitnet e do corredor e 5 da escada (%d)" % lights.size())
 	_check(kitnet.roster.size() == 1 and kitnet.roster.has(1), "o host está na lista")
 
 	# --- Jogador no chão ---
@@ -151,6 +161,7 @@ func _run() -> void:
 
 	# Mouse solto (janela sem foco, como no jogo embutido no editor): clicar no meio da tela,
 	# bem em cima da mira, tem que prender de novo.
+	_keep_mouse = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	await process_frame
 	for pressed in [true, false]:
@@ -162,6 +173,7 @@ func _run() -> void:
 		Input.parse_input_event(click)
 		await process_frame
 	_check(Input.mouse_mode == Input.MOUSE_MODE_CAPTURED, "clicar na mira prende o mouse de novo")
+	_keep_mouse = true
 
 	# Andar para o fundo (-Z no Godot): a parede (z -5) segura.
 	player.global_position = Vector3(4.2, 0.05, -2.0)
@@ -250,6 +262,7 @@ func _run() -> void:
 	await create_timer(0.8).timeout
 	_check(not door.is_open, "a 301 fechou")
 
+	await _test_stairs(kitnet, player)
 	await _test_printer(kitnet, player)
 	await _test_drop_physics(kitnet, player)
 	await _test_guillotine(kitnet, player)
@@ -639,6 +652,62 @@ func _test_client(kitnet: Node3D) -> void:
 		await create_timer(0.25).timeout
 		waited += 0.25
 	_check(kitnet.roster.size() == 1, "quando o cliente fecha, ele sai da lista (%.1f s)" % waited)
+
+
+## A escada do prédio (art_source/blender/stairs.py): a porta abre, desce até o térreo pelos lances
+## e sobe de volta andando de verdade (Input), e a porta da rua não abre.
+func _test_stairs(kitnet: Node3D, player: CharacterBody3D) -> void:
+	var stairs: AnimatableBody3D = kitnet.doors["Stairs"]
+	player.global_position = Vector3(-0.8, 0.05, 0.85)
+	await physics_frame
+	stairs.interact(player)
+	await create_timer(0.8).timeout
+	_check(stairs.is_open, "a porta da escada abre")
+	await _look(player, Vector3(-0.6, 0, 0.85), Vector3(-3.0, 1.0, 0.9), "11_porta_da_escada")
+	var path: Array[Vector3] = kitnet.neighbor._flight_points()
+	path.append(kitnet.neighbor.LOBBY)
+	player.global_position = Vector3(-2.2, 0.05, 0.85)
+	await physics_frame
+	var took := await _walk_path(player, path, true)
+	_check(absf(player.global_position.y + 8.45) < 0.1, "desceu correndo até o térreo (y %.2f, %.1f s)" % [player.global_position.y, took])
+	await _look(player, Vector3(-3.15, -8.45, 3.6), Vector3(-3.15, -7.6, 4.8), "12_terreo_porta_da_rua")
+	var street: AnimatableBody3D = kitnet.doors["Street"]
+	player.global_position = Vector3(-3.15, -8.4, 4.0)
+	await physics_frame
+	street.interact(player)
+	await create_timer(0.6).timeout
+	_check(not street.is_open, "a porta da rua não abre (a rua vem depois)")
+	path.reverse()
+	path = path.slice(1)
+	path.append(Vector3(-2.2, 0.0, 0.85))
+	took = await _walk_path(player, path, false)
+	_check(absf(player.global_position.y) < 0.1, "subiu andando de volta (y %.2f, %.1f s)" % [player.global_position.y, took])
+	player.global_position = Vector3(-0.8, 0.05, 0.85)
+	await physics_frame
+	stairs.interact(player)
+	await create_timer(0.8).timeout
+
+
+## Anda com o Input pelos pontos (virando para cada um). Devolve quanto tempo levou.
+func _walk_path(player: CharacterBody3D, path: Array[Vector3], sprint: bool) -> float:
+	var total := 0.0
+	Input.action_press("move_forward")
+	if sprint:
+		Input.action_press("sprint")
+	for point in path:
+		var t := 0.0
+		while t < 6.0:
+			var d: Vector3 = point - player.global_position
+			d.y = 0.0
+			if d.length() < 0.25:
+				break
+			player.rotation.y = atan2(-d.x, -d.z)
+			await physics_frame
+			t += 1.0 / Engine.physics_ticks_per_second
+		total += t
+	Input.action_release("move_forward")
+	Input.action_release("sprint")
+	return total
 
 
 func _test_printer(kitnet: Node3D, player: CharacterBody3D) -> void:
@@ -1712,29 +1781,69 @@ func noise() -> float:
 	_check(got and not n.visible and not kitnet.doors["303"].is_open, "e some no 303 com a porta fechada")
 	_check(n.visits == 1, "a visita conta (a próxima vem mais cedo)")
 
-	# 2. Destrancada e notas na mesa: entra, vê e corre ligando.
+	# 2. Destrancada e notas na mesa: entra, vê e foge do prédio ligando.
 	door.interact(player)
 	_check(not door.locked, "[E] na porta destranca")
 	var bills_id: int = items.spawn("bills", Transform3D(Basis.IDENTITY, Vector3(3.6, 0.8, -1.9)), {"count": 6}).id
 	player.global_position = Vector3(1.0, 0.05, -2.5)
 	n.visit()
-	got = await _wait_neighbor(n, [S.CALL], 30.0)
-	_check(got and n.alarmed and n.calling, "entrou, viu as notas e foi ligar para a polícia")
-	_check(n.global_position.distance_to(n.DOORMAT) < 0.4, "liga parado no capacho dele")
-	await _look(player, Vector3(4.1, 0, 0.2), n.global_position + Vector3.UP * 1.5, "64_vizinho_ligando")
-	# 3. Frigideira: corta a ligação e derruba.
+	got = await _wait_neighbor(n, [S.FLEE], 30.0)
+	_check(got and n.alarmed and n.calling and n.escaping(), "entrou, viu as notas e saiu correndo ligando para a polícia")
+	await process_frame
+	_check(player.hud._alert.text.begins_with("Catch the neighbor"), "o HUD avisa para pegar ele (%s)" % player.hud._alert.text)
+	got = await _wait_until(func(): return n.global_position.x < -2.0, 15.0)
+	_check(got and kitnet.doors["Stairs"].is_open, "abriu a porta da escada e entrou")
+	got = await _wait_until(func(): return n.global_position.y < -1.6, 10.0)
+	_check(got and n.state == S.FLEE, "desce os lances (y %.2f)" % n.global_position.y)
+	await _look(player, Vector3(-2.4, -1.36, -2.6), n.global_position + Vector3.UP * 1.2, "64_vizinho_fugindo")
+	# 3. Trombada: chega correndo por trás e derruba; o telefone voa e continua chamando.
+	got = await _chase(player, n, func(): return n.state == S.DOWN)
+	_check(got, "a trombada derruba ele")
+	await create_timer(0.8).timeout
+	var phones: Array = items.items.values().filter(func(i): return i.kind == "phone")
+	var phone: Node = phones[0] if not phones.is_empty() else null
+	_check(phone != null and phone.data.get("calling", false) and n.calling and n.phone_id == phone.id,
+			"o telefone voou e continua chamando")
+	if phone != null:
+		await _look(player, player.global_position, phone.global_position, "67_telefone_voou")
+		# 4. Pegar o telefone desliga. Ele levanta e foge sem ele até a rua.
+		player.global_position = phone.global_position + Vector3.UP * 0.05
+		await physics_frame
+		items.request_pickup(phone.id)
+		await create_timer(0.3).timeout
+		_check(player.held_item() == phone and not phone.data.get("calling", true) and not n.calling,
+				"pegou o telefone: desligou")
+	got = await _wait_neighbor(n, [S.HOME], 30.0)
+	_check(got and not n.visible and kitnet.police.coming(), "saiu pela porta da rua e chamou a polícia de lá")
+	_check(not kitnet.doors["Street"].is_open, "e a porta da rua fecha atrás dele")
+	kitnet.police.cancel()
+	if player.held_item() != null:
+		items.consume(player.held_item())
+	n.visits = 1
+	# 5. Frigideira: corre atrás dele no corredor e bate; a ligação cai.
 	var pan: Node = items.items.values().filter(func(i): return i.kind == "pan")[0]
+	player.global_position = Vector3(1.0, 0.05, -2.5)
+	await physics_frame
 	pan.global_position = player.global_position + Vector3.UP * 0.9
 	items.request_pickup(pan.id)
 	await create_timer(0.3).timeout
-	var to: Vector3 = n.global_position - player.global_position
-	to.y = 0.0
-	player.global_position = n.global_position - to.normalized() * 0.75 + Vector3.UP * 0.05
-	player.rotation.y = atan2(-to.x, -to.z)
-	player.head.rotation.x = -0.05
-	await create_timer(0.2).timeout
-	player.swing()
-	await create_timer(0.6).timeout
+	n.visit()
+	got = await _wait_neighbor(n, [S.FLEE], 30.0)
+	got = got and await _wait_until(func(): return n.global_position.x < 1.4, 10.0)
+	_check(got, "viu as notas de novo e fugiu pelo corredor")
+	for i in 40:
+		var fwd: Vector3 = -n.global_basis.z
+		fwd.y = 0.0
+		fwd = fwd.normalized()
+		player.global_position = n.global_position - fwd * 0.75 + Vector3.UP * 0.05
+		player.rotation.y = atan2(-fwd.x, -fwd.z)
+		player.head.rotation.x = -0.05
+		if i == 2:
+			player.swing()
+		await physics_frame
+		if n.knocked_out():
+			break
+	await create_timer(0.4).timeout
 	_check(player.last_bonked == n and n.knocked_out() and not n.calling, "BONK: caiu e a ligação caiu")
 	await create_timer(1.0).timeout
 	_check(n.bonk_point().y < 0.6 and n._stars.visible, "desmaiado no chão com as estrelinhas")
@@ -2075,7 +2184,13 @@ func _test_raid(kitnet: Node3D, player: CharacterBody3D) -> void:
 ## Espera a batida acabar (os policiais foram embora).
 func _wait_raid(police: Node, limit: float) -> bool:
 	await create_timer(0.5).timeout
-	return await _wait_until(func(): return not police.raiding and police.time_left < 0.0, limit)
+	var ended: bool = await _wait_until(func(): return not police.raiding and police.time_left < 0.0, limit)
+	if not ended:
+		# Para saber onde travou: o estado, a tarefa e o lugar de cada policial.
+		for cop in police.cops:
+			print("  batida sem fim: %s %s tarefa=%s faltam=%d em %s" % [cop.name, cop.State.keys()[cop.state],
+					cop._task.get("key", cop._task.get("kind", "-")), cop._tasks.size(), cop.global_position.snapped(Vector3.ONE * 0.1)])
+	return ended
 
 
 func _wait_until(cond: Callable, limit: float) -> bool:
@@ -2084,6 +2199,22 @@ func _wait_until(cond: Callable, limit: float) -> bool:
 		await physics_frame
 		t += 1.0 / Engine.physics_ticks_per_second
 	return cond.call()
+
+
+## Corre (velocidade de quem corre) atrás do vizinho até `done`: chega por trás, na altura dele.
+func _chase(player: CharacterBody3D, n: Node, done: Callable) -> bool:
+	var gap := 2.0
+	for i in 240:
+		if done.call():
+			return true
+		var fwd: Vector3 = -n.global_basis.z
+		fwd.y = 0.0
+		fwd = fwd.normalized()
+		gap = maxf(0.3, gap - 3.0 / Engine.physics_ticks_per_second)
+		player.global_position = n.global_position - fwd * gap + Vector3.UP * 0.05
+		player.rotation.y = atan2(-fwd.x, -fwd.z)
+		await physics_frame
+	return done.call()
 
 
 func _wait_neighbor(n: Node, states: Array, limit: float) -> bool:
