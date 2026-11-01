@@ -48,7 +48,8 @@ O HUD mostra o barulho de agora (a barra "NOISE", embaixo à direita), mas não 
 **O que conta como prova** (`_sees_evidence`), sempre na frente dele (`SIGHT_HALF_ANGLE`), a
 até `SIGHT` metros e sem parede nem porta fechada no meio:
 
-- folhas, notas e maços, mesmo na mão de alguém;
+- folhas, notas e maços, mesmo na mão de alguém (dentro do saco de lixo fechado, não: parece
+  lixo; aberto, ele vê pela boca; ver `docs/maquinas.md`);
 - a impressora imprimindo;
 - notas no funil ou na bandeja da contadora;
 - folha na guilhotina.

@@ -34,6 +34,7 @@ import/blender/enabled=false
 3d_physics/layer_2="players"
 3d_physics/layer_3="items"
 3d_physics/layer_4="interact"
+3d_physics/layer_5="bag_inside"
 
 [physics]
 

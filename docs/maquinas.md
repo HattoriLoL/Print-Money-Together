@@ -22,6 +22,7 @@ frente do jogador, ou rente à parede se ela estiver no caminho).
 | `finger` | Um dedo que a guilhotina levou: a peça da luva do `hands.glb`. `data.owner` = de quem ("Tester's thumb"), `data.side` = 0 direita / 1 esquerda, `data.digit` = qual. |
 | `hand` | A mão inteira que a guilhotina levou: a luva com os dedos que ela ainda tinha. `data.owner`, `data.side` e `data.lost` = os dedos que já tinham ido antes. |
 | `cartridge` | Cartucho de tinta da impressora: plástico preto com a faixa da marca (verde o original, rosa o genérico). `data.ink` = quanto ainda tem (0 a 1), `data.brand` = `original` ou `generic`. |
+| `trashbag` | Saco de lixo preto, do rolo da cozinha. Leva vários maços e montinhos de uma vez (`data.contents`). Ver "Saco de lixo", abaixo. |
 | `parcel` | Caixa de papelão da entrega, com o nome da loja. Não vai para a mão: [E] abre e o que veio dentro sai pulando (`data.contents`). Ver `docs/loja.md`. |
 
 A resma precisa das duas mãos (`ItemKinds.TWO_HANDED`): quem perdeu uma não pega ("Needs both hands to carry"), nem do chão nem do estoque.
@@ -348,6 +349,73 @@ O código é `scripts/machines/cash_counter.gd`. O funil fica nas mesmas medidas
   notas no funil, maço cintado) e dois bipes com o maço completo.
 - **Rede:** o host conta e repassa o estado para todos a cada nota (o funil, a bandeja, se está
   emperrada e quanto já destravou). Quem entra no meio recebe tudo.
+
+## Saco de lixo (rolo na bancada da cozinha)
+
+Para levar vários maços de uma vez, e para o dinheiro passar por lixo. O rolo é
+`scripts/machines/bag_roll.gd`. O saco é o item `trashbag` (`scripts/items/item_kinds.gd`), e
+quem põe e tira é o `item_manager.gd` (`request_bag_put` e `request_bag_take`).
+
+- **Rolo:** fica deitado no granito, entre a cuba e o fogão (`BagRoll.SPOT`), com uma cinta de
+  papel laranja para não sumir no granito preto. [E] de mão vazia destaca um saco, que vem dobrado
+  para a mão. O rolo não acaba.
+- **Saco no chão:**
+  - Com um maço ou montinho na mão (`ItemKinds.BAG_KINDS`), [E] põe dentro. Cabem
+    `BAG_CAPACITY` (10) coisas.
+  - De mão vazia, [E] pega o saco com tudo dentro, e o clique tira o último que entrou.
+- **Aberto (jogar dentro):** com o saco na mão, o clique abre ou dá o nó (`data.open`;
+  `request_bag_toggle`). Aberto, ele fica seguro pela borda, na frente e embaixo, com a boca
+  virada para quem segura. Maço ou montinho solto que passa pela boca entra sozinho (`item.gd`,
+  `_catch`, no host), arremessado (segurar [G]), largado em cima (tocar [G]) ou caindo de uma
+  mesa. Um segura e o outro joga. A folga em volta da boca é `BAG_CATCH_MARGIN`. Vale também com
+  o saco aberto no chão.
+  - Aberto, a malha é outra (`_open_bag`): sobe largo até uma borda enrolada.
+  - Vazio e aberto, o saco fica com forma de quem tem ar (`BAG_OPEN_MIN_FILL`).
+  - Entrar, sair, abrir e fechar fazem o farfalhar do plástico (`item.gd`, `data_changed`).
+- **Forma:** vazio, é um travesseirinho chato. Com coisa dentro, vira uma pera de plástico preto
+  brilhante, com fundo chato, calombos dos maços, pregas juntando no gargalo e o nó com as duas
+  orelhas em cima (`_bag_mesh`). Estufa conforme enche (`bag_size`): cresce para cima, sem
+  afundar no chão, e pesa mais (`BAG_ITEM_MASS` por coisa).
+- **Na mão:** abraçado na frente, um pouco abaixo (as mãos na barriga do saco). Cheio, tampa um
+  pedaço da vista.
+
+### Física do saco
+
+- **O dinheiro lá dentro** (`scripts/items/bag_contents.gd`, filho "Inside" do saco): com o saco
+  aberto, cada maço ou montinho é um corpo de verdade (RigidBody3D). Eles caem pela boca, quicam,
+  se empilham e escorregam quando o saco anda, balança ou cai.
+  - O saco vira uma casca de colisão com a própria malha aberta (`ItemKinds.bag_shell_shape`), que
+    acompanha o item.
+  - Os corpos só batem na casca e uns nos outros, na camada 5 (`bag_inside`), e não mexem em mais
+    nada do mapa.
+  - É só de enfeite: cada máquina simula o seu, e quem manda no que está dentro é o `contents` do
+    host. Entrou coisa: um corpo cai da boca. Saiu: some o de cima. Ao abrir, eles nascem deitados
+    no fundo e se acomodam. Fechado, não tem corpo nenhum. Um corpo que escapar da casca volta
+    para o fundo.
+- **Balanço na mão** (`item.gd`, `_bag_swing`): o saco é um pêndulo preso nas mãos.
+  - Quando as mãos de quem segura mudam de velocidade (sair andando, parar, virar a câmera), o
+    fundo fica para trás, passa do ponto e volta (`BAG_SWING_*`).
+  - Aberto, ele balança mais, porque fica pendurado pela borda. Fechado e abraçado, balança
+    menos (`BAG_SWING_CLOSED`). Vazio e dobrado, não balança.
+  - Todo mundo vê, porque cada máquina calcula pelo ponto Hold de quem segura.
+- **Amassado** (`_bag_squash`): quando cai no chão (desceu mais rápido que `BAG_LAND_SPEED` e
+  parou) ou quando entra coisa, o saco achata, alarga, chacoalha e volta (`BAG_SQUASH_*`). O fundo
+  fica no lugar.
+- **Derramar** (`item.gd`, `_spill`, no host): com o saco aberto, solto e tombado (a boca abaixo
+  de `BAG_SPILL_TILT`), o que tem dentro sai pela boca. Sai um de cada vez (`BAG_SPILL_EVERY`),
+  como itens de verdade, com o empurrão e a velocidade do saco (`item_manager.spill_from_bag`).
+  - Acontece quando o saco é largado de lado, arremessado aberto, ou cai da mão de quem levou a
+    frigideira.
+  - Fechado, nada sai.
+  - O saco não pega de volta o que acabou de derramar (1,5 s), e de boca para baixo não pega
+    nada.
+- **Nome:** "empty trash bag", "trash bag (2 bundles, 6 loose bills)", "open trash bag (…)".
+- **Vizinho:** fechado, parece lixo. Ele não vê o dinheiro que está dentro, nem com o saco na mão
+  de alguém (o saco não está em `neighbor.EVIDENCE`). Aberto e com dinheiro, ele vê os maços pela
+  boca (`_sees_evidence`).
+- **Polícia:** ainda não tem regra para o saco (ela procura só folhas, notas e maços soltos).
+- O saco cabe nos esconderijos e volta com tudo dentro.
+- **Rede:** o host muda o `contents` com `set_data` e todos refazem a malha.
 
 ## Teste
 

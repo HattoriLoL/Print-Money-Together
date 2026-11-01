@@ -29,6 +29,10 @@ extends SceneTree
 ##   destrancada entra, vê as notas e corre ligando para a polícia; a frigideira derruba e corta a
 ##   ligação; arrastado até o capacho dele, acorda achando que sonhou; o maço suborna; a polícia
 ##   leva o que está à vista e cobra a multa, e o esconderijo salva o que está dentro;
+## - saco de lixo: sai do rolo da cozinha, recebe maços e montinhos (estufa e não afunda no chão),
+##   o clique tira o último, carrega cheio e cabe no esconderijo; o vizinho não vê o que está dentro;
+##   na mão, o clique abre: o que cai na boca (largado ou arremessado) entra, e aberto o vizinho vê;
+##   aberto, o dinheiro lá dentro tem física; balança na mão; aberto e tombado derrama, fechado não;
 ## - etapa 3 do visual: prints da fita na impressora, jornal, retrato, geladeira, TV, pizza, trancas e lâmpada;
 ## - vida no cenário: ventilador girando, vento no varal e na cortina, chuvisco na TV, vapor na panela,
 ##   lâmpada piscando e balançando quando alguém passa perto;
@@ -247,6 +251,7 @@ func _run() -> void:
 	await _test_counter(kitnet, player)
 	await _test_pan(kitnet, player)
 	await _test_neighbor(kitnet, player)
+	await _test_trashbag(kitnet, player)
 	await _test_characters(kitnet, player)
 	await _test_first_person(kitnet, player)
 	await _test_push(kitnet, player)
@@ -1702,6 +1707,162 @@ func noise() -> float:
 	door.set_open(false)
 	n.visits = 0
 	await create_timer(1.0).timeout
+
+
+func _test_trashbag(kitnet: Node3D, player: CharacterBody3D) -> void:
+	var items: Node = kitnet.items
+	var roll: Node3D = kitnet.bag_roll
+	if player.held_item() != null:
+		items.consume(player.held_item())
+	player.global_position = Vector3(1.93, 0.05, -1.0)
+	await physics_frame
+	_check(roll.zone.get_prompt(player) == "[E] Tear off a trash bag", "o rolo de sacos na bancada")
+	roll.zone.press_fn.call(1)
+	await physics_frame
+	var bag: Node = player.held_item()
+	_check(bag != null and bag.kind == "trashbag" and ItemKinds.label(bag) == "empty trash bag", "destacou um saco vazio")
+	if bag == null:
+		return
+	# No chão, no meio da kitnet.
+	var spot := Vector3(3.3, 0.1, -1.5)
+	player.global_position = spot + Vector3(0, -0.05, 0.8)
+	items.request_drop(Transform3D(Basis.IDENTITY, spot), Vector3.ZERO)
+	await create_timer(1.0).timeout
+	var flat: Vector3 = (bag.get_child(0).shape as BoxShape3D).size
+	# Dois maços e um montinho.
+	var loads := [["bundle", {"count": 20, "worth": 20.0, "worn": 20}], ["bundle", {"count": 20, "worth": 20.0, "worn": 20}],
+			["bills", {"count": 6, "worth": 6.0}]]
+	for i in loads.size():
+		var entry: Array = loads[i]
+		var it: Node = items.spawn(entry[0], Transform3D(Basis.IDENTITY, player.global_position + Vector3.UP), entry[1])
+		items._set_holder(it.id, 1, it.global_transform, Vector3.ZERO, Vector3.ZERO)
+		await physics_frame
+		if i == 0:
+			_check(bag.get_prompt(player).begins_with("[E] Put the bundle of 20 bills (grade A) in the trash bag (0/10)"),
+					"com o maço na mão, o saco oferece (%s)" % bag.get_prompt(player))
+		bag.interact(player)
+		await create_timer(0.3).timeout
+	_check(bag.data["contents"].size() == 3 and player.held_item() == null, "dois maços e um montinho dentro")
+	_check(ItemKinds.label(bag) == "trash bag (2 bundles, 6 loose bills)", "o nome conta o que tem (%s)" % ItemKinds.label(bag))
+	var full: Vector3 = (bag.get_child(0).shape as BoxShape3D).size
+	_check(full.y > flat.y * 10.0, "o saco estufou (%.2f m de altura)" % full.y)
+	await create_timer(1.0).timeout
+	_check(bag.global_position.y - full.y / 2.0 > -0.03, "e não afundou no chão (fundo em %.3f)" % (bag.global_position.y - full.y / 2.0))
+	var n: Node = kitnet.neighbor
+	_check("trashbag" not in n.EVIDENCE and items.items.values().filter(func(i): return i.kind == "bundle").is_empty(),
+			"fechado parece lixo: o vizinho não vê os maços")
+	await _look(player, spot + Vector3(0.0, 0.0, 0.8), bag.global_position, "67_saco_de_lixo")
+	# Cheio não cabe mais.
+	var saved: Array = bag.data["contents"]
+	bag.data["contents"] = saved + saved + saved + [saved[0]]
+	var extra: Node = items.spawn("bundle", Transform3D(Basis.IDENTITY, player.global_position + Vector3.UP), {"count": 20, "worth": 20.0})
+	items._set_holder(extra.id, 1, extra.global_transform, Vector3.ZERO, Vector3.ZERO)
+	await physics_frame
+	_check(bag.get_prompt(player) == "The trash bag is full", "cheio (10), não cabe mais")
+	items.consume(extra)
+	bag.data["contents"] = saved
+	await physics_frame
+	# O clique tira o último (o montinho); [E] devolve; de mão vazia, [E] pega o saco.
+	_check(bag.get_prompt(player).ends_with("Click: take out the 6 bills"), "de mão vazia: pegar o saco ou tirar o último")
+	bag.click(player)
+	await physics_frame
+	_check(player.held_item() != null and player.held_item().kind == "bills" and bag.data["contents"].size() == 2,
+			"o clique tirou o montinho")
+	bag.interact(player)
+	await physics_frame
+	bag.interact(player)
+	await create_timer(0.5).timeout
+	_check(player.held_item() == bag, "carrega o saco com tudo dentro")
+	# Aberto pela borda: o que cai na boca entra sozinho (um amigo segura, o outro joga).
+	player.global_position = Vector3(3.3, 0.05, -1.2)
+	player.rotation.y = 0.0
+	player.head.rotation.x = -0.6
+	items.request_bag_toggle()
+	await create_timer(0.6).timeout
+	_check(bag.data.get("open", false) and ItemKinds.label(bag).begins_with("open trash bag"), "o clique abre o saco")
+	var mouth: Vector3 = ItemKinds.bag_mouth(bag)
+	var inside_before: int = bag.data["contents"].size()
+	var dropped_id: int = items.spawn("bundle", Transform3D(Basis.IDENTITY, mouth + Vector3(0.0, 0.4, 0.0)), {"count": 20, "worth": 20.0}).id
+	await create_timer(0.8).timeout
+	_check(not items.items.has(dropped_id) and bag.data["contents"].size() > inside_before,
+			"o maço que caiu na boca entrou (%d)" % bag.data["contents"].size())
+	mouth = ItemKinds.bag_mouth(bag)
+	var from: Vector3 = mouth + Vector3(0.0, 0.3, -1.8)
+	var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
+	var thrown: Node = items.spawn("bundle", Transform3D(Basis.IDENTITY, from), {"count": 20, "worth": 20.0})
+	var thrown_id: int = thrown.id
+	thrown.linear_velocity = (mouth - from) / 0.5 + Vector3.UP * 0.25 * gravity
+	await create_timer(1.0).timeout
+	_check(not items.items.has(thrown_id), "o arremessado de 1,8 m também")
+	if items.items.has(thrown_id):
+		items.consume(items.items[thrown_id])
+	# O dinheiro lá dentro tem física: um corpo por coisa, acomodados dentro da casca.
+	await create_timer(0.8).timeout
+	var inside: Node = bag.get_node("Inside")
+	var inside_ok: bool = inside.count() == bag.data["contents"].size()
+	var bag_size: Vector3 = ItemKinds.bag_size(bag.data)
+	for body: RigidBody3D in inside.bodies():
+		var p: Vector3 = bag.global_transform.affine_inverse() * body.global_position
+		inside_ok = inside_ok and absf(p.y) < bag_size.y / 2.0 + 0.02 and Vector2(p.x, p.z).length() < bag_size.x / 2.0 + 0.02
+	_check(inside_ok, "aberto, os maços caem lá dentro com física (%d corpos)" % inside.count())
+	# Andando de lado de repente, o saco balança na mão.
+	for f in 12:
+		player.global_position += Vector3(0.05, 0.0, 0.0)
+		await process_frame
+	var swing: float = bag.bag_swing_angle()
+	_check(swing > 0.1, "o saco balança na mão (%.2f rad)" % swing)
+	player.global_position = Vector3(3.3, 0.05, -1.2)
+	await create_timer(0.8).timeout
+	mouth = ItemKinds.bag_mouth(bag)
+	# O vizinho: aberto com dinheiro, vê; com o nó, não.
+	var n_pos: Vector3 = n.global_position
+	var n_rot: Vector3 = n.rotation
+	n.global_position = Vector3(mouth.x, 0.0, mouth.z - 1.5)
+	n.rotation = Vector3(0.0, PI, 0.0)
+	await physics_frame
+	_check(n._sees_evidence(), "o vizinho vê os maços pela boca do saco aberto")
+	items.request_bag_toggle()
+	await physics_frame
+	_check(not bag.data.get("open", false) and not n._sees_evidence(), "com o nó, o saco volta a parecer lixo")
+	n.global_position = n_pos
+	n.rotation = n_rot
+	# Devolve como estava (3 dentro).
+	bag.data["contents"] = bag.data["contents"].slice(0, 3)
+	ItemKinds.refresh(bag)
+	# Cabe no esconderijo e volta igual.
+	var stash: Node = kitnet.stashes.filter(func(s): return s.spot_name == "the wardrobe")[0]
+	player.global_position = Vector3(1.2, 0.05, -1.8)
+	stash._use(1)
+	await physics_frame
+	_check(stash.contents.size() == 1 and player.held_item() == null, "o saco cabe no guarda-roupa")
+	stash._use(1)
+	await physics_frame
+	var back: Node = player.held_item()
+	_check(back != null and back.kind == "trashbag" and back.data["contents"].size() == 3, "e volta com tudo dentro")
+	if back != null:
+		# Fechado e tombado no chão: nada sai.
+		var floor_spot := Vector3(3.3, 0.3, -1.6)
+		player.global_position = floor_spot + Vector3(0.0, -0.25, 0.9)
+		items.request_drop(Transform3D(Basis.IDENTITY, floor_spot + Vector3.UP * 0.1), Vector3.ZERO)
+		await create_timer(0.6).timeout
+		back.global_transform = Transform3D(Basis(Vector3.RIGHT, 1.7), floor_spot)
+		back.angular_velocity = Vector3.ZERO
+		await create_timer(0.8).timeout
+		_check(back.data["contents"].size() == 3, "fechado e tombado, nada sai")
+		# Aberto e tombado: derrama tudo pela boca, de verdade (itens soltos).
+		var loose_before: Array = items.items.keys().filter(func(k): return items.items[k].kind in ItemKinds.BAG_KINDS)
+		items.set_data(back, "open", true)
+		back.global_transform = Transform3D(Basis(Vector3.RIGHT, 1.7), floor_spot)
+		back.angular_velocity = Vector3.ZERO
+		await create_timer(1.5).timeout
+		var spilled: Array = items.items.keys().filter(func(k): return items.items[k].kind in ItemKinds.BAG_KINDS and k not in loose_before)
+		_check(back.data["contents"].is_empty() and spilled.size() == 3,
+				"aberto e tombado, derrama tudo (%d no chão)" % spilled.size())
+		await _look(player, floor_spot + Vector3(0.0, -0.25, 0.9), back.global_position, "68_saco_derramado")
+		for k in spilled:
+			items.consume(items.items[k])
+		items.consume(back)
+	await create_timer(0.5).timeout
 
 
 func _wait_neighbor(n: Node, states: Array, limit: float) -> bool:

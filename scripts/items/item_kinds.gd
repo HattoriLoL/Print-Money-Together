@@ -24,6 +24,12 @@ extends RefCounted
 ##            data.owner, data.side e data.lost = os dedos que já tinham ido antes (bits)
 ##   "cartridge" cartucho de tinta da impressora; data.ink = quanto ainda tem (0 a 1),
 ##            data.brand = "original" ou "generic" (compatível: imprime com a cor errada)
+##   "trashbag" saco de lixo preto do rolo da cozinha (scripts/machines/bag_roll.gd): leva vários
+##            maços (e montinhos) de uma vez; data.contents = [[kind, data], ...] o que está dentro,
+##            na ordem em que entrou. Estufa conforme enche (bag_size). data.open = aberto (o
+##            clique de quem segura abre e dá o nó): maço ou montinho que cai na boca entra sozinho
+##            (item.gd, _catch). Fechado parece lixo: o vizinho não vê o dinheiro dentro; aberto e
+##            com dinheiro, vê
 ##   "parcel" caixa de papelão da entrega (scripts/shop/deliveries.gd); não dá para carregar,
 ##            [E] abre ali mesmo; data.from = a loja, data.order = o número do pedido,
 ##            data.contents = [[kind, data], ...] o que vem dentro
@@ -67,6 +73,39 @@ const STACKS := ["bills", "bundle"]
 const TWO_HANDED := ["ream"]
 ## Não dá para pegar: [E] usa (a caixa da entrega abre).
 const NOT_CARRIED := ["parcel"]
+## Saco de lixo: o que entra nele e quantos cabem (cada maço ou montinho conta um).
+const BAG_KINDS := ["bundle", "bills"]
+const BAG_CAPACITY := 10
+## Plástico preto brilhante do saco (cinza-carvão: preto puro vira uma mancha sem volume no toon)
+## e a lisura dele (abaixo de 0,5 o toon desenha o brilho duro).
+const BAG_COLOR := Color(0.14, 0.14, 0.16)
+const BAG_ROUGHNESS := 0.18
+## Saco aberto: o menor enchimento da forma (vazio, ele fica de boca aberta como se tivesse ar) e
+## a folga em volta da boca para pegar o que cai (m; a boca em si é bag_mouth_radius).
+const BAG_OPEN_MIN_FILL := 0.45
+const BAG_CATCH_MARGIN := 0.08
+## Largura da boca aberta perto da barriga (a borda dobra um pouco para fora).
+const BAG_RIM := 0.78
+## Balanço na mão (item.gd, _bag_swing): o saco é um pêndulo preso nas mãos. Mola, amortecimento,
+## quanto cada m/s que as mãos mudam de velocidade empurra (rad/s), a maior velocidade das mãos
+## que conta (m/s), o maior ângulo, e quanto vale fechado (abraçado, balança menos; aberto, 1).
+const BAG_SWING_SPRING := 55.0
+const BAG_SWING_DAMP := 4.5
+const BAG_SWING_PUSH := 0.9
+const BAG_SWING_MAX_SPEED := 8.0
+const BAG_SWING_MAX := 0.6
+const BAG_SWING_CLOSED := 0.35
+## Amassado (item.gd, _bag_squash): quanto achata no tranco mais forte, a frequência do
+## chacoalhar (rad/s) e o quanto ele morre por segundo; a queda a partir de que velocidade conta.
+const BAG_SQUASH := 0.22
+const BAG_SQUASH_FREQ := 24.0
+const BAG_SQUASH_DECAY := 6.0
+const BAG_LAND_SPEED := 1.0
+## Derramar: aberto e tombado (a boca abaixo disso, no cosseno com o "para cima"), o que tem
+## dentro sai pela boca, um de cada vez (s), com este empurrão (m/s).
+const BAG_SPILL_TILT := 0.25
+const BAG_SPILL_EVERY := 0.12
+const BAG_SPILL_PUSH := 1.1
 ## Quanto vale uma nota com a cor errada (cartucho genérico), perto de uma certa.
 const OFFCOLOR_WORTH := 0.6
 ## Nota que nunca foi lavada é nova demais (lisinha, sem dobra): vale isso perto de uma usada.
@@ -95,12 +134,16 @@ const SIZES := {
 	"pan": Vector3(0.27, 0.05, 0.47),
 	"cartridge": Vector3(0.11, 0.075, 0.05),
 	"parcel": Vector3(0.44, 0.26, 0.34),
+	"trashbag": Vector3(0.2, 0.014, 0.28),
 }
 ## Espessura de cada nota no montinho (bem mais que o papel de verdade, para o monte aparecer).
 const BILL_THICKNESS := 0.0004
 ## Uma resma de 500 folhas pesa uns 2,5 kg; uma folha A4 de 75 g/m², 5 g.
 const MASS := {"ream": 2.5, "sheet": 0.005, "bills": 0.001, "bundle": 0.001, "pan": 1.2, "finger": 0.02, "hand": 0.35, "cartridge": 0.08,
-		"parcel": 3.0}
+		"parcel": 3.0, "trashbag": 0.05}
+## Quanto cada coisa dentro do saco pesa a mais (kg; um maço de verdade não pesa isso, mas o saco
+## cheio tem que parecer pesado quando cai).
+const BAG_ITEM_MASS := 0.25
 ## Atrito, quique e amortecimento do giro de cada tipo.
 const PHYSICS := {
 	"ream": {"friction": 0.8, "bounce": 0.12, "angular_damp": 0.6},
@@ -112,6 +155,7 @@ const PHYSICS := {
 	"hand": {"friction": 0.75, "bounce": 0.25, "angular_damp": 0.4},
 	"cartridge": {"friction": 0.6, "bounce": 0.2, "angular_damp": 0.4},
 	"parcel": {"friction": 0.9, "bounce": 0.05, "angular_damp": 0.8},
+	"trashbag": {"friction": 0.95, "bounce": 0.0, "angular_damp": 3.0},
 }
 ## Ar na folha (ver item.gd, _paper_air). Arrasto da face: 0,5 · ρ · Cd · área (1,2 · 1,2 · 0,062 / 2),
 ## o que dá ~1 m/s de velocidade final caindo deitada. O de lado (pela borda) é bem menor.
@@ -179,6 +223,24 @@ static func label_of(kind: String, data: Dictionary) -> String:
 			return "%s (%s)" % [cartridge_name(data.get("brand", "generic")), ink_text(data.get("ink", 0.0))]
 		"parcel":
 			return "parcel from %s" % data.get("from", "somewhere")
+		"trashbag":
+			var contents: Array = data.get("contents", [])
+			var open := "open " if data.get("open", false) else ""
+			if contents.is_empty():
+				return "empty %strash bag" % open
+			var bundles := 0
+			var loose := 0
+			for entry: Array in contents:
+				if entry[0] == "bundle":
+					bundles += 1
+				else:
+					loose += int(entry[1].get("count", 0))
+			var parts: Array[String] = []
+			if bundles > 0:
+				parts.append("%d bundle%s" % [bundles, "" if bundles == 1 else "s"])
+			if loose > 0:
+				parts.append("%d loose bill%s" % [loose, "" if loose == 1 else "s"])
+			return "%strash bag (%s)" % [open, ", ".join(parts)]
 	return kind
 
 
@@ -220,8 +282,19 @@ static func ink_text(ink: float) -> String:
 
 ## Como o item fica na mão, em relação ao ponto Hold: a folha inclinada para quem segura ver as
 ## notas (a borda de perto embaixo, nas mãos), a resma um pouco virada para mostrar a tampa.
-static func hold_offset(kind: String) -> Transform3D:
+static func hold_offset(kind: String, data := {}) -> Transform3D:
 	match kind:
+		"trashbag":
+			var size := bag_size(data)
+			if data.get("open", false):
+				# Aberto pela borda, na frente e embaixo, com a boca virada um pouco para quem segura
+				# (dá para ver o que cai dentro).
+				return Transform3D(Basis(Vector3.RIGHT, 0.55), Vector3(0.0, -0.08 - size.y * 0.3, -0.14))
+			if data.get("contents", []).is_empty():
+				return Transform3D(Basis(Vector3.RIGHT, 0.95), Vector3(0.0, 0.05, 0.0))
+			# Abraçado na frente, um pouco abaixo (pelo nó, embaixo dos braços, ele sumia): cheio,
+			# tampa um bom pedaço da vista, como um saco pesado de verdade.
+			return Transform3D(Basis(Vector3.UP, 0.3), Vector3(0.0, -0.1 - size.y * 0.15, -0.06))
 		"sheet":
 			return Transform3D(Basis(Vector3.RIGHT, 0.95), Vector3(0.0, 0.06, 0.0))
 		"ream":
@@ -240,9 +313,19 @@ static func hold_offset(kind: String) -> Transform3D:
 ## Onde fica o pulso de cada luva (side 1 = direita, -1 = esquerda), no referencial do item. A
 ## palma vira para o centro e o polegar para cima: a folha fica presa entre o polegar e o
 ## indicador nos cantos de perto; a resma, apertada pelos lados.
-static func hand_offset(kind: String, side: int) -> Transform3D:
+static func hand_offset(kind: String, side: int, data := {}) -> Transform3D:
 	var basis := Basis(Vector3.BACK, -side * PI / 2)
 	match kind:
+		"trashbag":
+			var size := bag_size(data)
+			if data.get("open", false):
+				# Uma de cada lado da boca, abrindo.
+				return Transform3D(basis, Vector3(side * (bag_mouth_radius(data) + 0.01), size.y / 2.0 - 0.01, 0.0))
+			if data.get("contents", []).is_empty():
+				return Transform3D(basis, Vector3(side * 0.11, -0.02, 0.12))
+			# Uma de cada lado, na barriga do saco (a parte mais larga), um pouco para o lado de quem
+			# carrega.
+			return Transform3D(basis, Vector3(side * (size.x / 2.0 - 0.01), -size.y / 2.0 + size.y * 0.3, 0.05))
 		"sheet":
 			return Transform3D(basis, Vector3(side * 0.135, -0.03, 0.17))
 		"ream":
@@ -285,7 +368,7 @@ static func build(item: RigidBody3D) -> void:
 		item.continuous_cd = true
 		mesh = sheet_mesh_instance(item.data.get("wet", false), item.data.get("offcolor", false))
 		mesh.set_instance_shader_parameter("wet", wet_amount(item.data))
-	elif item.kind in STACKS:
+	elif item.kind in STACKS or item.kind == "trashbag":
 		mesh = MeshInstance3D.new()
 		mesh.name = "Mesh"
 	else:
@@ -308,7 +391,7 @@ static func build(item: RigidBody3D) -> void:
 			box.size = size
 			mesh.mesh = box
 	item.add_child(mesh)
-	if item.kind in STACKS:
+	if item.kind in STACKS or item.kind == "trashbag":
 		refresh(item)
 
 
@@ -348,6 +431,14 @@ static func refresh(item: RigidBody3D) -> void:
 	if item.kind == "sheet" and mesh:
 		mesh.set_instance_shader_parameter("wet", wet_amount(item.data))
 		mesh.set_instance_shader_parameter("offcolor", 1.0 if item.data.get("offcolor", false) else 0.0)
+	elif item.kind == "trashbag" and mesh:
+		# Estufa conforme enche: a malha e a colisão do tamanho de agora, e pesa o que tem dentro.
+		var contents: Array = item.data.get("contents", [])
+		mesh.mesh = _bag_mesh(contents.size(), item.data.get("open", false))
+		Toon.apply_one(mesh)
+		var col: CollisionShape3D = item.get_child(0)
+		(col.shape as BoxShape3D).size = bag_size(item.data) * Vector3(0.9, 1.0, 0.9)
+		item.mass = MASS["trashbag"] + BAG_ITEM_MASS * contents.size()
 	elif item.kind == "bundle" and mesh:
 		# Malha própria, do tamanho certo (o maço tem sempre as mesmas notas), com a cinta na cor
 		# da nota de qualidade (na malha: o toon refaz os materiais a partir dela).
@@ -657,6 +748,186 @@ static func _bundle_mesh(offcolor: bool, worn: bool, grade_letter: String) -> Me
 	return mesh
 
 
+## Tamanho do saco de lixo agora (largura, altura com o nó, fundo): vazio, dobrado e chato; com
+## coisa dentro, cada vez mais gordo e alto.
+static func bag_size(data: Dictionary) -> Vector3:
+	var count: int = data.get("contents", []).size()
+	var open: bool = data.get("open", false)
+	if count == 0 and not open:
+		return SIZES["trashbag"]
+	var fill := _bag_fill(count, open)
+	var half := _bag_half_width(fill)
+	return Vector3(half.x * 2.0, _bag_body_height(fill) + (0.02 if open else 0.07), half.y * 2.0)
+
+
+## Raio da boca do saco aberto (na largura; no fundo é um pouco menos).
+static func bag_mouth_radius(data: Dictionary) -> float:
+	return _bag_half_width(_bag_fill(data.get("contents", []).size(), true)).x * BAG_RIM
+
+
+## A boca do saco aberto no mundo (o meio da borda).
+static func bag_mouth(item: Node3D) -> Vector3:
+	return item.global_transform * Vector3(0.0, bag_size(item.data).y / 2.0, 0.0)
+
+
+static func _bag_fill(count: int, open: bool) -> float:
+	var fill := float(count) / BAG_CAPACITY
+	return maxf(fill, BAG_OPEN_MIN_FILL) if open else fill
+
+
+static func _bag_half_width(fill: float) -> Vector2:
+	var w := 0.1 + 0.09 * sqrt(fill)
+	return Vector2(w, w * 0.85)
+
+
+static func _bag_body_height(fill: float) -> float:
+	return 0.13 + 0.25 * fill
+
+
+## Saco de lixo com `count` coisas dentro (de 0 a BAG_CAPACITY). Vazio: o saco dobrado, um
+## travesseirinho chato. Com coisa dentro: o corpo em pera (fundo chato e largo, estreitando até
+## o gargalo), com calombos dos maços e as pregas do plástico juntando no gargalo, e o nó em cima
+## (o gargalo torcido, a bolinha e as duas orelhas). O meio fica na origem, como a colisão.
+static func _bag_mesh(count: int, open := false) -> Mesh:
+	var key := "bag_mesh_%d_%s" % [count, open]
+	if _cache.has(key):
+		return _cache[key]
+	var st := _surface()
+	if open:
+		_open_bag(st, count)
+		var open_mesh := ArrayMesh.new()
+		_commit(st, open_mesh, _bag_open_material())
+		_cache[key] = open_mesh
+		return open_mesh
+	if count == 0:
+		var h: Vector3 = SIZES["trashbag"] / 2.0
+		var pillow := func(u: float, v: float, s: float) -> Vector3:
+			var x := (u - 0.5) * 2.0
+			var z := (v - 0.5) * 2.0
+			var puff := (1.0 - x * x) * (1.0 - z * z)
+			var crease := 0.25 * sin(u * 23.0 + v * 7.0) * sin(v * 17.0)
+			return Vector3(x * h.x, s * h.y * clampf(puff + crease * puff, 0.05, 1.2), z * h.z)
+		_grid(st, 10, 12, func(u, v): return pillow.call(u, v, 1.0), func(u, v): return Vector2(u, v), Vector3.UP)
+		_grid(st, 10, 12, func(u, v): return pillow.call(u, v, -1.0), func(u, v): return Vector2(u, v), Vector3.DOWN)
+	else:
+		var fill := float(count) / BAG_CAPACITY
+		var half := _bag_half_width(fill)
+		var body := _bag_body_height(fill)
+		var total := body + 0.07
+		var bottom := -total / 2.0
+		var neck := 0.016
+		var seed := float(count) * 1.7
+		# Corpo: u dá a volta (ângulo), v sobe do meio do fundo até o gargalo.
+		var sack := func(u: float, v: float) -> Vector3:
+			var ang := u * TAU
+			var y: float
+			var r: float
+			if v < 0.15:
+				y = bottom
+				r = v / 0.15 * 0.93
+			else:
+				var s := (v - 0.15) / 0.85
+				y = bottom + s * body
+				r = maxf(pow(sin(PI * (0.35 + 0.65 * s)), 0.8), 0.0)
+				# Calombos dos maços e pregas que juntam no gargalo.
+				r *= 1.0 + 0.07 * sin(3.0 * ang + seed + 5.0 * s) * sin(2.0 * ang + 1.3 * seed)
+				r *= 1.0 + 0.1 * pow(s, 3.0) * sin(9.0 * ang + seed)
+			if v >= 0.999:
+				r = 0.0
+			var rx: float = maxf(r * half.x, neck if v >= 0.15 and v < 0.999 else 0.0)
+			var rz: float = maxf(r * half.y, neck if v >= 0.15 and v < 0.999 else 0.0)
+			return Vector3(cos(ang) * rx, y, sin(ang) * rz)
+		_grid(st, 24, 16, sack, func(u, v): return Vector2(u, v), Vector3.ZERO, Vector3(0, bottom + body * 0.35, 0))
+		# Gargalo torcido até o nó.
+		var neck_base := bottom + body - 0.01
+		var twist := func(u: float, v: float) -> Vector3:
+			var ang := u * TAU + v * 2.5
+			var r := neck * (1.0 + 0.25 * sin(5.0 * ang))
+			return Vector3(cos(ang) * r, neck_base + v * 0.045, sin(ang) * r)
+		_grid(st, 10, 3, twist, func(u, v): return Vector2(u, v), Vector3.ZERO, Vector3(0, neck_base + 0.02, 0))
+		# A bolinha do nó e as duas orelhas do plástico.
+		var top := neck_base + 0.045
+		var knot := func(u: float, v: float) -> Vector3:
+			var ang := u * TAU
+			var phi := v * PI
+			var r := 0.022 * (1.0 + 0.15 * sin(4.0 * ang))
+			return Vector3(cos(ang) * sin(phi) * r, top - cos(phi) * r * 0.8, sin(ang) * sin(phi) * r)
+		_grid(st, 10, 6, knot, func(u, v): return Vector2(u, v), Vector3.ZERO, Vector3(0, top, 0))
+		for side: float in [-1.0, 1.0]:
+			var ear := func(u: float, v: float) -> Vector3:
+				var along := v * 0.05
+				var width := 0.018 * sin(v * PI * 0.9 + 0.1) * (u - 0.5) * 2.0
+				return Vector3(side * (0.012 + along * 0.8), top + 0.008 + along * 0.6 + width * 0.3, width)
+			_grid(st, 2, 4, ear, func(u, v): return Vector2(u, v), Vector3.UP)
+	var mat := _flat_material(BAG_COLOR, BAG_ROUGHNESS)
+	var mesh := ArrayMesh.new()
+	_commit(st, mesh, mat)
+	_cache[key] = mesh
+	return mesh
+
+
+## Saco aberto: o mesmo corpo em pera, mas sem gargalo: sobe largo até a boca, que dobra um
+## pouco para fora numa borda enrolada. Visto de dentro (o material não esconde as costas).
+static func _open_bag(st: SurfaceTool, count: int) -> void:
+	var fill := _bag_fill(count, true)
+	var half := _bag_half_width(fill)
+	var body := _bag_body_height(fill)
+	var total := body + 0.02
+	var bottom := -total / 2.0
+	var seed := float(count) * 1.3 + 0.5
+	var shape := func(s: float) -> float:
+		var r := pow(sin(PI * (0.35 + 0.55 * s)), 0.8)
+		return r * (1.0 + 0.45 * smoothstep(0.75, 1.0, s))
+	var sack := func(u: float, v: float) -> Vector3:
+		var ang := u * TAU
+		var y: float
+		var r: float
+		if v < 0.15:
+			y = bottom
+			r = v / 0.15 * 0.93
+		else:
+			var s := (v - 0.15) / 0.85
+			y = bottom + s * total
+			r = shape.call(s)
+			r *= 1.0 + 0.06 * sin(3.0 * ang + seed + 4.0 * s) * sin(2.0 * ang + 1.3 * seed)
+			# A borda mole: ondula um pouco.
+			r *= 1.0 + 0.05 * smoothstep(0.7, 1.0, s) * sin(7.0 * ang + seed)
+		return Vector3(cos(ang) * r * half.x, y, sin(ang) * r * half.y)
+	_grid(st, 28, 14, sack, func(u, v): return Vector2(u, v), Vector3.ZERO, Vector3(0, bottom + body * 0.35, 0))
+	# A borda enrolada: um tubo fininho em volta da boca.
+	var rim_r: float = shape.call(1.0)
+	var rim := func(u: float, v: float) -> Vector3:
+		var ang := u * TAU
+		var tube := v * TAU
+		var wobble := 1.0 + 0.05 * sin(7.0 * ang + seed)
+		var ring := Vector2(cos(ang) * rim_r * half.x * wobble, sin(ang) * rim_r * half.y * wobble)
+		var out := ring.normalized() * 0.007 * cos(tube)
+		return Vector3(ring.x + out.x, -bottom + 0.007 * sin(tube), ring.y + out.y)
+	_grid(st, 28, 4, rim, func(u, v): return Vector2(u, v), Vector3.ZERO, Vector3(0, -bottom, 0))
+
+
+## A casca do saco aberto para a física do que está dentro (bag_contents.gd): a própria malha,
+## batendo dos dois lados.
+static func bag_shell_shape(count: int) -> ConcavePolygonShape3D:
+	var key := "bag_shell_%d" % count
+	if not _cache.has(key):
+		var shape: ConcavePolygonShape3D = _bag_mesh(count, true).create_trimesh_shape()
+		shape.backface_collision = true
+		_cache[key] = shape
+	return _cache[key]
+
+
+## O plástico do saco aberto: o mesmo preto, mas sem esconder as costas (o lado de dentro).
+static func _bag_open_material() -> StandardMaterial3D:
+	if not _cache.has("bag_open_mat"):
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = BAG_COLOR
+		mat.roughness = BAG_ROUGHNESS
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_cache["bag_open_mat"] = mat
+	return _cache["bag_open_mat"]
+
+
 ## A cinta de papel na cor da nota de qualidade: a textura (cinza) tem os filetes das bordas e a
 ## "letrinha" impressa no meio, e a cor multiplica.
 static func _band_material(color: Color) -> StandardMaterial3D:
@@ -727,7 +998,8 @@ static func _commit(st: SurfaceTool, mesh: ArrayMesh, mat: Material) -> void:
 
 ## Uma superfície em grade (nu x nv quadrados): `pos(u, v)` dá o ponto e `uv(u, v)` a textura,
 ## com u e v de 0 a 1. A normal sai da própria superfície, virada para o lado de `outward`.
-static func _grid(st: SurfaceTool, nu: int, nv: int, pos: Callable, uv: Callable, outward: Vector3) -> void:
+## Com `outward` zero (superfície fechada), a normal aponta para longe de `center`.
+static func _grid(st: SurfaceTool, nu: int, nv: int, pos: Callable, uv: Callable, outward: Vector3, center := Vector3.ZERO) -> void:
 	var eps := 0.001
 	var normal_at := func(u: float, v: float) -> Vector3:
 		var du: Vector3 = pos.call(minf(u + eps, 1.0), v) - pos.call(maxf(u - eps, 0.0), v)
@@ -736,7 +1008,8 @@ static func _grid(st: SurfaceTool, nu: int, nv: int, pos: Callable, uv: Callable
 		if n.length_squared() < 1e-14:
 			return outward
 		n = n.normalized()
-		return -n if n.dot(outward) < 0.0 else n
+		var away: Vector3 = outward if outward != Vector3.ZERO else pos.call(u, v) - center
+		return -n if n.dot(away) < 0.0 else n
 	for i in nu:
 		for j in nv:
 			var quad := [Vector2(float(i) / nu, float(j) / nv), Vector2(float(i + 1) / nu, float(j) / nv),

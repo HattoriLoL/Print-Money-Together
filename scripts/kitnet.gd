@@ -21,6 +21,7 @@ const ClothesLine := preload("res://scripts/machines/clothesline.gd")
 const Fan := preload("res://scripts/machines/fan.gd")
 const Washer := preload("res://scripts/machines/washer.gd")
 const CashCounter := preload("res://scripts/machines/cash_counter.gd")
+const BagRoll := preload("res://scripts/machines/bag_roll.gd")
 const Stash := preload("res://scripts/machines/stash.gd")
 const Neighbor := preload("res://scripts/neighbor.gd")
 const Police := preload("res://scripts/police.gd")
@@ -73,6 +74,7 @@ var fan: Node3D
 var washer: Node3D
 ## A contadora (junta os montinhos em maços cintados).
 var cash_counter: Node3D
+var bag_roll: Node3D
 ## Os esconderijos (HIDE_* e o alçapão do banheiro).
 var stashes: Array[Node3D] = []
 ## O vizinho do 303 (o perigo da kitnet) e a polícia que ele chama.
@@ -264,6 +266,9 @@ func _add_stations() -> void:
 	model.find_child("MACHINE_Washer", true, false).add_child(washer)
 	cash_counter = CashCounter.new()
 	model.find_child("MACHINE_CashCounter", true, false).add_child(cash_counter)
+	bag_roll = BagRoll.new()
+	bag_roll.position = BagRoll.SPOT
+	add_child(bag_roll)
 	for key: String in Stash.SPOTS:
 		var holder: Node3D = model.find_child(key, true, false)
 		if holder == null:

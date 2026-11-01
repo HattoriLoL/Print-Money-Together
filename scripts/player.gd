@@ -242,6 +242,14 @@ func _input(event: InputEvent) -> void:
 		var held := held_item()
 		if held != null and held.kind in ItemKinds.WEAPONS:
 			swing()
+		elif held != null and held.kind == "trashbag":
+			# Abre o saco pela borda (os amigos jogam dentro) ou dá o nó.
+			get_tree().get_first_node_in_group("kitnet").items.request_bag_toggle()
+		elif held == null and interact_ray.is_colliding():
+			# De mão vazia, o clique usa o que está na mira (tirar do saco de lixo).
+			var target: Object = interact_ray.get_collider()
+			if target != null and target.has_method("click"):
+				target.click(self)
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and _has_control():
 		rotate_y(-event.relative.x * mouse_sensitivity)
 		head.rotation.x = clampf(head.rotation.x - event.relative.y * mouse_sensitivity, -1.5, 1.5)
@@ -748,8 +756,12 @@ func _update_interaction(delta: float) -> void:
 	if dragging():
 		carry = "Dragging the neighbor   [G] let go"
 	elif held != null:
-		carry = "%s   %s[G] drop · hold [G] to throw" % [ItemKinds.label(held).capitalize(),
-				"Click to swing · " if held.kind in ItemKinds.WEAPONS else ""]
+		var click := ""
+		if held.kind in ItemKinds.WEAPONS:
+			click = "Click to swing · "
+		elif held.kind == "trashbag":
+			click = "Click: tie the bag · " if held.data.get("open", false) else "Click: open the bag · "
+		carry = "%s   %s[G] drop · hold [G] to throw" % [ItemKinds.label(held).capitalize(), click]
 	hud.set_carry(carry)
 
 
@@ -784,7 +796,7 @@ func _update_hands() -> void:
 			for piece: Node3D in _press_hands[i].get_children():
 				piece.rotation.y = side * operating.hand_bend()
 		elif held != null:
-			_hands[i].global_transform = held.global_transform * ItemKinds.hand_offset(held.kind, side)
+			_hands[i].global_transform = held.global_transform * ItemKinds.hand_offset(held.kind, side, held.data)
 	if _danger_lost != 0:
 		_danger_mat.albedo_color.a = 0.5 + 0.35 * absf(sin(Time.get_ticks_msec() / 110.0))
 

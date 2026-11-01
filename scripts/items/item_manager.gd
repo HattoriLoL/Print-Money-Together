@@ -95,6 +95,85 @@ func request_open(id: int) -> void:
 		_rpc_open.rpc_id(1, id)
 
 
+## Põe o que o jogador local segura (maço ou montinho) no saco de lixo `id`.
+func request_bag_put(id: int) -> void:
+	if multiplayer.is_server():
+		_bag_put(multiplayer.get_unique_id(), id)
+	else:
+		_rpc_bag_put.rpc_id(1, id)
+
+
+## Abre ou dá o nó no saco de lixo que o jogador local segura.
+func request_bag_toggle() -> void:
+	if multiplayer.is_server():
+		_bag_toggle(multiplayer.get_unique_id())
+	else:
+		_rpc_bag_toggle.rpc_id(1)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_bag_toggle() -> void:
+	if multiplayer.is_server():
+		_bag_toggle(multiplayer.get_remote_sender_id())
+
+
+func _bag_toggle(peer: int) -> void:
+	var bag := held_by(peer)
+	if bag == null or bag.kind != "trashbag":
+		return
+	set_data(bag, "open", not bag.data.get("open", false))
+
+
+## Host: o saco aberto pegou um maço ou montinho que caiu na boca dele.
+func catch_into_bag(bag: Node, item: Node) -> void:
+	var contents: Array = bag.data.get("contents", []).duplicate(true)
+	if contents.size() >= ItemKinds.BAG_CAPACITY:
+		return
+	var data: Dictionary = item.data.duplicate(true)
+	data.erase("resting")
+	contents.append([item.kind, data])
+	consume(item)
+	_set_bag(bag, contents)
+
+
+## Host: o saco aberto e tombado derrama o último que entrou: sai pela boca, com o empurrão e a
+## velocidade do saco. Devolve o item que saiu (ou null).
+func spill_from_bag(bag: Node) -> Node:
+	var contents: Array = bag.data.get("contents", []).duplicate(true)
+	if contents.is_empty():
+		return null
+	var last: Array = contents.pop_back()
+	_set_bag(bag, contents)
+	var up: Vector3 = bag.global_basis.y.normalized()
+	var at: Vector3 = ItemKinds.bag_mouth(bag) + up * 0.06
+	var spin := Basis(Vector3.UP, randf() * TAU)
+	var out := spawn(last[0], Transform3D(spin, at), last[1])
+	out.linear_velocity = bag.linear_velocity + up * ItemKinds.BAG_SPILL_PUSH \
+			+ Vector3(randf_range(-0.3, 0.3), 0.2, randf_range(-0.3, 0.3))
+	out.angular_velocity = Vector3(randf_range(-3, 3), randf_range(-3, 3), randf_range(-3, 3))
+	return out
+
+
+## Tira a última coisa que entrou no saco `id` para a mão (vazia) do jogador local.
+func request_bag_take(id: int) -> void:
+	if multiplayer.is_server():
+		_bag_take(multiplayer.get_unique_id(), id)
+	else:
+		_rpc_bag_take.rpc_id(1, id)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_bag_put(id: int) -> void:
+	if multiplayer.is_server():
+		_bag_put(multiplayer.get_remote_sender_id(), id)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _rpc_bag_take(id: int) -> void:
+	if multiplayer.is_server():
+		_bag_take(multiplayer.get_remote_sender_id(), id)
+
+
 @rpc("any_peer", "call_remote", "reliable")
 func _rpc_open(id: int) -> void:
 	if multiplayer.is_server():
@@ -148,6 +227,55 @@ func _open(peer: int, id: int) -> void:
 		spawned.angular_velocity = Vector3(randf_range(-2.0, 2.0), randf_range(-2.0, 2.0), randf_range(-2.0, 2.0))
 
 
+## O saco no chão perto do jogador (ou null).
+func _bag_near(peer: int, id: int) -> Node:
+	var bag: Node = items.get(id)
+	var player: Node3D = _kitnet.players.get(peer)
+	if bag == null or player == null or bag.kind != "trashbag" or bag.holder != 0:
+		return null
+	if player.global_position.distance_to(bag.global_position) > REACH:
+		return null
+	return bag
+
+
+func _bag_put(peer: int, id: int) -> void:
+	var bag := _bag_near(peer, id)
+	var held := held_by(peer)
+	if bag == null or held == null or held.kind not in ItemKinds.BAG_KINDS:
+		return
+	var contents: Array = bag.data.get("contents", []).duplicate(true)
+	if contents.size() >= ItemKinds.BAG_CAPACITY:
+		return
+	var data: Dictionary = held.data.duplicate(true)
+	data.erase("resting")
+	contents.append([held.kind, data])
+	consume(held)
+	_set_bag(bag, contents)
+
+
+func _bag_take(peer: int, id: int) -> void:
+	var bag := _bag_near(peer, id)
+	if bag == null or held_by(peer) != null:
+		return
+	var contents: Array = bag.data.get("contents", []).duplicate(true)
+	if contents.is_empty():
+		return
+	var last: Array = contents.pop_back()
+	_set_bag(bag, contents)
+	give(peer, last[0], last[1])
+
+
+## O saco com o que tem dentro agora: cresce para cima (o fundo fica no chão), e todos veem.
+func _set_bag(bag: Node, contents: Array) -> void:
+	var before: float = ItemKinds.bag_size(bag.data).y
+	set_data(bag, "contents", contents)
+	var grow: float = ItemKinds.bag_size(bag.data).y - before
+	if grow > 0.0 and bag.holder == 0:
+		bag.snap(bag.global_transform.translated(Vector3.UP * grow / 2.0))
+		_kitnet.rpc_roster(bag, &"_remote_xform", [bag.global_transform])
+	bag.sleeping = false
+
+
 func _drop(peer: int, xform: Transform3D, velocity: Vector3, spin: Vector3) -> void:
 	var item := held_by(peer)
 	var player: Node3D = _kitnet.players.get(peer)
@@ -192,6 +320,7 @@ func _set_data(id: int, key: String, value: Variant) -> void:
 	if item != null:
 		item.data[key] = value
 		ItemKinds.refresh(item)
+		item.data_changed(key)
 
 
 @rpc("authority", "call_remote", "reliable")

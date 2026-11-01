@@ -531,6 +531,9 @@ func _sees_evidence() -> bool:
 	for item in _kitnet.items.items.values():
 		if item.kind in EVIDENCE:
 			points.append(item.global_position + Vector3.UP * 0.03)
+		elif item.kind == "trashbag" and item.data.get("open", false) and not item.data.get("contents", []).is_empty():
+			# Saco aberto com dinheiro: dá para ver os maços pela boca.
+			points.append(ItemKinds.bag_mouth(item))
 	if _kitnet.printer != null and _kitnet.printer.printing():
 		points.append(_kitnet.printer.global_position + Vector3.UP * 0.25)
 	if _kitnet.cash_counter != null and not (_kitnet.cash_counter.hopper.is_empty() and _kitnet.cash_counter.tray.is_empty()):
