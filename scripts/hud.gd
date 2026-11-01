@@ -18,11 +18,21 @@ var _noise_bar: ColorRect
 var _throw_back: ColorRect
 var _throw_bar: ColorRect
 var _message_tween: Tween
+## Por cima de tudo menos dos textos: a vista de dentro do esconderijo (fresta, cortina) e a tela
+## de preso.
+var _hide_view: Control
+var _jail: Control
 var _hint_tween: Tween
 var _poll := 0.0
 
 
 func _ready() -> void:
+	# Primeiro (embaixo dos textos): a vista do esconderijo e a tela de preso.
+	_hide_view = Control.new()
+	_hide_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hide_view.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(_hide_view)
+	_build_jail()
 	var crosshair := ColorRect.new()
 	crosshair.color = Color(1, 1, 1, 0.75)
 	crosshair.mouse_filter = Control.MOUSE_FILTER_IGNORE  # fica bem embaixo do cursor preso
@@ -153,6 +163,76 @@ func is_blocking() -> bool:
 func set_paused(open: bool) -> void:
 	_pause.visible = open
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if open else Input.MOUSE_MODE_CAPTURED
+
+
+## A vista de dentro do esconderijo (hideout.gd, `view`): "slit" (fresta da porta do
+## guarda-roupa), "low" (vão do sofá-cama), "curtain" (cortina do box) ou "" (nada).
+func set_hide_view(kind: String) -> void:
+	for child in _hide_view.get_children():
+		child.queue_free()
+	var black := Color(0.0, 0.0, 0.0, 0.97)
+	match kind:
+		"slit":
+			_shade(Rect2(0.0, 0.0, 0.45, 1.0), black)
+			_shade(Rect2(0.55, 0.0, 0.45, 1.0), black)
+			_shade(Rect2(0.45, 0.0, 0.1, 0.12), black)
+			_shade(Rect2(0.45, 0.88, 0.1, 0.12), black)
+		"low":
+			_shade(Rect2(0.0, 0.0, 1.0, 0.43), black)
+			_shade(Rect2(0.0, 0.6, 1.0, 0.4), black)
+		"curtain":
+			_shade(Rect2(0.0, 0.0, 1.0, 1.0), Color(0.3, 0.62, 0.62, 0.6))
+			for i in 8:
+				_shade(Rect2(i / 8.0 + 0.03, 0.0, 0.025, 1.0), Color(0.08, 0.28, 0.3, 0.3))
+
+
+func _shade(rect: Rect2, color: Color) -> void:
+	var r := ColorRect.new()
+	r.color = color
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	r.anchor_left = rect.position.x
+	r.anchor_top = rect.position.y
+	r.anchor_right = rect.end.x
+	r.anchor_bottom = rect.end.y
+	_hide_view.add_child(r)
+
+
+func _build_jail() -> void:
+	var back := ColorRect.new()
+	back.color = Color(0.05, 0.02, 0.05, 0.45)
+	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	back.set_anchors_preset(Control.PRESET_FULL_RECT)
+	back.visible = false
+	add_child(back)
+	_jail = back
+	var title := _label(54)
+	title.text = "ARRESTED"
+	title.add_theme_color_override("font_color", Color(1.0, 0.3, 0.25))
+	title.anchor_left = 0.5
+	title.anchor_right = 0.5
+	title.anchor_top = 0.62
+	title.anchor_bottom = 0.62
+	title.offset_left = -400
+	title.offset_right = 400
+	title.offset_top = 0
+	title.offset_bottom = 70
+	_jail.add_child(title)
+	var sub := _label(20)
+	sub.text = "In the back of the police car until the raid is over.\nYour friends can still hide the money."
+	sub.anchor_left = 0.5
+	sub.anchor_right = 0.5
+	sub.anchor_top = 0.62
+	sub.anchor_bottom = 0.62
+	sub.offset_left = -400
+	sub.offset_right = 400
+	sub.offset_top = 70
+	sub.offset_bottom = 130
+	_jail.add_child(sub)
+
+
+## A tela de preso (esperando a batida acabar).
+func set_jailed(on: bool) -> void:
+	_jail.visible = on
 
 
 func set_prompt(text: String) -> void:

@@ -52,8 +52,8 @@ guilhotina e do cartucho vira uma decisão na hora de vender.
 ## O vizinho do 303
 
 Feito: ver `docs/vizinho.md`. A polícia leva o que está à vista, e os esconderijos salvam o resto.
-Ainda falta esconder ele desmaiado (acordado, ele grita abafado), os policiais como bonecos, e a
-noite e a janela aberta deixando ele mais irritado.
+A batida com policiais de verdade está em `docs/policia.md`. Ainda falta esconder ele desmaiado
+(acordado, ele grita abafado), e a noite e a janela aberta deixando ele mais irritado.
 
 ## Outras ideias (inspiradas no gênero)
 

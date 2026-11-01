@@ -27,6 +27,8 @@ const BILLS_PER_SECOND := 10.0
 ## Quanto tempo segurando para destravar (s).
 const JAM_CLEAR := 1.2
 const NOISE := 0.15
+## Consumo contando (W).
+const WATTS := 150.0
 ## Funil (art_source/blender/machines.py, COUNTER_HOPPER; y do Blender = -z): o centro da tampa
 ## dele e a inclinação (no X); as notas deitam em cima da tampa.
 const HOPPER_CENTER := Vector3(0.0, 0.17, -0.06)
@@ -72,6 +74,7 @@ func _ready() -> void:
 	name = "CashCounter"
 	add_to_group("station")
 	add_to_group("noise_source")
+	add_to_group("powered")
 	_kitnet = get_tree().get_first_node_in_group("kitnet")
 
 	hopper_zone = InteractZone.new()
@@ -112,8 +115,14 @@ func _ready() -> void:
 	_render()
 
 
+## Contando agora (sem luz, ela para e volta sozinha quando a luz volta).
 func counting() -> bool:
-	return not jammed and hopper.get("count", 0) > 0 and tray.get("count", 0) < BUNDLE_SIZE
+	return not jammed and hopper.get("count", 0) > 0 and tray.get("count", 0) < BUNDLE_SIZE \
+			and _kitnet.has_power()
+
+
+func power_draw() -> float:
+	return WATTS if counting() else 0.0
 
 
 func noise() -> float:
@@ -359,6 +368,8 @@ func _update_visuals(delta: float) -> void:
 
 
 func _screen_text(now: float) -> String:
+	if not _kitnet.has_power():
+		return ""
 	if jammed:
 		return "JAM" if int(now * 3.0) % 2 == 0 else ""
 	var count: int = tray.get("count", 0)

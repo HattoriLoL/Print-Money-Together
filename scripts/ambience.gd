@@ -5,7 +5,10 @@ extends Node
 ## - a lâmpada pelada pisca de vez em quando e balança no fio quando alguém passa perto (a luz
 ##   vai junto, então as sombras balançam);
 ## - a TV de tubo mostra chuvisco;
-## - a panela de tinta solta vapor.
+## - a panela de tinta solta vapor;
+## - as luzes da kitnet (a lâmpada, a calha da cozinha, o banheiro e o serviço) seguem a luz do
+##   disjuntor (power.gd, `light_level`): tremem na sobrecarga e apagam sem luz, junto com a TV.
+##   As do corredor são do prédio e ficam acesas.
 
 const Toon := preload("res://scripts/toon.gd")
 
@@ -30,6 +33,9 @@ const PUSH_STRENGTH := 1.2
 
 ## Vapor: onde fica a superfície da tinta na panela (local da MACHINE_InkPot no Godot).
 const STEAM_OFFSET := Vector3(0, 0.135, 0)
+## Zonas de luz que não são da kitnet (não apagam com o disjuntor).
+const BUILDING_ZONES := ["hall"]
+const TV_BRIGHTNESS := 0.9
 
 var fan_blades: Node3D
 var tv_material: ShaderMaterial
@@ -58,6 +64,13 @@ var _flicker_wait := 0.0
 ## Piscada em andamento: pares [segundos, brilho].
 var _flicker: Array = []
 var _last_positions := {}
+## Quanto as luzes da kitnet brilham pela luz do disjuntor (1 = normal, 0 = sem luz).
+var mains_level := 1.0
+## As outras luzes da kitnet: [Light3D, energia cheia].
+var _mains_lights: Array = []
+## O que brilha nas outras luminárias da kitnet: [material, brilho cheio].
+var _mains_glow: Array = []
+var _bulb_shown := 1.0
 
 
 func setup(model: Node3D, kitnet: Node) -> void:
@@ -71,6 +84,7 @@ func setup(model: Node3D, kitnet: Node) -> void:
 	_clothes = model.find_child("MACHINE_ClothesLine", true, false)
 	_setup_wind("Curtain_Main", CURTAIN_WIND, CURTAIN_ROD_Y, 1.4)
 	_setup_bulb()
+	_setup_mains()
 	_setup_tv()
 	_setup_steam()
 
@@ -83,6 +97,7 @@ func _process(delta: float) -> void:
 		var wind: Vector4 = _clothes.get_instance_shader_parameter("wind")
 		wind.x = CLOTHES_WIND[0] * lerpf(0.1, 1.0, spin)
 		_clothes.set_instance_shader_parameter("wind", wind)
+	_update_mains()
 	_update_flicker(delta)
 	_update_swing(delta)
 
@@ -146,13 +161,50 @@ func _update_flicker(delta: float) -> void:
 
 
 func _set_bulb(level: float) -> void:
-	if is_equal_approx(level, bulb_level):
+	var shown := level * mains_level
+	if is_equal_approx(level, bulb_level) and is_equal_approx(shown, _bulb_shown):
 		return
 	bulb_level = level
+	_bulb_shown = shown
 	if _light != null:
-		_light.light_energy = light_energy_full * level
+		_light.light_energy = light_energy_full * shown
 	for i in _bulb_materials.size():
-		_bulb_materials[i].set_shader_parameter("emission_energy", _bulb_emission[i] * level)
+		_bulb_materials[i].set_shader_parameter("emission_energy", _bulb_emission[i] * shown)
+
+
+# --- Luz do disjuntor ---------------------------------------------------------
+
+func _setup_mains() -> void:
+	for light: Light3D in _model.find_children("LIGHT_*", "Light3D", true, false):
+		if light != _light and _zone_of(light.name) not in BUILDING_ZONES:
+			_mains_lights.append([light, light.light_energy])
+	for lamp: MeshInstance3D in _model.find_children("LAMP_*", "MeshInstance3D", true, false):
+		if String(lamp.name) == "LAMP_" + BULB_NAME or _zone_of(lamp.name) in BUILDING_ZONES:
+			continue
+		Toon.apply_one(lamp)
+		for i in lamp.mesh.get_surface_count():
+			var source := lamp.mesh.surface_get_material(i)
+			var mat := lamp.get_surface_override_material(i) as ShaderMaterial
+			if mat != null and source != null and source.resource_name.begins_with("M_Lamp_"):
+				_mains_glow.append([mat, mat.get_shader_parameter("emission_energy")])
+
+
+static func _zone_of(node_name: StringName) -> String:
+	return String(node_name).get_slice("_", 1)
+
+
+func _update_mains() -> void:
+	var power: Node = _kitnet.get("power") if _kitnet != null else null
+	var level: float = power.light_level() if power != null else 1.0
+	if is_equal_approx(level, mains_level):
+		return
+	mains_level = level
+	for entry: Array in _mains_lights:
+		entry[0].light_energy = entry[1] * level
+	for entry: Array in _mains_glow:
+		entry[0].set_shader_parameter("emission_energy", entry[1] * level)
+	if tv_material != null:
+		tv_material.set_shader_parameter("brightness", TV_BRIGHTNESS * (1.0 if level > 0.0 else 0.0))
 
 
 ## Pêndulo no fio: quem passa perto empurra o ar na direção em que anda.

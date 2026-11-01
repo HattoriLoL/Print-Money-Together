@@ -12,6 +12,8 @@ extends AnimatableBody3D
 const InteractZone := preload("res://scripts/interact_zone.gd")
 const OPEN_ANGLE := 100.0
 const SWING_TIME := 0.45
+## Grossura da colisão da folha (m), sem os puxadores.
+const LEAF_THICKNESS := 0.05
 ## Tranca de barra da 301 (art_source/blender/structure.py, _door_locks): no meio da folha, do
 ## lado de dentro (-Z local).
 const LOCK_ZONE := Vector3(0.38, 1.32, -0.07)
@@ -48,6 +50,9 @@ func adopt(leaf: MeshInstance3D) -> void:
 	var box := leaf.get_aabb()
 	var shape := BoxShape3D.new()
 	shape.size = box.size
+	# Só a grossura da folha: a caixa com os puxadores dos dois lados ficava com ~18 cm e, aberta,
+	# comia o vão da porta do banheiro (o jogador não passava).
+	shape.size.z = minf(box.size.z, LEAF_THICKNESS)
 	var col := CollisionShape3D.new()
 	col.shape = shape
 	col.position = box.get_center()

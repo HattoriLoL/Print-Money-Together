@@ -52,6 +52,9 @@ const NOISE_SPIN := 0.55
 const NOISE_HELD := 0.3
 ## A cada quanto a máquina bate no chão andando (s).
 const THUMP_EVERY := 0.42
+## Consumo lavando e centrifugando (W): o motor na centrifugação é o que mais pesa no disjuntor.
+const WASH_WATTS := 500.0
+const SPIN_WATTS := 1150.0
 const SYNC_RATE := 10.0
 
 var phase := Phase.IDLE
@@ -97,6 +100,7 @@ func _ready() -> void:
 	name = "Washer"
 	add_to_group("station")
 	add_to_group("noise_source")
+	add_to_group("powered")
 	_kitnet = get_tree().get_first_node_in_group("kitnet")
 	_body = get_parent()
 	_home = _body.transform
@@ -146,8 +150,25 @@ func running() -> bool:
 	return phase != Phase.IDLE
 
 
+## No meio de um ciclo e com luz (sem luz, ela para onde estava e espera a luz voltar).
+func live() -> bool:
+	return running() and _kitnet.has_power()
+
+
+## Consumo agora (W), para o disjuntor (power.gd).
+func power_draw() -> float:
+	match phase:
+		Phase.WASH:
+			return WASH_WATTS
+		Phase.SPIN:
+			return SPIN_WATTS
+	return 0.0
+
+
 ## Barulho agora, de 0 a 1.
 func noise() -> float:
+	if not live():
+		return 0.0
 	match phase:
 		Phase.WASH:
 			return NOISE_WASH
@@ -162,7 +183,7 @@ func unbalanced() -> bool:
 
 
 func walking() -> bool:
-	return phase == Phase.SPIN and not steadied
+	return phase == Phase.SPIN and not steadied and _kitnet.has_power()
 
 
 # --- Host -------------------------------------------------------------------------------------
@@ -178,7 +199,9 @@ func _server_tick(delta: float) -> void:
 	if held != steadied:
 		steadied = held
 		_dirty = true
-	match phase:
+	# Sem luz no meio do ciclo, o timer espera.
+	var current: int = phase if live() or not running() else -1
+	match current:
 		Phase.WASH:
 			time_left -= delta
 			_dirty = true
@@ -243,7 +266,7 @@ func _use_drum(peer: int) -> void:
 
 ## [E] no botão: com a tampa fechada e notas dentro, começa a lavar.
 func _start(_peer: int) -> void:
-	if running() or lid_open or contents.is_empty():
+	if running() or lid_open or contents.is_empty() or not _kitnet.has_power():
 		return
 	phase = Phase.WASH
 	time_left = WASH_SECONDS
@@ -338,6 +361,8 @@ func _drum_prompt(player: Node) -> String:
 
 
 func _panel_prompt(_player: Node) -> String:
+	if not _kitnet.has_power():
+		return "No power: the wash is paused" if running() else "No power"
 	match phase:
 		Phase.WASH:
 			return "Washing... %s" % _clock(time_left + SPIN_SECONDS)
@@ -367,8 +392,9 @@ func _update_visuals(delta: float) -> void:
 	var now := Time.get_ticks_msec() / 1000.0
 	# A máquina no lugar (mais o quanto andou) e tremendo.
 	_shown_offset = _shown_offset.lerp(offset, clampf(delta * 12.0, 0.0, 1.0))
+	var shown_phase: int = phase if _kitnet.has_power() else Phase.IDLE
 	var amp := 0.0
-	match phase:
+	match shown_phase:
 		Phase.WASH:
 			amp = SHAKE_WASH
 		Phase.SPIN:
@@ -383,7 +409,7 @@ func _update_visuals(delta: float) -> void:
 		_lid.rotation.x = -_lid_angle
 
 	# O cesto: lavando, os montinhos vão e voltam; centrifugando, giram rápido.
-	match phase:
+	match shown_phase:
 		Phase.WASH:
 			_piles.rotation.y = sin(now * 5.0) * 0.9
 		Phase.SPIN:
@@ -396,13 +422,15 @@ func _update_visuals(delta: float) -> void:
 		var left := time_left + (SPIN_SECONDS if phase == Phase.WASH else 0.0)
 		_knob.rotation.z = -TAU * 0.8 * (left / total if running() else 0.0)
 	if _led:
-		var lit := running() or (now - _done_time < 3.0 and int(now * 3.0) % 2 == 0)
+		var lit := live() or (now - _done_time < 3.0 and int(now * 3.0) % 2 == 0)
 		_led.material_override = null if lit else Toon.material(_led_off)
 	_screen.text = _screen_text(now)
 	_update_sounds(delta)
 
 
 func _screen_text(now: float) -> String:
+	if not _kitnet.has_power():
+		return ""
 	match phase:
 		Phase.WASH:
 			return "WASH %s" % _clock(time_left + SPIN_SECONDS)
@@ -438,7 +466,7 @@ func _rebuild_piles() -> void:
 
 func _update_sounds(delta: float) -> void:
 	var want: AudioStreamWAV = null
-	match phase:
+	match (phase if _kitnet.has_power() else Phase.IDLE):
 		Phase.WASH:
 			want = _wash_sound
 		Phase.SPIN:

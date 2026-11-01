@@ -24,6 +24,14 @@ O vizinho do 303 usa o mesmo boneco, com o roupão na cor do moletom, as mãos d
 acessório `Acc_Neighbor`: bobes, costeletas grisalhas e bigodão. O `setup` do rig aceita o nome
 do acessório, e `keep_gloves` deixa as mãos dele aparecendo no IK. Ver `docs/vizinho.md`.
 
+Os policiais da batida também: farda azul na cor do moletom, mãos de pele, sem o capuz nem o
+bolso, cacetete na mão direita e os acessórios `Acc_Police` (quepe com distintivo e bigodão) e
+`Acc_PoliceShades` (o quepe com óculos de aviador). Ver `docs/policia.md`.
+
+Na batida, o jogador pode se esconder (o corpo some nos lugares fechados e a câmera fica na fresta)
+e ser preso: cacetada, algemas de aço nos pulsos, arrastado pela gola (cada máquina puxa o ragdoll
+dele pelos quadris e pelo peito, como o vizinho) e esperando na escada até a batida acabar.
+
 ## Modelo
 
 `art_source/blender/character.py` monta o boneco e exporta `assets/models/character.glb` (e salva

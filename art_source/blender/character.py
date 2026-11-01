@@ -11,7 +11,8 @@ Exporta assets/models/character.glb com um esqueleto (Armature) e:
   dobram como pano, sem emendas;
 - peças rígidas presas nos ossos: a cabeça (Char_Head, com o rosto e os acessórios Acc_Cap,
   Acc_Glasses, Acc_Quiff e Acc_Beanie; o jogo mostra só o da vaga; Acc_Neighbor, os bobes e o
-  bigode, é só do vizinho do 303), as luvas (Char_Glove_L/R),
+  bigode, é só do vizinho do 303; Acc_Police e Acc_PoliceShades, quepe com distintivo e bigode ou
+  óculos de aviador, só dos policiais), as luvas (Char_Glove_L/R),
   os tênis com a barra da calça (Char_Shoe_L/R), os punhos das mangas (Char_Cuff_L/R) e os
   detalhes do moletom (Char_Hood: capuz, gola e cordões; Char_Pocket: bolso canguru;
   Char_BackPockets: bolsos de trás da calça).
@@ -81,6 +82,12 @@ lib.MATERIALS.update({
     "M_CurlerPin": ((0.9, 0.9, 0.92), 0.3, 0.0, 0.0),
     "M_HairGrey": ((0.62, 0.6, 0.58), 0.85, 0.0, 0.0),
     "M_Mustache": ((0.3, 0.27, 0.26), 0.9, 0.0, 0.0),
+    "M_PoliceCap": ((0.12, 0.16, 0.3), 0.8, 0.0, 0.0),
+    "M_PoliceBand": ((0.05, 0.05, 0.06), 0.7, 0.0, 0.0),
+    "M_PoliceVisor": ((0.04, 0.04, 0.05), 0.2, 0.0, 0.0),
+    "M_Badge": ((0.95, 0.75, 0.25), 0.3, 0.8, 0.0),
+    "M_Shades": ((0.05, 0.06, 0.08), 0.1, 0.0, 0.0),
+    "M_ShadesFrame": ((0.85, 0.7, 0.3), 0.3, 0.8, 0.0),
 })
 
 # Juntas (no boneco em pé, pés em z = 0). Pernas compridas, olhos a 1,60 m. Só o lado esquerdo
@@ -325,6 +332,33 @@ def accessories(coll, parent):
         blob(p, (s * 0.045, head_front(s * 0.045, mz) - 0.03, mz - 0.006), (0.062, 0.034, 0.03),
              "M_Mustache", rot=m, seg=(14, 8))
     p.finish("Acc_Neighbor", coll, parent=parent)
+
+    # Policiais da batida (scripts/cop.gd; não são de vaga nenhuma): quepe azul-marinho de copa
+    # alargada, faixa preta, pala de verniz e o distintivo dourado na frente. Um tem bigodão; o
+    # outro, óculos de aviador.
+    for name, extra in (("Acc_Police", "mustache"), ("Acc_PoliceShades", "shades")):
+        p = lib.Part(bevel=0.004)
+        p.cyl((0, cy, top - 0.035), 0.13, hr.x * 1.03, "M_PoliceCap", seg=28, radius2=hr.x * 1.22)
+        p.cyl((0, cy, top + 0.032), 0.012, hr.x * 1.22, "M_PoliceCap", seg=28, radius2=hr.x * 1.18)
+        p.cyl((0, cy, top - 0.088), 0.035, hr.x * 1.05, "M_PoliceBand", seg=28)
+        m = Matrix.Translation((0, cy - hr.y - 0.035, top - 0.105)) @ Matrix.Rotation(-0.35, 4, "X")
+        p.box_m((0.2, 0.11, 0.012), m, "M_PoliceVisor", bevel=0.006)
+        blob(p, (0, cy - hr.y * 1.13, top - 0.02), (0.026, 0.008, 0.032), "M_Badge", seg=(12, 8))
+        if extra == "mustache":
+            mz = 0.135
+            for s in (-1, 1):
+                m = Matrix.Rotation(s * 0.35, 4, "Y")
+                blob(p, (s * 0.04, head_front(s * 0.04, mz) - 0.028, mz), (0.055, 0.03, 0.026),
+                     "M_Mustache", rot=m, seg=(14, 8))
+        else:
+            ez = 0.24
+            for s in (-1, 1):
+                ex = s * 0.064
+                blob(p, (ex, head_front(ex, ez) - 0.032, ez - 0.012), (0.052, 0.01, 0.042), "M_Shades",
+                     rot=Matrix.Rotation(-s * 0.12, 4, "Y"), seg=(16, 8))
+            fy = head_front(0, ez)
+            p.box(-0.02, fy - 0.045, ez + 0.012, 0.02, fy - 0.03, ez + 0.02, "M_ShadesFrame")
+        p.finish(name, coll, parent=parent)
 
 
 def glove(coll, rig, s, side, wrist):

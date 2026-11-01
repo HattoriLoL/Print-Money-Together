@@ -13,7 +13,7 @@ blender --background art_source/kitnet.blend --python art_source/blender/preview
 ```
 
 O `preview.py` renderiza a planta de cima (sem o teto) e vistas de dentro, com 4 cápsulas do
-tamanho do jogador (raio 0,33 m, altura 1,75 m) nos pontos de spawn.
+tamanho do jogador (raio 0,3 m, altura 1,75 m) nos pontos de spawn.
 
 ## Planta
 
@@ -58,7 +58,7 @@ A cortina da janela (`Curtain_Main`) fica meio aberta: dá para ver a impressora
 | `HIDE_*` | Esconderijos: `HIDE_SofaBed` (vão de 12 cm embaixo), `HIDE_Wardrobe` (e a mala em cima), `HIDE_Fridge`. |
 | `KEEP_BathHatch` | Tampa do alçapão do forro do banheiro (o pacote vai entre o forro e a laje). |
 | `KEEP_Door_<n>` | Porta com a origem na dobradiça, folha para +X local, face de fora para -Y local: `301` (entrada, com olho mágico), `302`, `303`, `Stairs`, `Bath`. |
-| `KEEP_Breaker` | Quadro de luz ao lado da entrada. |
+| `KEEP_Breaker` | Quadro de luz ao lado da entrada: o disjuntor geral (`docs/energia.md`). |
 | `LAMP_<zona>_<n>` e `M_Lamp_<zona>` | Luminária e o material que brilha com a zona ligada. Zonas: `main`, `kitchen`, `bath`, `service`, `hall`. |
 | `Cord_Lamp_<zona>_<n>` | Canopla, fio e bocal da lâmpada pelada: sem colisão, mas fazem sombra (a rodela escura no teto). |
 | `LIGHT_<zona>_<n>` | Luz pontual de prévia (vai no .glb e pode servir de base). |
@@ -117,14 +117,19 @@ A kitnet fica no 3º andar. A rua passa 8,6 m abaixo, entre o nosso prédio e o 
   cabeça, a sombra cobria o cômodo). Os outros jogadores aparecem com sombra.
 - `KEEP_Door_*` viram portas (`scripts/door.gd`) que abrem sempre para dentro (-Z local) com [E].
   `302`, `303` e `Stairs` estão trancadas. A `301` tranca por dentro, na tranca de barra.
-- `HIDE_*` e `KEEP_BathHatch` viram esconderijos (`scripts/machines/stash.gd`).
+- `HIDE_*` e `KEEP_BathHatch` viram esconderijos de dinheiro (`scripts/machines/stash.gd`).
+- O guarda-roupa, o sofá-cama, o box, o parapeito da janela (uma laje criada no código, do lado de
+  fora) e o canto do lixo do 302 viram esconderijos de gente para a batida
+  (`scripts/hideout.gd`).
+- No host, a colisão do modelo vira a malha de navegação dos policiais (`_bake_navigation`), sem
+  as portas.
 - O vizinho do 303 sai pela porta dele quando o barulho passa da conta (ver `docs/vizinho.md`).
 - `LIGHT_<zona>_<n>` ganham alcance, energia e sombra por zona (`ZONE_LIGHT`).
 - Os jogadores nascem nos `SPAWN_<vaga + 1>`.
 
 As resmas, a impressora, o varal, a guilhotina, a máquina de lavar e a contadora já funcionam (ver `docs/maquinas.md`), e o PC compra
-papel e tinta (ver `docs/loja.md`). O vizinho do 303, a polícia e os esconderijos estão em
-`docs/vizinho.md`. A panela de tinta ainda é decoração, e o fiscal ainda não existe.
+papel e tinta (ver `docs/loja.md`). O vizinho do 303 está em `docs/vizinho.md`, e a batida
+policial e os esconderijos em `docs/policia.md`. O disjuntor está em `docs/energia.md`. A panela de tinta ainda é decoração, e o fiscal ainda não existe.
 
 ## Rede
 

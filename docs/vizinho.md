@@ -80,38 +80,14 @@ A 301 tranca por dentro: [E] na tranca de barra do meio da folha (`door.make_loc
 - O host abre qualquer porta com `set_open`, trancada ou não: o vizinho sai pela 303 e a polícia
   entra pela 301.
 
-## A polícia
+## A polícia e os esconderijos
 
-`police.gd`. A viatura chega `RAID_DELAY` (30 s) depois da ligação.
+Quando a ligação completa, a polícia chega 30 s depois e entra de verdade: dois policiais revistam
+os móveis com chance, pegam o dinheiro à vista e prendem quem encontrarem. Tudo isso está em
+`docs/policia.md`, junto com os esconderijos de dinheiro (`stash.gd`) e os de gente
+(`hideout.gd`).
 
-- Durante a espera, o HUD mostra a contagem no alto.
-- A sirene vai chegando (`SIREN_AT`), e as luzes vermelha e azul piscam pela janela e no
-  corredor.
-
-Na batida:
-
-1. A 301 abre à força.
-2. A polícia leva toda folha, nota e maço que for item (até na mão de alguém).
-3. Também leva o que estiver na guilhotina, na máquina de lavar e na contadora. Cada uma tem
-   `confiscate()`.
-4. O caixa paga `FINE` ($100, ou o que tiver), só se acharam alguma coisa.
-5. A partida continua.
-
-Enquanto a polícia está a caminho, a paciência do vizinho não sobe.
-
-## Esconderijos
-
-`stash.gd`, presos nos objetos do modelo. [E] com um item na mão guarda o item lá dentro (ele
-some do mapa). [E] de mão vazia tira o último que entrou.
-
-| Esconderijo | Onde | Cabe |
-|---|---|---|
-| `HIDE_Wardrobe` | portas do guarda-roupa | 8 |
-| `HIDE_SofaBed` | vão embaixo do sofá-cama (olhar para o chão na frente) | 5 |
-| `HIDE_Fridge` | porta da geladeira | 4 |
-| `KEEP_BathHatch` | alçapão do forro do banheiro, em cima do vaso | 10 |
-
-A polícia não acha o que está escondido, e o vizinho não vê.
+Enquanto a polícia está a caminho ou dentro, a paciência do vizinho não sobe.
 
 ## Rede
 
@@ -138,5 +114,4 @@ enquanto ele está no chão: a zona de [E] e a cápsula da frigideira vão até 
 
 - Esconder ele desmaiado (banheiro, guarda-roupa): acordado lá dentro, ele grita abafado e faz
   barulho.
-- Os policiais como bonecos (por enquanto, só a sirene, as luzes e a mensagem).
 - Janela aberta e noite deixando ele mais irritado.

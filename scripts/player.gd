@@ -145,6 +145,14 @@ var _touching := {}
 var camera_kick := Vector2.ZERO
 var _camera_kick_vel := Vector2.ZERO
 var _tag: Label3D
+## Escondido (hideout.gd) agora, ou null. Vale em todas as máquinas (o host decide).
+var hiding_spot: Node = null
+## Preso: "" (solto), "cuffed" (algemado e caído, sendo arrastado) ou "jailed" (esperando a batida
+## acabar, na escada). Vale em todas as máquinas (o host decide; police.gd e cop.gd).
+var arrest_stage := ""
+var arrest_cop: Node = null
+var _cuffs: Array[MeshInstance3D] = []
+var _jail_cam: Camera3D
 ## Zona em que o [E] está sendo segurado agora (só no jogador local).
 var _hold_zone: Node = null
 ## Luvas: [direita, esquerda]. As de segurar item e as abertas, apertando a folha na máquina que
@@ -203,6 +211,7 @@ func _ready() -> void:
 	_fall_camera_ball.radius = FALL_CAMERA_RADIUS
 	_stars = Bonk.make_stars()
 	add_child(_stars)
+	_build_cuffs()
 	if is_local():
 		_setup_input()
 		camera.make_current()
@@ -261,11 +270,13 @@ func _process(delta: float) -> void:
 		_update_hold_point(delta)
 	_update_swing(delta)
 	_update_stars(delta)
+	_update_arrest_body()
 	_update_hands()
 	_animate_character(delta)
 	if is_local():
 		_update_fall_camera()
 		_update_station_camera(delta)
+		_update_hide_camera()
 
 
 func _physics_process(delta: float) -> void:
@@ -279,6 +290,15 @@ func _physics_process(delta: float) -> void:
 	_last_physics_pos = global_position
 	if not is_local():
 		_follow_remote(delta)
+		return
+	if arrest_stage == "jailed":
+		# Preso na escada: parado e sem controle até a batida acabar.
+		velocity = Vector3.ZERO
+		hud.set_prompt("")
+		_send_state(delta)
+		return
+	if hiding_spot != null:
+		_tick_hiding(delta)
 		return
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
@@ -347,7 +367,8 @@ func _update_push(delta: float) -> void:
 	_shove = _shove.lerp(Vector3.ZERO, clampf(PUSH_DAMPING * delta, 0.0, 1.0))
 	var spring := Vector3.ZERO
 	for other: Node3D in get_tree().get_nodes_in_group("player"):
-		if other == self or other.get("fallen") or absf(other.global_position.y - global_position.y) > 1.2:
+		if other == self or other.get("fallen") or absf(other.global_position.y - global_position.y) > 1.2 \
+				or not other.present() or not present():
 			continue
 		var away := global_position - other.global_position
 		away.y = 0.0
@@ -444,6 +465,10 @@ func _update_fall(delta: float) -> void:
 ## como uma bolinha de FALL_CAMERA_RADIUS saindo da cabeça da cápsula, e para antes de entrar na
 ## parede (a cabeça do ragdoll pode parar encostada nela ou num batente).
 func _update_fall_camera() -> void:
+	if arrest_stage == "cuffed" and fallen:
+		# Arrastado para longe da cápsula: a câmera vai junto com a cabeça, sem o teste de parede.
+		camera.global_position = character.ragdoll_head() + Vector3.UP * 0.22
+		return
 	var weight := 1.0 if fallen else 1.0 - smoothstep(0.0, 1.0, character.getup)
 	if weight <= 0.0:
 		return
@@ -458,6 +483,189 @@ func _update_fall_camera() -> void:
 	query.collision_mask = 1
 	var safe: PackedFloat32Array = get_world_3d().direct_space_state.cast_motion(query)
 	camera.global_position = from + move * safe[0]
+
+
+# --- Escondido e preso (batida policial) ----------------------------------------
+
+## Quanto dá para virar a cabeça escondido (rad): para os lados e para cima/baixo.
+const HIDE_LOOK := Vector2(0.9, 0.6)
+## Câmera de quem está preso: do alto do corredor, perto da escada, olhando para a 301.
+const JAIL_VIEW := [Vector3(-1.2, 2.3, 1.3), Vector3(4.0, 0.9, 0.5)]
+
+
+## Está no mapa de verdade (nem escondido nem preso esperando): empurra e é empurrado.
+func present() -> bool:
+	return hiding_spot == null and arrest_stage != "jailed"
+
+
+## Todas as máquinas: o esconderijo `spot` diz se este jogador está dentro dele agora (`found` = a
+## polícia abriu e achou). O dono trava o corpo lá dentro, ou sai pela frente.
+func update_hiding(spot: Node, inside: bool, found := false) -> void:
+	if inside:
+		hiding_spot = spot
+		if is_local():
+			if operating != null:
+				operating.request_leave()
+			global_position = spot.body_point(spot.slot_of(name.to_int()))
+			velocity = Vector3.ZERO
+			rotation.y = spot.look_yaw()
+			head.rotation.x = 0.0
+			collision.disabled = true
+			hud.set_hide_view(spot.view)
+			hud.set_carry("")
+			hud.show_hint("Hiding in %s · Mouse: peek around · E: come out" % spot.spot_name, 5.0)
+	elif hiding_spot == spot:
+		hiding_spot = null
+		if is_local():
+			global_position = spot.exit_point()
+			velocity = Vector3.ZERO
+			collision.disabled = false
+			camera.position = Vector3.ZERO
+			hud.set_hide_view("")
+			if found:
+				hud.show_message("FOUND YOU!\nRun!", 2.5)
+				kick_camera(0.8)
+	_update_presence()
+
+
+## Só o dono, escondido: o corpo fica no lugar, só a cabeça vira (um pouco), e [E] sai.
+func _tick_hiding(delta: float) -> void:
+	var slot: int = hiding_spot.slot_of(name.to_int())
+	if slot < 0:
+		return
+	global_position = hiding_spot.body_point(slot)
+	velocity = Vector3.ZERO
+	var yaw: float = hiding_spot.look_yaw()
+	rotation.y = yaw + clampf(wrapf(rotation.y - yaw, -PI, PI), -HIDE_LOOK.x, HIDE_LOOK.x)
+	head.rotation.x = clampf(head.rotation.x, -HIDE_LOOK.y, HIDE_LOOK.y)
+	var height := crouch_height if hiding_spot.crouch else stand_height
+	_set_height(lerpf(_current_height, height, clampf(crouch_transition * delta, 0.0, 1.0)))
+	hud.set_prompt("[E] Come out of %s" % hiding_spot.spot_name)
+	if not hud.is_blocking() and Input.is_action_just_pressed("interact"):
+		hiding_spot.request_leave()
+	_send_state(delta)
+
+
+## Escondido: o olho fica no lugar de olhar do esconderijo (a fresta, a cortina).
+func _update_hide_camera() -> void:
+	if hiding_spot == null:
+		return
+	var slot: int = hiding_spot.slot_of(name.to_int())
+	if slot >= 0:
+		camera.global_position = hiding_spot.eye_point(slot)
+
+
+## Host: muda o estado de preso em todas as máquinas. `at` é para onde ele vai (a escada, preso;
+## o corredor, solto).
+func set_arrest(stage: String, cop: Node, at := Vector3.ZERO) -> void:
+	var path := cop.get_path() if cop != null else NodePath()
+	var kitnet := get_tree().get_first_node_in_group("kitnet")
+	if kitnet != null:
+		kitnet.rpc_roster(self, &"_remote_arrest", [stage, path, at])
+	_apply_arrest(stage, path, at)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _remote_arrest(stage: String, path: NodePath, at: Vector3) -> void:
+	if multiplayer.get_remote_sender_id() == 1:
+		_apply_arrest(stage, path, at)
+
+
+func _apply_arrest(stage: String, path: NodePath, at: Vector3) -> void:
+	var before := arrest_stage
+	arrest_stage = stage
+	arrest_cop = get_node_or_null(path) if not path.is_empty() else null
+	match stage:
+		"cuffed":
+			if not fallen:
+				_begin_fall(-global_basis.z, 1.0)
+			if is_local():
+				if held_item() != null:
+					_drop_held()
+				if operating != null:
+					operating.request_leave()
+				# Caído até chegar na escada (ou alguém derrubar o policial).
+				_fallen_time = 1.0e6
+				hud.show_message("BUSTED!\nYou're cuffed and being dragged out.\nA friend can bonk the cop to free you!", 4.0)
+		"jailed":
+			if fallen:
+				_end_fall()
+			if is_local():
+				global_position = at
+				velocity = Vector3.ZERO
+				collision.disabled = true
+				_jail_view(true)
+		"":
+			if is_local():
+				if before == "jailed":
+					global_position = at
+					velocity = Vector3.ZERO
+					collision.disabled = false
+					_jail_view(false)
+					hud.show_message("Released on bail.\nBack to work.", 4.0)
+				elif before == "cuffed":
+					_fallen_time = 0.8
+					hud.show_message("FREE! The cop let go of you.\nGet up and run!", 3.0)
+	_update_presence()
+
+
+## O corpo some para todos escondido num lugar fechado (guarda-roupa, box, sofá) e preso.
+func _update_presence() -> void:
+	var shown: bool = arrest_stage != "jailed" and (hiding_spot == null or hiding_spot.exposed)
+	_body.visible = shown
+	if not is_local():
+		collision.disabled = not present()
+
+
+## Só quem está preso: a vista do corredor (de longe, do alto) e a tela de preso.
+func _jail_view(on: bool) -> void:
+	hud.set_jailed(on)
+	if on:
+		if _jail_cam == null:
+			_jail_cam = Camera3D.new()
+			_jail_cam.name = "JailCamera"
+			_jail_cam.top_level = true
+			add_child(_jail_cam)
+			_add_outline(_jail_cam)
+		_jail_cam.global_transform = Transform3D(Basis.IDENTITY, JAIL_VIEW[0]).looking_at(JAIL_VIEW[1])
+		_jail_cam.make_current()
+	elif _jail_cam != null:
+		camera.make_current()
+
+
+## Algemas nos pulsos (preso, caído) e o corpo puxado pela gola por quem arrasta (em todas as
+## máquinas: cada uma simula o próprio ragdoll e puxa igual).
+func _update_arrest_body() -> void:
+	var cuffed := arrest_stage == "cuffed"
+	for i in _cuffs.size():
+		_cuffs[i].visible = cuffed and _body.visible
+		if _cuffs[i].visible:
+			_cuffs[i].global_position = character.hand_position(i)
+	if not cuffed or not character.ragdolling or arrest_cop == null or not is_instance_valid(arrest_cop):
+		return
+	if arrest_cop.dragging != name.to_int():
+		return
+	var targets: Array = arrest_cop.drag_targets()
+	character.pull_bone("Hips", targets[0], arrest_cop.DRAG_PULL)
+	character.pull_bone("Chest", targets[1], arrest_cop.DRAG_PULL)
+
+
+func _build_cuffs() -> void:
+	var steel := StandardMaterial3D.new()
+	steel.albedo_color = Color(0.78, 0.8, 0.84)
+	steel.metallic = 0.8
+	steel.roughness = 0.3
+	for i in 2:
+		var ring := MeshInstance3D.new()
+		var torus := TorusMesh.new()
+		torus.inner_radius = 0.035
+		torus.outer_radius = 0.05
+		torus.material = steel
+		ring.mesh = torus
+		ring.top_level = true
+		ring.visible = false
+		add_child(ring)
+		_cuffs.append(ring)
 
 
 # --- Frigideira (bonk) --------------------------------------------------------
@@ -1068,7 +1276,8 @@ func _setup_first_person_body() -> void:
 func _wobble_from_others(delta: float) -> void:
 	var touching := {}
 	for other: Node3D in get_tree().get_nodes_in_group("player"):
-		if other == self or absf(other.global_position.y - global_position.y) > 1.2:
+		if other == self or absf(other.global_position.y - global_position.y) > 1.2 \
+				or not other.present() or not present():
 			continue
 		var away := global_position - other.global_position
 		away.y = 0.0

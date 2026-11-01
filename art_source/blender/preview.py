@@ -100,7 +100,7 @@ def _player_dummies():
         mat = bpy.data.materials.new(f"PREVIEW_player_{i}")
         bsdf = next(n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
         bsdf.inputs["Base Color"].default_value = colors[i % 4]
-        bpy.ops.mesh.primitive_cylinder_add(radius=0.33, depth=1.75, location=(sp.location.x, sp.location.y, 0.875))
+        bpy.ops.mesh.primitive_cylinder_add(radius=0.3, depth=1.75, location=(sp.location.x, sp.location.y, 0.875))
         ob = bpy.context.active_object
         ob.name = f"PREVIEW_player_{i}"
         ob.data.materials.append(mat)

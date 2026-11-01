@@ -23,9 +23,11 @@ const Washer := preload("res://scripts/machines/washer.gd")
 const CashCounter := preload("res://scripts/machines/cash_counter.gd")
 const BagRoll := preload("res://scripts/machines/bag_roll.gd")
 const Stash := preload("res://scripts/machines/stash.gd")
+const Hideout := preload("res://scripts/hideout.gd")
 const Neighbor := preload("res://scripts/neighbor.gd")
 const Police := preload("res://scripts/police.gd")
 const Wallet := preload("res://scripts/wallet.gd")
+const Power := preload("res://scripts/power.gd")
 const Deliveries := preload("res://scripts/shop/deliveries.gd")
 const Toon := preload("res://scripts/toon.gd")
 const Ambience := preload("res://scripts/ambience.gd")
@@ -77,11 +79,17 @@ var cash_counter: Node3D
 var bag_roll: Node3D
 ## Os esconderijos (HIDE_* e o alçapão do banheiro).
 var stashes: Array[Node3D] = []
+## Esconderijos de gente para a batida (hideout.gd), pela chave ("wardrobe", "shower"...).
+var hideouts := {}
+## Malha de navegação da kitnet e do corredor (só no host: os policiais andam por ela).
+var nav_region: NavigationRegion3D
 ## O vizinho do 303 (o perigo da kitnet) e a polícia que ele chama.
 var neighbor: CharacterBody3D
 var police: Node
 ## Dinheiro do grupo e as entregas a caminho.
 var wallet: Node
+## A luz da kitnet (o quadro de luz e o disjuntor).
+var power: Node
 var deliveries: Node
 ## Animações do cenário (ventilador, lâmpada, TV, vapor, vento).
 var ambience: Node
@@ -99,6 +107,8 @@ func _ready() -> void:
 	add_child(items)
 	wallet = Wallet.new()
 	add_child(wallet)
+	power = Power.new()
+	add_child(power)
 	deliveries = Deliveries.new()
 	add_child(deliveries)
 	model = KITNET.instantiate()
@@ -107,6 +117,8 @@ func _ready() -> void:
 	_setup_model()
 	if multiplayer.is_server():
 		items.spawn("pan", PAN_START, {"resting": true})
+	if multiplayer.is_server():
+		_bake_navigation()
 	police = Police.new()
 	add_child(police)
 	neighbor = Neighbor.new()
@@ -125,6 +137,11 @@ func _ready() -> void:
 ## O jogador desta máquina (ou null antes de nascer).
 func local_player() -> CharacterBody3D:
 	return players.get(multiplayer.get_unique_id())
+
+
+## Tem luz na kitnet agora (o disjuntor ligado).
+func has_power() -> bool:
+	return power == null or power.has_power()
 
 
 ## Chama `method` em `node` em todas as outras máquinas que já estão na sala.
@@ -230,6 +247,7 @@ func _setup_model() -> void:
 		var marker: Node3D = model.find_child("SPAWN_%d" % (i + 1), true, false)
 		spawns.append(Transform3D(Basis.IDENTITY, marker.global_position + Vector3.UP * 0.05))
 	_add_stations()
+	power.attach(model)
 	ambience = Ambience.new()
 	add_child(ambience)
 	ambience.setup(model, self)
@@ -277,6 +295,76 @@ func _add_stations() -> void:
 		stash.setup(key)
 		holder.add_child(stash)
 		stashes.append(stash)
+	# Esconderijos de gente: o guarda-roupa e o sofá-cama presos no móvel; o box, o parapeito da
+	# janela e o canto do lixo do 302 no mundo.
+	var furniture := {"wardrobe": "HIDE_Wardrobe", "sofa": "HIDE_SofaBed"}
+	for key: String in Hideout.SPOTS:
+		var parent: Node3D = self
+		if furniture.has(key):
+			parent = model.find_child(furniture[key], true, false)
+			if parent == null:
+				continue
+		var hideout := Hideout.new()
+		hideout.setup(key)
+		parent.add_child(hideout)
+		hideouts[key] = hideout
+	_add_ledge()
+
+
+## Parapeito de concreto do lado de fora da janela principal (o esconderijo "window"), embaixo do
+## peitoril: onde quem sai pela janela fica em pé, grudado na parede.
+const LEDGE := [Vector3(2.5, 0.67, -5.39), Vector3(2.4, 0.1, 0.38)]
+
+
+func _add_ledge() -> void:
+	var body := StaticBody3D.new()
+	body.name = "Ledge_Window"
+	var shape := BoxShape3D.new()
+	shape.size = LEDGE[1]
+	var col := CollisionShape3D.new()
+	col.shape = shape
+	body.add_child(col)
+	var mesh := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = LEDGE[1]
+	var concrete := StandardMaterial3D.new()
+	concrete.albedo_color = Color(0.62, 0.6, 0.56)
+	concrete.roughness = 0.95
+	box.material = concrete
+	mesh.mesh = box
+	body.add_child(mesh)
+	add_child(body)
+	body.position = LEDGE[0]
+
+
+## Host: a malha de navegação dos policiais (cop.gd), feita na hora a partir da colisão do modelo:
+## a kitnet, o banheiro, o serviço e o corredor. As portas ficam de fora (eles abrem no caminho).
+func _bake_navigation() -> void:
+	var nav := NavigationMesh.new()
+	nav.agent_radius = 0.3
+	nav.agent_height = 1.7
+	nav.agent_max_climb = 0.2
+	nav.cell_size = 0.05
+	nav.cell_height = 0.05
+	nav.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
+	nav.geometry_collision_mask = 1
+	nav.filter_baking_aabb = AABB(Vector3(-1.6, -0.3, -5.1), Vector3(11.7, 2.5, 6.7))
+	var map := get_world_3d().navigation_map
+	NavigationServer3D.map_set_cell_size(map, nav.cell_size)
+	NavigationServer3D.map_set_cell_height(map, nav.cell_height)
+	var layers := {}
+	for door: Node in doors.values():
+		layers[door] = door.collision_layer
+		door.collision_layer = 0
+	var source := NavigationMeshSourceGeometryData3D.new()
+	NavigationServer3D.parse_source_geometry_data(nav, source, model)
+	for door: Node in layers:
+		door.collision_layer = layers[door]
+	NavigationServer3D.bake_from_source_geometry_data(nav, source)
+	nav_region = NavigationRegion3D.new()
+	nav_region.name = "Navigation"
+	nav_region.navigation_mesh = nav
+	add_child(nav_region)
 
 
 func _setup_light(light: Light3D) -> void:

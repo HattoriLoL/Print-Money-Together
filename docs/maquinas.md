@@ -3,7 +3,7 @@
 A linha de produção planejada é: papel → tinta → impressora → varal → guilhotina → máquina de
 lavar → contadora → esconderijo. Até agora funcionam o **papel**, a **impressora** (com o
 **cartucho de tinta**), o **varal** (com o **ventilador**), a **guilhotina**, a **máquina de
-lavar** e a **contadora**. Os esconderijos ainda não.
+lavar**, a **contadora** e os **esconderijos** (`docs/vizinho.md`, `docs/policia.md`).
 
 Papel e cartucho se compram no PC e chegam numa caixa na porta: ver `docs/loja.md`.
 
@@ -120,7 +120,8 @@ O código é `scripts/machines/printer.gd`. Os números ficam em `data/machines/
 Desligar no meio de uma folha devolve o papel dela para o alimentador.
 
 `noise()` devolve o barulho: forte imprimindo, um zumbido baixo ligada à toa. `power_watts` é
-o consumo de energia, para o disjuntor usar depois.
+o consumo imprimindo, que o disjuntor soma (`docs/energia.md`). Sem luz, ela desliga de vez e não
+liga até a luz voltar.
 
 ### Cartucho
 
@@ -413,7 +414,8 @@ quem põe e tira é o `item_manager.gd` (`request_bag_put` e `request_bag_take`)
 - **Vizinho:** fechado, parece lixo. Ele não vê o dinheiro que está dentro, nem com o saco na mão
   de alguém (o saco não está em `neighbor.EVIDENCE`). Aberto e com dinheiro, ele vê os maços pela
   boca (`_sees_evidence`).
-- **Polícia:** ainda não tem regra para o saco (ela procura só folhas, notas e maços soltos).
+- **Polícia:** fechado, passa por lixo e fica. Aberto, ela leva o dinheiro de dentro e deixa o
+  saco vazio (`stash.seize`, `police.visible_evidence`).
 - O saco cabe nos esconderijos e volta com tudo dentro.
 - **Rede:** o host muda o `contents` com `set_data` e todos refazem a malha.
 

@@ -33,6 +33,14 @@ extends SceneTree
 ##   o clique tira o último, carrega cheio e cabe no esconderijo; o vizinho não vê o que está dentro;
 ##   na mão, o clique abre: o que cai na boca (largado ou arremessado) entra, e aberto o vizinho vê;
 ##   aberto, o dinheiro lá dentro tem física; balança na mão; aberto e tombado derrama, fechado não;
+## - batida policial: a malha de navegação; esconder no guarda-roupa (o corpo some, olha pela fresta);
+##   os policiais entram pela 301 trancada, pegam a prova à vista e revistam com chance (sem achar,
+##   a geladeira e quem está escondido ficam); achando, cacetada, algema e arrasto pela gola; a
+##   frigideira no policial solta o preso; preso na escada até o fim, e volta no corredor; o saco de
+##   lixo fechado passa por lixo;
+## - luz: cada aparelho soma no consumo; acima do limite as luzes tremem e o disjuntor cai (apaga a
+##   kitnet mas não o corredor, a impressora desliga, a máquina de lavar e o ventilador param e
+##   voltam); religa no quadro, e [E] no quadro desliga a luz de propósito;
 ## - etapa 3 do visual: prints da fita na impressora, jornal, retrato, geladeira, TV, pizza, trancas e lâmpada;
 ## - vida no cenário: ventilador girando, vento no varal e na cortina, chuvisco na TV, vapor na panela,
 ##   lâmpada piscando e balançando quando alguém passa perto;
@@ -249,9 +257,11 @@ func _run() -> void:
 	await _test_clothesline(kitnet, player)
 	await _test_washer(kitnet, player)
 	await _test_counter(kitnet, player)
+	await _test_power(kitnet, player)
 	await _test_pan(kitnet, player)
 	await _test_neighbor(kitnet, player)
 	await _test_trashbag(kitnet, player)
+	await _test_raid(kitnet, player)
 	await _test_characters(kitnet, player)
 	await _test_first_person(kitnet, player)
 	await _test_push(kitnet, player)
@@ -260,6 +270,97 @@ func _run() -> void:
 	if _with_client:
 		await _test_client(kitnet)
 	_finish()
+
+
+## A luz da kitnet (power.gd): o consumo e o disjuntor.
+func _test_power(kitnet: Node3D, player: CharacterBody3D) -> void:
+	var power: Node = kitnet.power
+	var amb: Node = kitnet.ambience
+	var printer: Node3D = kitnet.printer
+	var fan: Node3D = kitnet.fan
+	var washer: Node3D = kitnet.washer
+	var bulb: Light3D = kitnet.model.find_child("LIGHT_main_0", true, false)
+	var kitchen: Light3D = kitnet.model.find_child("LIGHT_kitchen_0", true, false)
+	var hall: Light3D = kitnet.model.find_child("LIGHT_hall_0", true, false)
+	_check(power != null and power.zone != null, "quadro de luz montado")
+	if printer.powered:
+		printer._toggle_power(1)
+	if fan.powered:
+		fan._toggle(1)
+	await create_timer(0.3).timeout
+	_check(kitnet.has_power(), "começa com luz")
+	var base: float = power.load_watts
+	_check(absf(base - (power.BASE_WATTS + kitnet.computer.WATTS)) < 1.0,
+			"parado, gasta só a base e o PC (%d W)" % base)
+	fan._toggle(1)
+	printer._toggle_power(1)
+	washer.contents = [{"count": 2}]
+	washer.lid_open = false
+	washer._start(1)
+	await create_timer(0.3).timeout
+	_check(washer.running(), "a máquina de lavar começou")
+	_check(power.load_watts >= base + fan.WATTS + washer.WASH_WATTS,
+			"o ventilador, a impressora e a máquina de lavar somam (%d W)" % power.load_watts)
+	_check(power.load_watts < power.LIMIT_WATTS and power.heat == 0.0, "isso cabe no disjuntor")
+
+	# Um aparelho a mais que passa do limite: esquenta, as luzes tremem e ele cai.
+	var hog := Node.new()
+	var hog_script := GDScript.new()
+	hog_script.source_code = "extends Node\nfunc power_draw() -> float:\n\treturn %.1f\n" % power.LIMIT_WATTS
+	hog_script.reload()
+	hog.set_script(hog_script)
+	hog.add_to_group("powered")
+	kitnet.add_child(hog)
+	await create_timer(0.4).timeout
+	_check(power.heat > 0.0 and kitnet.has_power(), "acima do limite, o disjuntor esquenta (ainda com luz)")
+	var lowest := 1.0
+	for i in 40:
+		lowest = minf(lowest, amb.mains_level)
+		await process_frame
+	_check(lowest < 0.8, "as luzes tremem com a sobrecarga (%.2f)" % lowest)
+	await create_timer(power.TRIP_SECONDS).timeout
+	_check(power.tripped and not kitnet.has_power(), "com a sobrecarga, o disjuntor cai")
+	await process_frame
+	_check(bulb.light_energy == 0.0 and kitchen.light_energy == 0.0, "as luzes da kitnet apagam")
+	_check(hall.light_energy > 0.0, "as do corredor (do prédio) continuam acesas")
+	_check(not printer.powered, "a impressora desligou")
+	printer._toggle_power(1)
+	_check(not printer.powered and printer._power_prompt(player).begins_with("No power"), "sem luz, a impressora não liga")
+	_check(fan.powered and not fan.blowing(), "o ventilador para, com o botão ligado")
+	var left: float = washer.time_left
+	await create_timer(0.5).timeout
+	_check(washer.running() and is_equal_approx(washer.time_left, left) and washer.noise() == 0.0,
+			"a máquina de lavar para no meio do ciclo")
+	_check(kitnet.computer._prompt(player).begins_with("No power"), "o PC apaga")
+	_check(power.load_watts == 0.0, "sem luz, o relógio não conta")
+	await _look(player, Vector3(2.6, 0, -1.0), Vector3(2.6, 1.0, -4.0), "80_sem_luz")
+
+	# Religar com tudo ainda ligado: cai de novo. Sem o excesso, fica.
+	player.global_position = Vector3(4.6, 0.05, -0.8)
+	await physics_frame
+	_check(power._prompt(player).begins_with("[E] Flip"), "o quadro oferece religar")
+	power.zone.interact(player)
+	await create_timer(0.2).timeout
+	_check(kitnet.has_power(), "religou")
+	await create_timer(power.TRIP_SECONDS + 0.3).timeout
+	_check(power.tripped, "com o excesso ainda ligado, cai de novo")
+	hog.queue_free()
+	power.zone.interact(player)
+	await create_timer(1.0).timeout
+	_check(kitnet.has_power() and amb.mains_level == 1.0 and bulb.light_energy > 0.0 and kitchen.light_energy > 0.0,
+			"sem o excesso, a luz volta e fica")
+	_check(washer.time_left < left, "a máquina de lavar continua o ciclo")
+	_check(fan.blowing(), "o ventilador volta a girar sozinho")
+	_check(not printer.powered, "a impressora continua desligada (tem que ligar de novo)")
+	await _look(player, Vector3(4.75, 0, -1.1), Vector3(4.78, 1.6, 0.0), "81_quadro_de_luz")
+	power.zone.interact(player)
+	await create_timer(0.2).timeout
+	_check(power.tripped and power._prompt(player).begins_with("[E] Flip"), "[E] no quadro desliga a luz")
+	power.zone.interact(player)
+	await create_timer(0.2).timeout
+	_check(kitnet.has_power(), "e liga de novo")
+	washer.confiscate()
+	fan._toggle(1)
 
 
 ## Os bonecos (character_rig.gd) das 4 vagas lado a lado, sem o mapa: um parado, um andando, um
@@ -1687,23 +1788,15 @@ func noise() -> float:
 	_check(stash.zone.get_prompt(player).begins_with("[E] Hide the bundle"), "o guarda-roupa esconde o que está na mão")
 	stash._use(1)
 	_check(stash.contents.size() == 1 and player.held_item() == null, "escondido no guarda-roupa")
-	door.set_locked(true)
-	var cash_before: int = kitnet.wallet.cash
 	kitnet.police.call_cops()
 	_check(kitnet.police.coming() and kitnet.police.alert_text() != "", "a polícia está a caminho (aviso no HUD)")
-	kitnet.police.time_left = 1.0
-	await create_timer(1.5).timeout
-	var raid: Dictionary = kitnet.police.last_raid
-	_check(not items.items.has(bills_id) and raid.get("bills", 0) >= 6, "a batida levou as notas da mesa e o que mais estava à vista (%s)" % raid)
-	_check(door.is_open and not door.locked, "entraram mesmo com a porta trancada")
-	_check(kitnet.wallet.cash == cash_before - mini(kitnet.police.FINE, cash_before), "multa paga ($%d)" % kitnet.wallet.cash)
-	_check(stash.contents.size() == 1, "o que estava escondido ficou")
-	await create_timer(0.5).timeout
-	await _look(player, Vector3(4.1, 0, -1.6), Vector3(4.1, 1.4, 0.5), "66_batida_policial")
+	kitnet.police.cancel()
+	await create_timer(0.3).timeout
 	stash._use(1)
 	_check(player.held_item() != null and player.held_item().kind == "bundle", "tira o maço do esconderijo")
 	items.consume(player.held_item())
-	kitnet.wallet.earn(cash_before - kitnet.wallet.cash)
+	if items.items.has(bills_id):
+		items.consume(items.items[bills_id])
 	door.set_open(false)
 	n.visits = 0
 	await create_timer(1.0).timeout
@@ -1863,6 +1956,134 @@ func _test_trashbag(kitnet: Node3D, player: CharacterBody3D) -> void:
 			items.consume(items.items[k])
 		items.consume(back)
 	await create_timer(0.5).timeout
+
+
+func _test_raid(kitnet: Node3D, player: CharacterBody3D) -> void:
+	var items: Node = kitnet.items
+	var police: Node = kitnet.police
+	var door: Node = kitnet.doors["301"]
+	if player.held_item() != null:
+		items.consume(player.held_item())
+	_check(kitnet.hideouts.size() == 5, "5 esconderijos de gente (%d)" % kitnet.hideouts.size())
+	_check(kitnet.nav_region != null and kitnet.nav_region.navigation_mesh.get_polygon_count() > 20,
+			"a malha de navegação dos policiais")
+	# Cada esconderijo: entra, [E] sai, e a saída fica livre (sem ficar preso em móvel nenhum).
+	var space := player.get_world_3d().direct_space_state
+	var capsule := CapsuleShape3D.new()
+	capsule.radius = (player.collision.shape as CapsuleShape3D).radius
+	capsule.height = 1.6
+	var all_ok := true
+	for key in kitnet.hideouts:
+		var spot: Node = kitnet.hideouts[key]
+		player.global_position = spot.exit_point()
+		await physics_frame
+		spot._press(1)
+		await create_timer(0.15).timeout
+		var inside: bool = player.hiding_spot == spot
+		spot.request_leave()
+		await create_timer(0.15).timeout
+		var query := PhysicsShapeQueryParameters3D.new()
+		query.shape = capsule
+		query.transform = Transform3D(Basis.IDENTITY, spot.exit_point() + Vector3.UP * 0.9)
+		query.collision_mask = 1
+		var blocked := space.intersect_shape(query, 4)
+		var ok: bool = inside and player.hiding_spot == null and not player.collision.disabled and blocked.is_empty()
+		if not ok:
+			print("  esconderijo ", key, ": dentro=", inside, " saiu=", player.hiding_spot == null, " preso em ", blocked.map(func(h): return h["collider"].get_parent().name))
+		all_ok = all_ok and ok
+	_check(all_ok, "entra e sai de cada esconderijo, e a saída fica livre")
+	# A porta do banheiro aberta dá passagem (a folha aberta não come o vão).
+	var bath_door: Node = kitnet.doors["Bath"]
+	bath_door.set_open(true)
+	await create_timer(0.7).timeout
+	player.global_position = Vector3(4.4, 0.05, -1.25)
+	await physics_frame
+	var passed := false
+	for i in 120:
+		player.velocity = Vector3(1.5, 0.0, 0.0)
+		player.move_and_slide()
+		if player.global_position.x > 5.4:
+			passed = true
+			break
+		await physics_frame
+	_check(passed, "entra andando no banheiro pela porta aberta (%.2f)" % player.global_position.x)
+	bath_door.set_open(false)
+	var wardrobe: Node = kitnet.hideouts["wardrobe"]
+	player.global_position = wardrobe.exit_point()
+	await physics_frame
+	_check(wardrobe.zone.get_prompt(player) == "[E] Hide in the wardrobe", "o guarda-roupa esconde gente")
+	wardrobe._press(1)
+	await create_timer(0.4).timeout
+	_check(player.hiding_spot == wardrobe and player.collision.disabled and not player._body.visible,
+			"dentro do guarda-roupa (o corpo some)")
+	_check(player.camera.global_position.distance_to(wardrobe.eye_point(0)) < 0.05, "olhando pela fresta")
+	await _shot("69_escondido_no_guarda_roupa")
+	# 1. Revista sem achar nada: levam as notas da mesa; a geladeira e quem está escondido ficam.
+	var bills_id: int = items.spawn("bills", Transform3D(Basis.IDENTITY, Vector3(3.0, 0.8, -1.9)), {"count": 6}).id
+	var fridge: Node = kitnet.stashes.filter(func(s): return s.spot_name == "the fridge")[0]
+	fridge.contents = [["bundle", {"count": 20, "worth": 20.0}],
+			["trashbag", {"contents": [["bundle", {"count": 20, "worth": 20.0}]]}]]
+	door.set_locked(true)
+	var cash_before: int = kitnet.wallet.cash
+	police.search_chance = 0.0
+	police.call_cops()
+	police.time_left = 0.1
+	var ended := await _wait_raid(police, 120.0)
+	var raid: Dictionary = police.last_raid
+	_check(ended and not items.items.has(bills_id) and raid.get("bills", 0) >= 6,
+			"os policiais entraram e levaram as notas da mesa (%s)" % raid)
+	_check(door.is_open, "entraram pela 301 trancada")
+	_check(player.arrest_stage == "" and player.hiding_spot == wardrobe, "escondido no guarda-roupa, ninguém achou")
+	_check(fridge.contents.size() == 2, "sem revistar, a geladeira guardou o dinheiro")
+	_check(kitnet.wallet.cash == cash_before - mini(police.FINE, cash_before), "multa ($%d)" % kitnet.wallet.cash)
+	kitnet.wallet.earn(cash_before - kitnet.wallet.cash)
+	# 2. Revistando tudo: acham no guarda-roupa, cacetada, algema e arrasto; a frigideira no
+	# policial solta o preso.
+	police.search_chance = 1.0
+	police.call_cops()
+	police.time_left = 0.1
+	var cuffed := await _wait_until(func(): return player.arrest_stage == "cuffed", 90.0)
+	_check(cuffed and player.hiding_spot == null, "achado no guarda-roupa: cacetada e algemado")
+	await create_timer(1.2).timeout
+	var draggers: Array = police.cops.filter(func(c): return c.dragging == 1)
+	var cop: Node = draggers[0] if not draggers.is_empty() else null
+	_check(cop != null and cop.state == cop.State.DRAG and police.cops.filter(func(c): return c.dragging == 1).size() == 1,
+			"um policial arrasta o preso pela gola")
+	if cop != null:
+		cop.take_bonk(Vector3.FORWARD)
+	var freed := await _wait_until(func(): return player.arrest_stage == "", 3.0)
+	_check(freed and cop != null and cop.knocked_out(), "frigideira no policial: ele desmaia e a algema solta")
+	# Parado no meio da sala: pegam de novo e levam até a escada.
+	player.global_position = Vector3(2.2, 0.05, -2.6)
+	var jailed := await _wait_until(func(): return player.arrest_stage == "jailed", 90.0)
+	_check(jailed and not player._body.visible, "preso na escada até a batida acabar")
+	await create_timer(0.4).timeout
+	await _shot("70_preso")
+	ended = await _wait_raid(police, 150.0)
+	raid = police.last_raid
+	_check(ended and player.arrest_stage == "" and player.global_position.distance_to(police.RELEASE) < 1.2,
+			"a batida acabou e o preso voltou no corredor")
+	_check(raid.get("arrests", 0) >= 1 and raid.get("bundles", 0) >= 1, "levaram o maço da geladeira e contaram o preso (%s)" % raid)
+	_check(fridge.contents.size() == 1 and fridge.contents[0][0] == "trashbag", "o saco de lixo fechado passou por lixo")
+	fridge.contents.clear()
+	kitnet.wallet.earn(cash_before - kitnet.wallet.cash)
+	police.search_chance = -1.0
+	door.set_open(false)
+	await create_timer(1.0).timeout
+
+
+## Espera a batida acabar (os policiais foram embora).
+func _wait_raid(police: Node, limit: float) -> bool:
+	await create_timer(0.5).timeout
+	return await _wait_until(func(): return not police.raiding and police.time_left < 0.0, limit)
+
+
+func _wait_until(cond: Callable, limit: float) -> bool:
+	var t := 0.0
+	while not cond.call() and t < limit:
+		await physics_frame
+		t += 1.0 / Engine.physics_ticks_per_second
+	return cond.call()
 
 
 func _wait_neighbor(n: Node, states: Array, limit: float) -> bool:

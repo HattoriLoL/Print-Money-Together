@@ -38,6 +38,8 @@ const KEYBOARD_WRIST := Vector3(-0.07, 0.052, 0.36)
 const MOUSE_WRIST := Vector3(0.0, 0.046, 0.085)
 ## Quantas vezes por segundo quem usa manda a posição do cursor.
 const CURSOR_RATE := 30.0
+## Consumo (W): fica ligado o tempo todo.
+const WATTS := 120.0
 
 var operator := 0
 var page := "office"
@@ -58,11 +60,15 @@ var _cursor_target := Vector2(SCREEN_SIZE) / 2.0
 var _send_timer := 0.0
 var _cursor_dirty := false
 var _click_sound: AudioStreamPlayer3D
+## O material da tela (apaga sem luz).
+var _crt: ShaderMaterial
+var _screen_on := true
 
 
 func _ready() -> void:
 	name = "Computer"
 	add_to_group("station")
+	add_to_group("powered")
 	_kitnet = get_tree().get_first_node_in_group("kitnet")
 	var model := get_parent()
 	_mouse = model.find_child("MACHINE_PC_Mouse", false, false)
@@ -85,6 +91,7 @@ func _ready() -> void:
 		var mat := ShaderMaterial.new()
 		mat.shader = CRT_SHADER
 		mat.set_shader_parameter("screen_tex", _viewport.get_texture())
+		_crt = mat
 		screen.material_override = mat
 		screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
@@ -96,6 +103,10 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	var on: bool = _kitnet.has_power()
+	if _crt != null and on != _screen_on:
+		_screen_on = on
+		_crt.set_shader_parameter("brightness", 1.1 if on else 0.0)
 	if not _is_mine():
 		_cursor = _cursor.lerp(_cursor_target, clampf(20.0 * delta, 0.0, 1.0))
 	browser.cursor = _cursor
@@ -110,10 +121,20 @@ func _process(delta: float) -> void:
 			_kitnet.rpc_roster(self, &"_remote_cursor", [_cursor])
 
 
+func power_draw() -> float:
+	return WATTS
+
+
+## Host: a luz caiu: a tela apaga e quem estava usando sai.
+func power_lost() -> void:
+	if operator != 0:
+		_leave(operator)
+
+
 # --- Host -------------------------------------------------------------------------------------
 
 func _press(peer: int) -> void:
-	if operator != 0 or _kitnet.items.held_by(peer) != null:
+	if operator != 0 or _kitnet.items.held_by(peer) != null or not _kitnet.has_power():
 		return
 	operator = peer
 	notice = ""
@@ -274,6 +295,8 @@ func _prompt(player: Node) -> String:
 		if is_operated_by(player):
 			return ""
 		return "%s is using the computer" % _kitnet.roster.get(operator, {}).get("name", "Someone")
+	if not _kitnet.has_power():
+		return "No power: the computer is off"
 	if player.held_item() != null:
 		return "Put down what you're holding to use the computer"
 	return "[E] Use the computer"

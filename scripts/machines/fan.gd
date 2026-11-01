@@ -5,6 +5,7 @@ extends Node3D
 ##
 ## Ligado, as pás giram (o ambience.gd lê `spin`), as folhas do varal tremulam e secam
 ## clothesline.gd FAN_FACTOR vezes mais rápido. Faz um barulho baixo (`noise`). Começa desligado.
+## Sem luz (power.gd), ele para, mas o botão continua ligado: volta a girar quando a luz volta.
 ## O host manda e repassa.
 
 const InteractZone := preload("res://scripts/interact_zone.gd")
@@ -12,6 +13,8 @@ const InteractZone := preload("res://scripts/interact_zone.gd")
 ## Quanto tempo as pás levam para chegar na velocidade (ou parar), s.
 const SPIN_TIME := 1.2
 const NOISE := 0.12
+## Consumo ligado (W).
+const WATTS := 80.0
 
 var powered := false
 ## De 0 (parado) a 1 (na velocidade): sobe e desce devagar quando liga e desliga.
@@ -24,6 +27,7 @@ func _ready() -> void:
 	name = "Fan"
 	add_to_group("station")
 	add_to_group("noise_source")
+	add_to_group("powered")
 	_kitnet = get_tree().get_first_node_in_group("kitnet")
 	zone = InteractZone.new()
 	zone.setup(self, "Zone_Fan", Vector3(0.0, 1.15, 0.0), Vector3(0.6, 0.65, 0.35))
@@ -32,11 +36,20 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	spin = move_toward(spin, 1.0 if powered else 0.0, delta / SPIN_TIME)
+	spin = move_toward(spin, 1.0 if blowing() else 0.0, delta / SPIN_TIME)
+
+
+## Ligado e com luz: as pás giram e o vento seca o varal.
+func blowing() -> bool:
+	return powered and _kitnet.has_power()
+
+
+func power_draw() -> float:
+	return WATTS if powered else 0.0
 
 
 func noise() -> float:
-	return NOISE if powered else 0.0
+	return NOISE if blowing() else 0.0
 
 
 func _prompt(_player: Node) -> String:

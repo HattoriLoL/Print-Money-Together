@@ -32,6 +32,8 @@ const FEED_PART := 0.4
 const SYNC_RATE := 10.0
 ## O cartucho que já vem na impressora velha: o original, pela metade.
 const START_INK := 0.5
+## Ligada à toa, ela gasta essa fração do consumo de quando imprime (stats.power_watts).
+const IDLE_POWER := 0.15
 
 var stats: Resource = DEFAULT_STATS
 var powered := false
@@ -68,6 +70,7 @@ func _ready() -> void:
 	name = "Printer"
 	add_to_group("station")
 	add_to_group("noise_source")
+	add_to_group("powered")
 	_kitnet = get_tree().get_first_node_in_group("kitnet")
 	var model := get_parent()
 	_button = model.find_child("MACHINE_Printer_Button", false, false)
@@ -139,6 +142,23 @@ func noise() -> float:
 	return stats.noise * 0.15 if powered else 0.0
 
 
+## Consumo agora (W), para o disjuntor (power.gd).
+func power_draw() -> float:
+	if not powered:
+		return 0.0
+	return stats.power_watts * (1.0 if printing() else IDLE_POWER)
+
+
+## Host: a luz caiu. Desliga de vez: perde o aquecimento, e a folha pela metade volta.
+func power_lost() -> void:
+	if not powered:
+		return
+	powered = false
+	warm = 0.0
+	progress = 0.0
+	_send_now()
+
+
 # --- Host -------------------------------------------------------------------------------------
 
 func _physics_process(delta: float) -> void:
@@ -168,6 +188,8 @@ func _server_tick(delta: float) -> void:
 
 
 func _toggle_power(_peer: int) -> void:
+	if not powered and not _kitnet.has_power():
+		return
 	powered = not powered
 	warm = 0.0
 	if not powered:
@@ -280,6 +302,8 @@ func _cartridge_prompt(player: Node) -> String:
 
 
 func _power_prompt(_player: Node) -> String:
+	if not powered and not _kitnet.has_power():
+		return "No power: the printer won't turn on"
 	return "[E] Turn printer off" if powered else "[E] Turn printer on"
 
 

@@ -118,7 +118,7 @@ func _dry(delta: float) -> void:
 	if _wetness.is_empty():
 		return
 	var fan := _fan()
-	var rate := delta / DRY_SECONDS * (FAN_FACTOR if fan and fan.powered else 1.0)
+	var rate := delta / DRY_SECONDS * (FAN_FACTOR if fan and fan.blowing() else 1.0)
 	for id in _wetness.keys():
 		var item: Node = _kitnet.items.items.get(id)
 		if item == null:
@@ -168,5 +168,5 @@ func _prompt(player: Node) -> String:
 		if not held.data.get("wet", false):
 			return "[E] Hang the sheet (it's already dry)"
 		var fan := _fan()
-		return "[E] Hang the sheet to dry" + ("" if fan and fan.powered else " (turn on the fan to dry faster)")
+		return "[E] Hang the sheet to dry" + ("" if fan and fan.blowing() else " (turn on the fan to dry faster)")
 	return ""
