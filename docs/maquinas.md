@@ -17,7 +17,7 @@ frente do jogador, ou rente à parede se ela estiver no caminho).
 | `ream` | Resma de papel embrulhada (marca fictícia OFFICE+). Na impressora, vira `sheets_per_ream` folhas. |
 | `sheet` | Folha A4 impressa com 2 x 3 notas, frente e verso. `data.wet` = tinta ainda fresca: mais escura e brilhando. `data.offcolor` = impressa com cartucho genérico: o que tem cor sai azul-petróleo. |
 | `bills` | Montinho de notas cortadas. `data.count` = quantas, `data.smudged` = quantas saíram borradas, `data.top_smudged` = se a de cima está borrada (muda a textura), `data.offcolor` e `data.top_offcolor` = o mesmo para a cor errada do cartucho genérico. A altura e o peso crescem com o monte. |
-| `bundle` | Maço cintado que sai da contadora: as mesmas chaves do montinho, sem notas borradas, com a cinta amarela em volta do meio. Ver a contadora. |
+| `bundle` | Maço cintado que sai da contadora: as mesmas chaves do montinho, sem notas borradas, com a cinta em volta do meio na cor da nota de qualidade. Ver a contadora. |
 | `pan` | Frigideira de ferro, que começa em cima do fogão (na boca livre, com o cabo para fora da bancada). Na mão, o clique bate (`ItemKinds.WEAPONS`; ver `docs/personagens.md`). Fica de perfil do lado direito, como uma raquete. |
 | `finger` | Um dedo que a guilhotina levou: a peça da luva do `hands.glb`. `data.owner` = de quem ("Tester's thumb"), `data.side` = 0 direita / 1 esquerda, `data.digit` = qual. |
 | `hand` | A mão inteira que a guilhotina levou: a luva com os dedos que ela ainda tinha. `data.owner`, `data.side` e `data.lost` = os dedos que já tinham ido antes. |
@@ -323,12 +323,12 @@ O código é `scripts/machines/cash_counter.gd`. O funil fica nas mesmas medidas
 | Onde | [E] |
 |---|---|
 | Funil (em cima) | Com um montinho na mão, joga as notas dentro (até `HOPPER_MAX`, 120). De mão vazia, pega de volta as que ainda não foram contadas. |
-| Bandeja da frente | Com 20 notas, cinta o maço e ele vem para a mão. Antes disso, de mão vazia, pega as contadas soltas (um montinho). |
+| Bandeja da frente | Com 20 notas, a máquina cinta sozinha: o maço aparece na bandeja e [E] pega ele. Antes disso, de mão vazia, pega as contadas soltas (um montinho). |
 | Gabinete | Segurar [E] com a máquina emperrada: destrava em `JAM_CLEAR` (1,2 s). |
 
 - **Contando:** sozinha, `BILLS_PER_SECOND` (10) notas por segundo, do funil para a bandeja. Cada
   nota escorrega da fenda para a pilha, e o visor conta (`012`). Com 20 na bandeja ela para, apita
-  e o visor mostra o maço e a nota (`20 A`). O resto espera no funil até alguém cintar.
+  e o visor mostra o maço e a nota (`20 A`). O resto espera no funil até alguém pegar o maço.
 - **Totais:** o funil e a bandeja guardam só os totais (quantas, quanto valem, quantas borradas,
   tortas, de cor errada e usadas). Cada nota que passa é sorteada dos totais do funil.
 - **Nota borrada emperra:** a tinta grudenta trava a máquina (o visor pisca `JAM`). Segurando
@@ -338,8 +338,11 @@ O código é `scripts/machines/cash_counter.gd`. O funil fica nas mesmas medidas
 - **Nota de qualidade** (`ItemKinds.grade`): pelo quanto cada nota vale em média
   (`ItemKinds.value / count`): A a partir de 90%, B de 75%, C de 55%, D abaixo disso. Sem lavar, o
   maço perfeito fica em C (70%); lavado, chega no A.
-- **Maço** (item `bundle`): a mesma pilha de notas, com a cinta amarela em volta do meio. Nome:
-  "bundle of 20 bills (grade A)".
+- **Maço** (item `bundle`): malha própria (`ItemKinds._bundle_mesh`), para não confundir com o
+  montinho. É mais grosso (`BUNDLE_HEIGHT`), apertado no meio pela cinta (`BUNDLE_PINCH`) e estufado
+  nas pontas, que abrem um pouco para os lados (`BUNDLE_FLARE`). A tampa é levemente abaulada e as
+  bordas são listradas, uma linha por nota. A cinta tem a cor da nota de qualidade (`BAND_COLORS`):
+  dourada A, verde B, azul C e vermelha D. Nome: "bundle of 20 bills (grade A)".
 - **Barulho** (`noise()`): `NOISE` contando.
 - **Sons**, feitos no próprio código: o motor com o estalo de cada nota, o tranco (emperrou,
   notas no funil, maço cintado) e dois bipes com o maço completo.

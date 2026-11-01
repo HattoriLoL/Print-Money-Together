@@ -5,8 +5,8 @@ extends Node3D
 ##
 ##   Funil (em cima)    [E] com um montinho na mão: joga as notas dentro (até HOPPER_MAX); de
 ##                      mão vazia, pega de volta as que ainda não foram contadas.
-##   Bandeja da frente  [E] com BUNDLE_SIZE notas: cinta o maço e ele vem para a mão; antes
-##                      disso, de mão vazia, pega as contadas soltas.
+##   Bandeja da frente  Com BUNDLE_SIZE notas a máquina cinta sozinha: o maço aparece na bandeja
+##                      e [E] pega ele; antes disso, de mão vazia, pega as contadas soltas.
 ##   Gabinete           Segurar [E] com a máquina emperrada: destrava (JAM_CLEAR segundos).
 ##
 ## Conta sozinha, BILLS_PER_SECOND notas por segundo, até a bandeja encher. Nota borrada (cortada
@@ -252,14 +252,14 @@ func confiscate() -> Dictionary:
 	return {"bills": bills}
 
 
-## [E] na bandeja: com ela cheia, cinta o maço; antes, pega as contadas soltas.
+## [E] na bandeja: com ela cheia, pega o maço (já cintado); antes, as contadas soltas.
 func _use_tray(peer: int) -> void:
 	if _kitnet.items.held_by(peer) != null or tray.is_empty():
 		return
 	var full: bool = tray["count"] >= BUNDLE_SIZE
 	_kitnet.items.give(peer, "bundle" if full else "bills", _pile_data(tray))
 	tray = {}
-	_send_now("strap" if full else "")
+	_send_now()
 
 
 ## Os dados de um item feito dos totais (só as chaves que têm alguma coisa).
@@ -301,10 +301,13 @@ func _on_event(event: String) -> void:
 		"bill":
 			_fly_time = 0.0
 		"full":
+			# Completou: cinta sozinha (o tranco agudo) e apita.
 			_fly_time = 0.0
 			_beep.play()
-		"jam", "feed", "strap", "clear":
-			_clunk.pitch_scale = {"jam": 0.7, "feed": 1.3, "strap": 1.8, "clear": 1.0}[event]
+			_clunk.pitch_scale = 1.8
+			_clunk.play()
+		"jam", "feed", "clear":
+			_clunk.pitch_scale = {"jam": 0.7, "feed": 1.3, "clear": 1.0}[event]
 			_clunk.play()
 
 
@@ -329,7 +332,7 @@ func _tray_prompt(player: Node) -> String:
 	if player.held_item() != null:
 		return "%d counted bills" % count
 	if count >= BUNDLE_SIZE:
-		return "[E] Strap the bundle (%d bills, grade %s)" % [count, ItemKinds.grade(tray)]
+		return "[E] Take the bundle (%d bills, grade %s)" % [count, ItemKinds.grade(tray)]
 	return "[E] Take the %d counted bills (a bundle is %d)" % [count, BUNDLE_SIZE]
 
 
@@ -364,20 +367,27 @@ func _screen_text(now: float) -> String:
 	return "%03d" % count
 
 
-## As pilhas do funil e da bandeja na altura certa, com a textura da nota de cima.
+## As pilhas do funil e da bandeja na altura certa, com a textura da nota de cima. A bandeja
+## cheia mostra o maço cintado (a mesma malha do item).
 func _render() -> void:
 	_show_stack(_hopper_stack, hopper, HOPPER_SURFACE)
-	_show_stack(_tray_stack, tray, TRAY_TOP)
+	_show_stack(_tray_stack, tray, TRAY_TOP, tray.get("count", 0) >= BUNDLE_SIZE)
 	_flying.mesh = ItemKinds._bills_mesh(false, Rect2(), tray.get("top_offcolor", false), tray.get("top_worn", false))
 	Toon.apply_one(_flying)
 
 
-func _show_stack(mesh: MeshInstance3D, totals: Dictionary, base: Vector3) -> void:
+func _show_stack(mesh: MeshInstance3D, totals: Dictionary, base: Vector3, strapped := false) -> void:
 	var count: int = totals.get("count", 0)
 	mesh.visible = count > 0
 	if count == 0:
 		return
 	var data := _pile_data(totals)
+	if strapped:
+		mesh.mesh = ItemKinds._bundle_mesh(data["top_offcolor"], data["top_worn"], ItemKinds.grade(totals))
+		Toon.apply_one(mesh)
+		mesh.scale = Vector3.ONE
+		mesh.position = base + Vector3.UP * (ItemKinds.BUNDLE_HEIGHT / 2.0 + 0.001)
+		return
 	mesh.mesh = ItemKinds._bills_mesh(data["top_smudged"], Rect2(), data["top_offcolor"], data["top_worn"])
 	Toon.apply_one(mesh)
 	var height := maxf(count * ItemKinds.BILL_THICKNESS, 0.0015)

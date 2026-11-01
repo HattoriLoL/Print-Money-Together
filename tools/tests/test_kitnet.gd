@@ -1434,7 +1434,8 @@ func _test_counter(kitnet: Node3D, player: CharacterBody3D) -> void:
 	_check(c.tray.get("count", 0) == c.BUNDLE_SIZE and c.hopper.get("count", 0) == 2 and not c.counting(),
 			"parou com o maço completo (2 esperando no funil)")
 	_check(c._screen.text == "20 A", "o visor mostra o maço e a nota (%s)" % c._screen.text)
-	_check(c._tray_prompt(player) == "[E] Strap the bundle (20 bills, grade A)", "a bandeja oferece cintar")
+	_check(c._tray_prompt(player) == "[E] Take the bundle (20 bills, grade A)", "cintou sozinha: a bandeja oferece o maço")
+	_check(c._tray_stack.mesh == ItemKinds._bundle_mesh(false, true, "A"), "a bandeja mostra o maço cintado")
 	c.tray_zone.interact(player)
 	await physics_frame
 	var bundle: Node = player.held_item()
@@ -1442,7 +1443,10 @@ func _test_counter(kitnet: Node3D, player: CharacterBody3D) -> void:
 			"cintou o maço (%s)" % (ItemKinds.label(bundle) if bundle else "nada"))
 	if bundle != null:
 		_check(is_equal_approx(ItemKinds.value(bundle.data), 20.0), "o maço lavado vale tudo (%.1f)" % ItemKinds.value(bundle.data))
-		_check(bundle.get_node("Mesh").get_node_or_null("Band") != null, "com a cinta de papel")
+		var mesh: Mesh = bundle.get_node("Mesh").mesh
+		var band: Material = mesh.surface_get_material(mesh.get_surface_count() - 1)
+		_check(band.albedo_color == ItemKinds.BAND_COLORS["A"], "com a cinta de papel dourada (nota A)")
+		_check((bundle.get_child(0).shape as BoxShape3D).size == ItemKinds.SIZES["bundle"], "maço gordinho, do tamanho dele")
 	await create_timer(0.5).timeout
 	_check(c.tray.get("count", 0) == 2, "e voltou a contar o resto")
 	await _look(player, spot, c.global_position + Vector3.UP * 0.05, "57_maco_cintado")

@@ -71,8 +71,16 @@ const NOT_CARRIED := ["parcel"]
 const OFFCOLOR_WORTH := 0.6
 ## Nota que nunca foi lavada é nova demais (lisinha, sem dobra): vale isso perto de uma usada.
 const CRISP_WORTH := 0.7
-## Cinta de papel do maço.
-const BUNDLE_BAND := Color(0.9, 0.75, 0.2)
+## Cinta de papel do maço, na cor da nota de qualidade: dá para ver de longe se o maço é bom
+## (dourada A, verde B, azul C, vermelha D).
+const BAND_COLORS := {"A": Color(0.92, 0.74, 0.18), "B": Color(0.3, 0.66, 0.32), "C": Color(0.28, 0.48, 0.82),
+		"D": Color(0.8, 0.24, 0.2)}
+## Forma do maço (_bundle_mesh): a altura nas pontas (estufadas), quanto a cinta aperta o meio
+## (fração da altura), a largura da cinta e quanto as pontas abrem para os lados.
+const BUNDLE_HEIGHT := 0.016
+const BUNDLE_PINCH := 0.38
+const BUNDLE_BAND_WIDTH := 0.03
+const BUNDLE_FLARE := 0.0025
 ## Nota de qualidade do maço pelo quanto cada nota vale, em média (value / count): a partir de
 ## cada limite, a letra.
 const GRADES := [[0.9, "A"], [0.75, "B"], [0.55, "C"], [0.0, "D"]]
@@ -83,7 +91,7 @@ const SIZES := {
 	"ream": Vector3(0.3, 0.052, 0.21),
 	"sheet": Vector3(0.297, 0.003, 0.21),
 	"bills": Vector3(0.139, 0.002, 0.063),
-	"bundle": Vector3(0.139, 0.008, 0.063),
+	"bundle": Vector3(0.139, 0.016, 0.063),
 	"pan": Vector3(0.27, 0.05, 0.47),
 	"cartridge": Vector3(0.11, 0.075, 0.05),
 	"parcel": Vector3(0.44, 0.26, 0.34),
@@ -280,15 +288,6 @@ static func build(item: RigidBody3D) -> void:
 	elif item.kind in STACKS:
 		mesh = MeshInstance3D.new()
 		mesh.name = "Mesh"
-		if item.kind == "bundle":
-			# A cinta de papel em volta do meio (filha da malha: estica junto com o maço).
-			var band := MeshInstance3D.new()
-			band.name = "Band"
-			var band_box := BoxMesh.new()
-			band_box.size = Vector3(0.03, 1.12, SIZES["bundle"].z + 0.002)
-			band_box.material = _flat_material(BUNDLE_BAND, 0.6)
-			band.mesh = band_box
-			mesh.add_child(band)
 	else:
 		mesh = MeshInstance3D.new()
 		mesh.name = "Mesh"
@@ -349,6 +348,16 @@ static func refresh(item: RigidBody3D) -> void:
 	if item.kind == "sheet" and mesh:
 		mesh.set_instance_shader_parameter("wet", wet_amount(item.data))
 		mesh.set_instance_shader_parameter("offcolor", 1.0 if item.data.get("offcolor", false) else 0.0)
+	elif item.kind == "bundle" and mesh:
+		# Malha própria, do tamanho certo (o maço tem sempre as mesmas notas), com a cinta na cor
+		# da nota de qualidade (na malha: o toon refaz os materiais a partir dela).
+		mesh.mesh = _bundle_mesh(item.data.get("top_offcolor", false), item.data.get("top_worn", false),
+				grade(item.data))
+		mesh.scale = Vector3.ONE
+		Toon.apply_one(mesh)
+		var col: CollisionShape3D = item.get_child(0)
+		(col.shape as BoxShape3D).size = SIZES["bundle"]
+		item.mass = MASS["bundle"] * maxi(item.data.get("count", 1), 1)
 	elif item.kind in STACKS and mesh:
 		# Uma malha de 1 de altura, esticada até a altura do monte; a colisão acompanha.
 		var count: int = maxi(item.data.get("count", 1), 1)
@@ -568,6 +577,175 @@ static func _bills_mesh(top_smudged: bool, top_cut := Rect2(), offcolor := false
 		st.commit(mesh)
 	_cache[key] = mesh
 	return mesh
+
+
+## Maço cintado: as notas bem alinhadas, apertadas no meio pela cinta de papel e estufadas nas
+## pontas (abrem um pouco para os lados), com a tampa levemente abaulada. A nota de cima na
+## tampa, o verso embaixo, as bordas listradas (uma linha por nota) e a cinta na cor da nota de
+## qualidade (`grade`). O meio do maço fica na origem, como a colisão.
+static func _bundle_mesh(offcolor: bool, worn: bool, grade_letter: String) -> Mesh:
+	var key := "bundle_mesh_%s_%s_%s" % [offcolor, worn, grade_letter]
+	if _cache.has(key):
+		return _cache[key]
+	var top_tex: Texture2D = BILL_FRONT_OFFCOLOR if offcolor else BILL_FRONT
+	var back_tex: Texture2D = BILL_BACK_OFFCOLOR if offcolor else BILL_BACK
+	if worn:
+		top_tex = BILL_FRONT_OFFCOLOR_WORN if offcolor else BILL_FRONT_WORN
+		back_tex = BILL_BACK_OFFCOLOR_WORN if offcolor else BILL_BACK_WORN
+	var length: float = SIZES["bundle"].x
+	var band := BUNDLE_BAND_WIDTH / 2.0
+	var lift := 0.0007
+	# Meia altura e meia largura em cada x; `dome` baixa a tampa perto das bordas compridas.
+	var half_h := func(x: float) -> float:
+		return BUNDLE_HEIGHT / 2.0 * (1.0 - BUNDLE_PINCH * exp(-pow(x / 0.028, 2.0)))
+	var half_w := func(x: float) -> float:
+		return SIZES["bundle"].z / 2.0 + BUNDLE_FLARE * pow(absf(x) / (length / 2.0), 2.0)
+	var dome := func(v: float) -> float:
+		return 1.0 - 0.2 * pow(absf(2.0 * v - 1.0), 3.0)
+	var at_x := func(u: float) -> float:
+		return (u - 0.5) * length
+	var mesh := ArrayMesh.new()
+
+	# Tampa e fundo: u ao longo do comprimento, v da borda de trás para a da frente.
+	var top := func(u: float, v: float, s: float, x0: float, x1: float, e: float) -> Vector3:
+		var x: float = lerpf(x0, x1, u)
+		return Vector3(x, s * (half_h.call(x) * dome.call(v) + e), (v - 0.5) * 2.0 * (half_w.call(x) + e))
+	var st := _surface()
+	_grid(st, 24, 6, func(u, v): return top.call(u, v, 1.0, -length / 2.0, length / 2.0, 0.0),
+			func(u, v): return Vector2(u, v), Vector3.UP)
+	_commit(st, mesh, _textured(top_tex, 0.75))
+	st = _surface()
+	_grid(st, 24, 6, func(u, v): return top.call(u, v, -1.0, -length / 2.0, length / 2.0, 0.0),
+			func(u, v): return Vector2(1.0 - u, v), Vector3.DOWN)
+	_commit(st, mesh, _textured(back_tex, 0.75))
+
+	# Bordas: os dois lados compridos e as duas pontas, de cima para baixo (v), com uma listra
+	# por nota.
+	st = _surface()
+	for side: float in [-1.0, 1.0]:
+		var edge_v: float = 0.5 + side * 0.5
+		var long_side := func(u: float, v: float) -> Vector3:
+			var x: float = at_x.call(u)
+			var y: float = lerpf(1.0, -1.0, v) * half_h.call(x) * dome.call(edge_v)
+			return Vector3(x, y, side * half_w.call(x))
+		_grid(st, 24, 2, long_side, func(u, v): return Vector2(u * 3.0, v), Vector3(0, 0, side))
+		var x_end: float = side * length / 2.0
+		var tip := func(u: float, v: float) -> Vector3:
+			var y: float = lerpf(1.0, -1.0, v) * half_h.call(x_end) * dome.call(u)
+			return Vector3(x_end, y, (u - 0.5) * 2.0 * half_w.call(x_end))
+		_grid(st, 6, 2, tip, func(u, v): return Vector2(u, v), Vector3(side, 0, 0))
+	var edge_mat := _textured(_bundle_edge_texture(), 0.9)
+	if worn:
+		edge_mat.albedo_color = Color(0.92, 0.9, 0.8)
+	_commit(st, mesh, edge_mat)
+
+	# A cinta: em volta do meio apertado, um pouco por fora das notas.
+	st = _surface()
+	_grid(st, 4, 6, func(u, v): return top.call(u, v, 1.0, -band, band, lift),
+			func(u, v): return Vector2(u, v * 0.5), Vector3.UP)
+	_grid(st, 4, 6, func(u, v): return top.call(u, v, -1.0, -band, band, lift),
+			func(u, v): return Vector2(u, 0.5 + v * 0.5), Vector3.DOWN)
+	for side: float in [-1.0, 1.0]:
+		var edge_v: float = 0.5 + side * 0.5
+		var band_side := func(u: float, v: float) -> Vector3:
+			var x: float = lerpf(-band, band, u)
+			var y: float = lerpf(1.0, -1.0, v) * (half_h.call(x) * dome.call(edge_v) + lift)
+			return Vector3(x, y, side * (half_w.call(x) + lift))
+		_grid(st, 4, 2, band_side, func(u, v): return Vector2(u, 0.0), Vector3(0, 0, side))
+	_commit(st, mesh, _band_material(BAND_COLORS.get(grade_letter, BAND_COLORS["D"])))
+	_cache[key] = mesh
+	return mesh
+
+
+## A cinta de papel na cor da nota de qualidade: a textura (cinza) tem os filetes das bordas e a
+## "letrinha" impressa no meio, e a cor multiplica.
+static func _band_material(color: Color) -> StandardMaterial3D:
+	var key := "band_%s" % color
+	if not _cache.has(key):
+		var mat := _textured(_bundle_band_texture(), 0.6)
+		mat.albedo_color = color
+		_cache[key] = mat
+	return _cache[key]
+
+
+static func _textured(texture: Texture2D, roughness: float) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_texture = texture
+	mat.roughness = roughness
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return mat
+
+
+## Bordas das notas empilhadas: listras de papel claro e esverdeado, uma por nota (v de cima
+## para baixo), de grossura um pouco diferente cada uma.
+static func _bundle_edge_texture() -> Texture2D:
+	if _cache.has("bundle_edge_tex"):
+		return _cache["bundle_edge_tex"]
+	var rows := 80
+	var img := Image.create(4, rows, false, Image.FORMAT_RGB8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 2026
+	for y in rows:
+		var shade := rng.randf_range(-0.03, 0.03)
+		var light := Color(0.88 + shade, 0.91 + shade, 0.83 + shade)
+		var dark := Color(0.62 + shade, 0.72 + shade, 0.6 + shade)
+		img.fill_rect(Rect2i(0, y, 4, 1), dark if y % 4 == 3 else light)
+	var tex := ImageTexture.create_from_image(img)
+	_cache["bundle_edge_tex"] = tex
+	return tex
+
+
+## Cinta: branca (a cor vem do material), com um filete escuro perto de cada borda e uma fileira
+## de tracinhos no meio da tampa e do fundo, como o carimbo impresso. u atravessa a cinta, v dá a
+## volta (tampa de 0 a 0,5, fundo de 0,5 a 1).
+static func _bundle_band_texture() -> Texture2D:
+	if _cache.has("bundle_band_tex"):
+		return _cache["bundle_band_tex"]
+	var img := Image.create(32, 64, false, Image.FORMAT_RGB8)
+	img.fill(Color(1, 1, 1))
+	var line := Color(0.55, 0.55, 0.55)
+	img.fill_rect(Rect2i(3, 0, 2, 64), line)
+	img.fill_rect(Rect2i(27, 0, 2, 64), line)
+	for half in 2:
+		for i in 5:
+			img.fill_rect(Rect2i(14, half * 32 + 9 + i * 3, 4, 2), Color(0.45, 0.45, 0.45))
+	var tex := ImageTexture.create_from_image(img)
+	_cache["bundle_band_tex"] = tex
+	return tex
+
+
+static func _surface() -> SurfaceTool:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	return st
+
+
+static func _commit(st: SurfaceTool, mesh: ArrayMesh, mat: Material) -> void:
+	st.set_material(mat)
+	st.commit(mesh)
+
+
+## Uma superfície em grade (nu x nv quadrados): `pos(u, v)` dá o ponto e `uv(u, v)` a textura,
+## com u e v de 0 a 1. A normal sai da própria superfície, virada para o lado de `outward`.
+static func _grid(st: SurfaceTool, nu: int, nv: int, pos: Callable, uv: Callable, outward: Vector3) -> void:
+	var eps := 0.001
+	var normal_at := func(u: float, v: float) -> Vector3:
+		var du: Vector3 = pos.call(minf(u + eps, 1.0), v) - pos.call(maxf(u - eps, 0.0), v)
+		var dv: Vector3 = pos.call(u, minf(v + eps, 1.0)) - pos.call(u, maxf(v - eps, 0.0))
+		var n := du.cross(dv)
+		if n.length_squared() < 1e-14:
+			return outward
+		n = n.normalized()
+		return -n if n.dot(outward) < 0.0 else n
+	for i in nu:
+		for j in nv:
+			var quad := [Vector2(float(i) / nu, float(j) / nv), Vector2(float(i + 1) / nu, float(j) / nv),
+					Vector2(float(i + 1) / nu, float(j + 1) / nv), Vector2(float(i) / nu, float(j + 1) / nv)]
+			for k in [0, 1, 2, 0, 2, 3]:
+				var p: Vector2 = quad[k]
+				st.set_normal(normal_at.call(p.x, p.y))
+				st.set_uv(uv.call(p.x, p.y))
+				st.add_vertex(pos.call(p.x, p.y))
 
 
 static func _face(st: SurfaceTool, normal: Vector3, corners: Array, region: Rect2) -> void:
